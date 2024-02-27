@@ -42,7 +42,16 @@ typedef struct MovieSinkCmd {
     char                        data[0];
 } MovieSinkCmd;
 
+typedef struct MovieSinkEvent {
+    SIMPLEQ_ENTRY(MovieSinkEvent) entry;
+    int                       event;
+    int                       ret;
+    char                      *extra;
+    char                      data[0];
+} MovieSinkEvent;
+
 SIMPLEQ_HEAD(MovieSinkCmdQueue, MovieSinkCmd);
+SIMPLEQ_HEAD(MovieSinkEvtQueue, MovieSinkEvent);
 
 typedef struct MovieStream {
     enum AVMediaType type;
@@ -67,6 +76,7 @@ typedef struct MovieSinkPriv {
     AVDictionary              *global_opts;
 
     struct MovieSinkCmdQueue  cmd_queue;    /**< graph thread send cmd to work thread */
+    struct MovieSinkEvtQueue  evt_queue;    /**< event queue which worker thread to mediad */
 
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
@@ -79,8 +89,14 @@ typedef struct MovieSinkPriv {
 
 static inline void moviesink_notify_event(MovieSinkPriv *priv, int event, int ret, const char *extra)
 {
-    if (priv->event != NULL && priv->cookie != NULL)
+    if (priv->event != NULL && priv->cookie != NULL) {
         priv->event(priv->cookie, event, ret, extra);
+
+        if (event == AVMOVIE_ASYNC_EVENT_CLOSED) {
+            priv->event  = NULL;
+            priv->cookie = NULL;
+        }
+    }
 }
 
 static int moviesink_send_cmd(AVFilterContext *ctx, int cmd, const void *data, size_t size)
@@ -116,6 +132,55 @@ static int moviesink_send_dat(AVFilterContext *ctx, int pad_id, AVFrame *frame)
     pthread_mutex_unlock(&priv->mutex);
 
     return ret;
+}
+
+static int moviesink_send_event(AVFilterContext *ctx, int event, int ret, const char *extra)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    MovieSinkEvent *evt;
+
+    if (extra)
+        evt = av_malloc(sizeof(MovieSinkEvent) + strlen(extra) + 1);
+    else
+        evt = av_malloc(sizeof(MovieSinkEvent));
+    if (!evt)
+        return AVERROR(ENOMEM);
+
+    evt->event = event;
+    evt->ret   = ret;
+    evt->extra = NULL;
+
+    if (extra) {
+        evt->extra = evt->data;
+        strcpy(evt->extra, extra);
+    }
+
+    pthread_mutex_lock(&priv->mutex);
+    SIMPLEQ_INSERT_TAIL(&priv->evt_queue, evt, entry);
+    pthread_mutex_unlock(&priv->mutex);
+
+    ff_filter_set_ready(ctx, 100);
+    return 0;
+}
+
+static void moviesink_proc_event(AVFilterContext *ctx)
+{
+    MovieSinkPriv *priv = ctx->priv;
+
+    while (1) {
+        MovieSinkEvent *event;
+
+        pthread_mutex_lock(&priv->mutex);
+        if ((event = SIMPLEQ_FIRST(&priv->evt_queue)) != NULL)
+            SIMPLEQ_REMOVE_HEAD(&priv->evt_queue, entry);
+        pthread_mutex_unlock(&priv->mutex);
+
+        if (!event)
+            break;
+
+        moviesink_notify_event(priv, event->event, event->ret, event->extra);
+        av_freep(&event);
+    }
 }
 
 static AVFrame *moviesink_recv_dat(AVFilterContext *ctx, int pad_id)
@@ -350,7 +415,7 @@ static void moviesink_prepare(AVFilterContext *ctx, const char *filename)
     priv->state = AVMOVIE_ASYNC_STATE_PREPARED;
 
 out:
-    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
+    moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
 }
 
 static void moviesink_start(AVFilterContext *ctx, const char *params)
@@ -367,7 +432,7 @@ static void moviesink_start(AVFilterContext *ctx, const char *params)
 
 out:
     ff_filter_set_ready(ctx, 100);
-    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
+    moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
 
 static void moviesink_pause(AVFilterContext *ctx)
@@ -382,7 +447,7 @@ static void moviesink_pause(AVFilterContext *ctx)
     ret = 0;
 
 out:
-    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
+    moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_PAUSED, ret, NULL);
 }
 
 static void moviesink_clean(AVFilterContext *ctx)
@@ -391,7 +456,7 @@ static void moviesink_clean(AVFilterContext *ctx)
     if (priv->state != AVMOVIE_ASYNC_STATE_STOPPED) {
         moviesink_close_muxer(ctx);
         priv->state = AVMOVIE_ASYNC_STATE_STOPPED;
-        moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
+        moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
     }
 }
 
@@ -454,7 +519,7 @@ out:
 
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
-    moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_COMPLETED,
+    moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
     moviesink_clean(ctx);
@@ -485,18 +550,10 @@ close_muxer:
 static bool moviesink_proc_cmd(AVFilterContext *ctx, MovieSinkCmd *msg)
 {
     MovieSinkPriv *priv = ctx->priv;
-    struct AVMovieAsyncEventCookie *event;
     bool exit = false;
     char *args;
 
     switch (msg->cmd) {
-        case AVMOVIE_ASYNC_SET_EVENT:
-            event = (AVMovieAsyncEventCookie *)msg->data;
-
-            priv->event  = event->event;
-            priv->cookie = event->cookie;
-            break;
-
         case AVMOVIE_ASYNC_SET_OPTIONS:
             break;
 
@@ -554,9 +611,7 @@ static void *moviesink_thread(void *arg)
             moviesink_proc_dat(ctx);
         } else if (exit) {
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
-            moviesink_notify_event(priv, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
-            priv->event  = NULL;
-            priv->cookie = NULL;
+            moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
             pthread_mutex_unlock(&priv->mutex);
             break;
         } else {
@@ -619,6 +674,8 @@ static int moviesink_activate(AVFilterContext *ctx)
     AVFilterLink *link;
     AVFrame *frame;
     int64_t pts;
+
+    moviesink_proc_event(ctx);
 
     ret = moviesink_reconfig(ctx);
     if (ret < 0)
@@ -689,6 +746,7 @@ static int moviesink_init_dict(AVFilterContext *ctx, AVDictionary **options)
         return AVERROR(ENOMEM);
 
     SIMPLEQ_INIT(&priv->cmd_queue);
+    SIMPLEQ_INIT(&priv->evt_queue);
     pthread_mutex_init(&priv->mutex, NULL);
     pthread_cond_init(&priv->cond, NULL);
 
@@ -1064,16 +1122,17 @@ static int moviesink_process_command(AVFilterContext *ctx, const char *cmd, cons
                                       char *res, int res_len, int flags)
 {
     MovieSinkPriv *priv = ctx->priv;
+    struct AVMovieAsyncEventCookie *event;
     int ret;
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
         return moviesink_process_open(ctx);
     } else if (!strcmp(cmd, "set_event")) {
-        if (!args)
-            return AVERROR(EINVAL);
-
-        return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_SET_EVENT, args, sizeof(struct AVMovieAsyncEventCookie));
+        event = (AVMovieAsyncEventCookie *)args;
+        priv->event  = event->event;
+        priv->cookie = event->cookie;
+        return 0;
     } else if (!strcmp(cmd, "set_options")) {
         if (!args)
             return AVERROR(EINVAL);
