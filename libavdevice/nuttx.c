@@ -744,11 +744,11 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             }
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             av_log(priv, AV_LOG_INFO, "[%s][%s] complete\n", __func__, priv->devname);
+            priv->draining = false;
             if (!priv->running)
                 ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
-
-            priv->draining = false;
-            return AVERROR_EXIT;
+            else
+                return AVERROR_EXIT;
         } else if (msg.msg_id == AUDIO_MSG_UNDERRUN) {
             av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow! pause.\n", __func__, priv->devname);
             ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
