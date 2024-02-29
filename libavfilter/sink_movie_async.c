@@ -610,9 +610,9 @@ static void *moviesink_thread(void *arg)
             pthread_mutex_unlock(&priv->mutex);
             moviesink_proc_dat(ctx);
         } else if (exit) {
+            pthread_mutex_unlock(&priv->mutex);
             priv->state  = AVMOVIE_ASYNC_STATE_NOP;
             moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_CLOSED, 0, NULL);
-            pthread_mutex_unlock(&priv->mutex);
             break;
         } else {
             pthread_cond_wait(&priv->cond, &priv->mutex);
