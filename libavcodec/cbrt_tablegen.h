@@ -48,7 +48,7 @@ av_cold void AAC_RENAME(ff_cbrt_tableinit)(void)
 
         cbrt_tab_dbl = av_malloc((1 << 13) * sizeof(double));
         if (!cbrt_tab_dbl) {
-            av_log(NULL, AV_LOG_FATAL, "cbrt_tableinit malloc failed %d\n",
+            av_log(NULL, AV_LOG_FATAL, "cbrt_tableinit malloc failed %zu\n",
                    (1 << 13) * sizeof(double));
             return;
         }
