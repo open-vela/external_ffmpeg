@@ -474,7 +474,7 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
         /* @deprecated naive avsync. */
         ret = moviesink_init_stream(ctx, i, frame);
         if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "moviesink_init_stream error %d\n.", ret);
+            av_log(ctx, AV_LOG_WARNING, "moviesink_init_stream error %d\n.", ret);
             av_frame_free(&frame);
             return ret;
         } else if (priv->format_ctx->nb_streams < ctx->nb_inputs) {
