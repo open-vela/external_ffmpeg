@@ -368,6 +368,7 @@ static int moviesink_init_stream(AVFilterContext *ctx, int pad_id, AVFrame *fram
     if (!stream)
         return AVERROR(ENOMEM);
 
+    stream->time_base = ctx->inputs[pad_id]->time_base;
     priv->streams[pad_id].stream_idx = priv->format_ctx->nb_streams - 1;
 
     ret = avcodec_parameters_copy(stream->codecpar, params);
