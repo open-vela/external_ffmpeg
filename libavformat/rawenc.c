@@ -105,9 +105,9 @@ const AVOutputFormat ff_adx_muxer = {
 };
 #endif
 
-#if CONFIG_AMRNB_MUXER
-const AVOutputFormat ff_amrnb_muxer = {
-    .name              = "amrnb",
+#if CONFIG_AMRNBRAW_MUXER
+const AVOutputFormat ff_amrnbraw_muxer = {
+    .name              = "amrnbraw",
     .long_name         = NULL_IF_CONFIG_SMALL("raw AMR-NB"),
     .mime_type         = "audio/amrnb",
     .extensions        = "amr",
@@ -119,9 +119,9 @@ const AVOutputFormat ff_amrnb_muxer = {
 };
 #endif
 
-#if CONFIG_AMRWB_MUXER
-const AVOutputFormat ff_amrwb_muxer = {
-    .name              = "amrwb",
+#if CONFIG_AMRWBRAW_MUXER
+const AVOutputFormat ff_amrwbraw_muxer = {
+    .name              = "amrwbraw",
     .long_name         = NULL_IF_CONFIG_SMALL("raw AMR-WB"),
     .mime_type         = "audio/amrwb",
     .extensions        = "amr",
