@@ -87,9 +87,9 @@ const FFOutputFormat ff_adx_muxer = {
 };
 #endif
 
-#if CONFIG_AMRNB_MUXER
-const FFOutputFormat ff_amrnb_muxer = {
-    .p.name            = "amrnb",
+#if CONFIG_AMRNBRAW_MUXER
+const FFOutputFormat ff_amrnbraw_muxer = {
+    .p.name            = "amrnbraw",
     .p.long_name       = NULL_IF_CONFIG_SMALL("raw AMR-NB"),
     .p.mime_type       = "audio/amrnb",
     .p.extensions      = "amr",
@@ -102,9 +102,9 @@ const FFOutputFormat ff_amrnb_muxer = {
 };
 #endif
 
-#if CONFIG_AMRWB_MUXER
-const FFOutputFormat ff_amrwb_muxer = {
-    .p.name            = "amrwb",
+#if CONFIG_AMRWBRAW_MUXER
+const FFOutputFormat ff_amrwbraw_muxer = {
+    .p.name            = "amrwbraw",
     .p.long_name       = NULL_IF_CONFIG_SMALL("raw AMR-WB"),
     .p.mime_type       = "audio/amrwb",
     .p.extensions      = "amr",
@@ -113,7 +113,7 @@ const FFOutputFormat ff_amrwb_muxer = {
     .flags_internal    = FF_OFMT_FLAG_MAX_ONE_OF_EACH |
                          FF_OFMT_FLAG_ONLY_DEFAULT_CODECS,
     .write_packet      = ff_raw_write_packet,
-    .p.flags             = AVFMT_NOTIMESTAMPS,
+    .p.flags           = AVFMT_NOTIMESTAMPS,
 };
 #endif
 
