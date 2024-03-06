@@ -111,7 +111,7 @@ static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int
         else
             priv->ts_base = ts - pts;
         priv->lat_base = lat;
-        av_log(ctx, AV_LOG_INFO, "sync pts:%lld ts:%lld base:%lld lat:%lld\n", pts, ts, priv->ts_base, lat);
+        av_log(ctx, AV_LOG_INFO, "sync pts:%" PRId64 " ts:%" PRId64 " base:%" PRId64 " lat:%" PRId64 "\n", pts, ts, priv->ts_base, lat);
     }
 
     now   = ts - priv->ts_base;
