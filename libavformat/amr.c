@@ -49,7 +49,7 @@ static const uint8_t amrwb_packed_size[16] = {
     18, 24, 33, 37, 41, 47, 51, 59, 61, 6, 1, 1, 1, 1, 1, 1
 };
 
-#if CONFIG_AMR_MUXER
+#if (defined CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
 static int amr_write_header(AVFormatContext *s)
 {
     AVIOContext    *pb  = s->pb;
@@ -265,13 +265,27 @@ const AVInputFormat ff_amrwb_demuxer = {
 };
 #endif
 
-#if CONFIG_AMR_MUXER
-const AVOutputFormat ff_amr_muxer = {
-    .name              = "amr",
+#if CONFIG_AMRNB_MUXER
+const AVOutputFormat ff_amrnb_muxer = {
+    .name              = "amrnb",
     .long_name         = NULL_IF_CONFIG_SMALL("3GPP AMR"),
-    .mime_type         = "audio/amr",
+    .mime_type         = "audio/amrnb",
     .extensions        = "amr",
     .audio_codec       = AV_CODEC_ID_AMR_NB,
+    .video_codec       = AV_CODEC_ID_NONE,
+    .write_header      = amr_write_header,
+    .write_packet      = ff_raw_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
+};
+#endif
+
+#if CONFIG_AMRWB_MUXER
+const AVOutputFormat ff_amrwb_muxer = {
+    .name              = "amrwb",
+    .long_name         = NULL_IF_CONFIG_SMALL("3GPP AMR"),
+    .mime_type         = "audio/amrwb",
+    .extensions        = "amr",
+    .audio_codec       = AV_CODEC_ID_AMR_WB,
     .video_codec       = AV_CODEC_ID_NONE,
     .write_header      = amr_write_header,
     .write_packet      = ff_raw_write_packet,

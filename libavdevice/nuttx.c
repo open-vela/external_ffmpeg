@@ -128,6 +128,8 @@ static int ff_nuttx_subfmt_to_avcodec(int subfmt)
         case AUDIO_SUBFMT_PCM_MP1:    return AV_CODEC_ID_MP1;
         case AUDIO_SUBFMT_PCM_MP2:    return AV_CODEC_ID_MP2;
         case AUDIO_SUBFMT_PCM_MP3:    return AV_CODEC_ID_MP3;
+        case AUDIO_SUBFMT_AMRNB:      return AV_CODEC_ID_AMR_NB;
+        case AUDIO_SUBFMT_AMRWB:      return AV_CODEC_ID_AMR_WB;
     }
 
     return AV_CODEC_ID_FIRST_AUDIO;
@@ -279,6 +281,10 @@ static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
             ac_subtype = AUDIO_FMT_FLAC;
             codec = AV_CODEC_ID_FLAC;
             format &= ~(1 << (AUDIO_FMT_FLAC - 1));
+        } else if (format & (1 << (AUDIO_FMT_AMR - 1))) {
+            ac_subtype = AUDIO_FMT_AMR;
+            codec = AV_CODEC_ID_AMR_NB;
+            format &= ~(1 << (AUDIO_FMT_AMR - 1));
         }
 
         ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps);
