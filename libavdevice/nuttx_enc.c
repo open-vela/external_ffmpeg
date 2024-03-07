@@ -101,6 +101,7 @@ static int nuttx_write_trailer(struct AVFormatContext *s1)
     NuttxPriv *priv = s1->priv_data;
 
     ff_nuttx_close(priv);
+    priv->timestamp = 0;
     return 0;
 }
 
