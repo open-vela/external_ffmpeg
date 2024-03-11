@@ -1191,10 +1191,14 @@ static int movie_async_get_latency(AVFilterContext *ctx, char *res, int res_len)
     if (pad == ctx->nb_outputs)
         return AVERROR(EINVAL);
 
+    if (ff_outlink_get_status(ctx->outputs[pad]))
+        return AVERROR(EINVAL);
+
     /* find the sink */
     sink_filter = avfilter_find_on_link(ctx, "adevsink", NULL, true, NULL);
     if (!sink_filter)
         return AVERROR(EINVAL);
+
     ret = avfilter_process_command(sink_filter, "get_timestamp", NULL, (char *)&data, sizeof(data), 0);
     if (ret < 0)
         return ret;
