@@ -65,13 +65,14 @@ SIMPLEQ_HEAD(MovieCmdQueue, MovieCmd);
 SIMPLEQ_HEAD(MovieEvtQueue, MovieEvent);
 
 typedef struct MovieStream {
-    enum AVMediaType type;
-    int              index;                     /**< AVStream index of AVFormatContext */
-    FFFrameQueue     dat_queue;
-    AVRational       time_base;
-    AVRational       frame_rate;
-    int64_t          start_time;
-    bool             completed;
+    enum AVMediaType  type;
+    int               index;                     /**< AVStream index of AVFormatContext */
+    FFFrameQueue      dat_queue;
+    AVRational        time_base;
+    AVRational        frame_rate;
+    int64_t           start_time;
+    bool              completed;
+    AVCodecParameters *codecpar;
 } MovieStream;
 
 typedef struct MovieAsyncContext {
@@ -216,7 +217,7 @@ static int movie_async_send_event(AVFilterContext *ctx, int event, int ret, cons
 static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParameters **dst)
 {
     MovieAsyncContext *movie = ctx->priv;
-    AVCodecParameters *src = NULL;
+    AVCodecParameters *par = NULL;
     AVFrame *frame = NULL;
 
     pthread_mutex_lock(&movie->mutex);
@@ -224,8 +225,21 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
         frame = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, 0);
     pthread_mutex_unlock(&movie->mutex);
 
-    if (frame && frame->opaque_ref) {
-        *dst = (AVCodecParameters *)frame->opaque_ref->data;
+    if (frame && frame->opaque_ref && movie->streams[pad_id].codecpar == NULL) {
+        par = avcodec_parameters_alloc();
+        if (!par)
+            return false;
+
+        if (avcodec_parameters_copy(par, (AVCodecParameters*)frame->opaque_ref->data) < 0) {
+            avcodec_parameters_free(&par);
+            return false;
+        }
+
+        movie->streams[pad_id].codecpar = par;
+    }
+
+    if (frame && movie->streams[pad_id].codecpar) {
+        *dst = movie->streams[pad_id].codecpar;
         return true;
     }
 
@@ -678,6 +692,7 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                 for (i = 0; i < ctx->nb_outputs; i++) {
                     avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
                     ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                    avcodec_parameters_free(&movie->streams[i].codecpar);
                 }
                 break;
         }
