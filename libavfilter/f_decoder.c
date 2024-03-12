@@ -148,9 +148,6 @@ static int decoder_activate(AVFilterContext *ctx)
 
     ret = ff_outlink_get_status(outlink);
     if (ret < 0) {
-        if (ret == AVERROR_EOF)
-            decoder_close(ctx);
-
         ff_inlink_set_status(inlink, ret);
         return ret;
     }
@@ -164,8 +161,12 @@ static int decoder_activate(AVFilterContext *ctx)
 
     if (!priv->codec_ctx) {
         ret = decoder_open(ctx);
-        if (ret < 0)
+        if (ret < 0) {
+            if (ret == AVERROR(EAGAIN))
+                ff_inlink_request_frame(inlink);
+
             return ret;
+        }
     }
 
     while (1) {
