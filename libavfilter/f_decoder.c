@@ -203,7 +203,8 @@ static int decoder_query_formats(AVFilterContext *ctx)
 {
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterFormats *codecs = NULL;
+    AVFilterFormats *ffmts = NULL;
+    AVFilterChannelLayouts *ffcls = NULL;
     const AVCodec *codec = NULL;
     void *iterate = NULL;
     enum AVCodecID id;
@@ -224,32 +225,37 @@ static int decoder_query_formats(AVFilterContext *ctx)
             }
         }
 
-        if (ret = ff_add_format(&codecs, id) < 0)
+        if (ret = ff_add_format(&ffmts, id) < 0)
             goto out;
     }
 
-    if ((ret = ff_formats_ref(codecs, &inlink->outcfg.codecs)) < 0)
+    if ((ret = ff_formats_ref(ffmts, &inlink->outcfg.codecs)) < 0)
         goto out;
 
     if ((ret = ff_formats_ref(ff_all_raw_codecs(outlink->type), &outlink->incfg.codecs)) < 0)
         goto out;
 
-    /* Formats, samplerates, channel layouts should simply align with source. */
-    if ((ret = ff_set_common_formats(ctx, inlink->incfg.formats)) < 0)
+    ffmts = inlink->incfg.formats ? inlink->incfg.formats : ff_all_formats(outlink->type);
+    if ((ret = ff_set_common_formats(ctx, ffmts)) < 0)
         goto out;
 
     if (inlink->type == AVMEDIA_TYPE_AUDIO) {
-        if ((ret = ff_set_common_samplerates(ctx, inlink->incfg.samplerates)) < 0)
+        ffmts = inlink->incfg.samplerates ? inlink->incfg.samplerates : ff_all_samplerates();
+        if ((ret = ff_set_common_samplerates(ctx, ffmts)) < 0)
             goto out;
 
-        if ((ret = ff_set_common_channel_layouts(ctx, inlink->incfg.channel_layouts)) < 0)
+        ffcls = inlink->incfg.channel_layouts ? inlink->incfg.channel_layouts : ff_all_channel_layouts();
+        if ((ret = ff_set_common_channel_layouts(ctx, ffcls)) < 0)
             goto out;
     }
 
     return 0;
 
 out:
-    ff_formats_unref(&codecs);
+    if (ffmts != inlink->incfg.formats && ffmts != inlink->incfg.samplerates)
+        ff_formats_unref(&ffmts);
+    if (ffcls != inlink->incfg.channel_layouts)
+        ff_channel_layouts_unref(&ffcls);
 
     return ret;
 }
