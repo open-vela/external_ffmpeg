@@ -250,7 +250,7 @@ const FFInputFormat ff_amrwb_demuxer = {
 };
 #endif
 
-#if (defined CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
+#if (CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
 static int amr_write_header(AVFormatContext *s)
 {
     AVIOContext    *pb  = s->pb;
