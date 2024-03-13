@@ -49,7 +49,7 @@ static const uint8_t amrwb_packed_size[16] = {
     18, 24, 33, 37, 41, 47, 51, 59, 61, 6, 1, 1, 1, 1, 1, 1
 };
 
-#if (defined CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
+#if (CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
 static int amr_write_header(AVFormatContext *s)
 {
     AVIOContext    *pb  = s->pb;
