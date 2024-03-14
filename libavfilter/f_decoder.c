@@ -199,36 +199,36 @@ static int decoder_activate(AVFilterContext *ctx)
     return ret;
 }
 
+static AVFilterFormats *ff_all_decoders(enum AVMediaType type)
+{
+    const AVCodec *codec = NULL;
+    void *iterate = NULL;
+    AVFilterFormats *ffmts = NULL;
+    int ret;
+
+    while (codec = av_codec_iterate(&iterate)) {
+        if (codec->type != type || av_codec_is_encoder(codec))
+            continue;
+
+        if (ret = ff_add_format(&ffmts, codec->id) < 0)
+            goto out;
+    }
+
+    return ffmts;
+out:
+    ff_formats_unref(&ffmts);
+    return NULL;
+}
+
 static int decoder_query_formats(AVFilterContext *ctx)
 {
     AVFilterLink *inlink  = ctx->inputs[0];
     AVFilterLink *outlink = ctx->outputs[0];
     AVFilterFormats *ffmts = NULL;
     AVFilterChannelLayouts *ffcls = NULL;
-    const AVCodec *codec = NULL;
-    void *iterate = NULL;
-    enum AVCodecID id;
-    int ret, dup = 0;
+    int ret = 0;
 
-    /* Input uses compress, output uses raw. */
-    while (codec = av_codec_iterate(&iterate)) {
-        if (codec->type != inlink->type || av_codec_is_encoder(codec))
-            continue;
-
-        id = codec->id;
-        if (avcodec_is_pcm_lossless(id)) {
-            if (!dup) {
-                id = AV_CODEC_ID_RAWAUDIO;
-                dup = 1;
-            } else {
-                continue;
-            }
-        }
-
-        if (ret = ff_add_format(&ffmts, id) < 0)
-            goto out;
-    }
-
+    ffmts = inlink->incfg.codecs ? inlink->incfg.codecs : ff_all_decoders(inlink->type);
     if ((ret = ff_formats_ref(ffmts, &inlink->outcfg.codecs)) < 0)
         goto out;
 
@@ -252,7 +252,7 @@ static int decoder_query_formats(AVFilterContext *ctx)
     return 0;
 
 out:
-    if (ffmts != inlink->incfg.formats && ffmts != inlink->incfg.samplerates)
+    if (ffmts != inlink->incfg.formats && ffmts != inlink->incfg.samplerates && ffmts != inlink->incfg.codecs)
         ff_formats_unref(&ffmts);
     if (ffcls != inlink->incfg.channel_layouts)
         ff_channel_layouts_unref(&ffcls);
