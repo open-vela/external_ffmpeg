@@ -1068,9 +1068,6 @@ static int movie_async_query_formats(AVFilterContext *ctx)
 
             default:
                 list[0] = p->codec_id;
-                if (avcodec_is_pcm_lossless(list[0]))
-                    list[0] = AV_CODEC_ID_RAWAUDIO;
-
                 /* codec id */
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
                     return ret;

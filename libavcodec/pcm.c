@@ -37,6 +37,7 @@
 #include "internal.h"
 #include "mathops.h"
 #include "pcm_tablegen.h"
+#include "decode.h"
 
 static av_cold int pcm_encode_init(AVCodecContext *avctx)
 {
@@ -248,6 +249,26 @@ static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     default:
         return -1;
     }
+
+    *got_packet_ptr = 1;
+    return 0;
+}
+
+static int pcm_encode_frame_direct(AVCodecContext *avctx, AVPacket *avpkt,
+                                   const AVFrame *in, int *got_packet_ptr)
+{
+    int n, sample_size;
+    AVFrame *frame = (AVFrame *)in;
+
+    sample_size = av_get_bits_per_sample(avctx->codec->id) / 8;
+    n           = frame->nb_samples * avctx->ch_layout.nb_channels;
+
+    avpkt->buf         = frame->buf[0];
+    avpkt->data        = avpkt->buf->data;
+    avpkt->size        = sample_size * n;
+    frame->buf[0]      = NULL;
+    frame->data[0]     = NULL;
+    frame->linesize[0] = 0;
 
     *got_packet_ptr = 1;
     return 0;
@@ -572,8 +593,35 @@ static int pcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return buf_size;
 }
 
-#define PCM_ENCODER_0(id_, sample_fmt_, name_, long_name_)
-#define PCM_ENCODER_1(id_, sample_fmt_, name_, long_name_)                  \
+static int pcm_decode_frame_direct(AVCodecContext *avctx, AVFrame *frame,
+                                   int *got_frame_ptr, AVPacket *avpkt)
+{
+    int buf_size = avpkt->size;
+    int channels = avctx->ch_layout.nb_channels;
+    int sample_size, ret;
+
+    sample_size = av_get_bits_per_sample(avctx->codec_id) / 8;
+
+    ret = ff_attach_decode_data(frame);
+    if (ret < 0)
+        return ret;
+
+    frame->nb_samples    = buf_size / channels / sample_size;
+    frame->buf[0]        = avpkt->buf;
+    avpkt->buf           = NULL;
+    avpkt->data          = NULL;
+    avpkt->size          = 0;
+    frame->data[0]       = frame->buf[0]->data;
+    frame->linesize[0]   = buf_size;
+    frame->extended_data = frame->data;
+
+    *got_frame_ptr       = 1;
+
+    return buf_size;
+}
+
+#define PCM_ENCODER_0(id_, sample_fmt_, name_, long_name_, enc_cb_)
+#define PCM_ENCODER_1(id_, sample_fmt_, name_, long_name_, enc_cb_)         \
 const FFCodec ff_ ## name_ ## _encoder = {                                  \
     .p.name       = #name_,                                                 \
     .p.long_name  = NULL_IF_CONFIG_SMALL(long_name_),                       \
@@ -581,21 +629,21 @@ const FFCodec ff_ ## name_ ## _encoder = {                                  \
     .p.id         = AV_CODEC_ID_ ## id_,                                    \
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_VARIABLE_FRAME_SIZE,    \
     .init         = pcm_encode_init,                                        \
-    FF_CODEC_ENCODE_CB(pcm_encode_frame),                                   \
+    FF_CODEC_ENCODE_CB(enc_cb_),                                            \
     .p.sample_fmts = (const enum AVSampleFormat[]){ sample_fmt_,             \
                                                    AV_SAMPLE_FMT_NONE },    \
     .caps_internal = FF_CODEC_CAP_INIT_THREADSAFE,                          \
 }
 
-#define PCM_ENCODER_2(cf, id, sample_fmt, name, long_name)                  \
-    PCM_ENCODER_ ## cf(id, sample_fmt, name, long_name)
-#define PCM_ENCODER_3(cf, id, sample_fmt, name, long_name)                  \
-    PCM_ENCODER_2(cf, id, sample_fmt, name, long_name)
+#define PCM_ENCODER_2(cf, id, sample_fmt, name, long_name, enc_cb)          \
+    PCM_ENCODER_ ## cf(id, sample_fmt, name, long_name, enc_cb)
+#define PCM_ENCODER_3(cf, id, sample_fmt, name, long_name, enc_cb)          \
+    PCM_ENCODER_2(cf, id, sample_fmt, name, long_name, enc_cb)
 #define PCM_ENCODER(id, sample_fmt, name, long_name)                        \
-    PCM_ENCODER_3(CONFIG_ ## id ## _ENCODER, id, sample_fmt, name, long_name)
+    PCM_ENCODER_3(CONFIG_ ## id ## _ENCODER, id, sample_fmt, name, long_name, pcm_encode_frame)
 
-#define PCM_DECODER_0(id, sample_fmt, name, long_name)
-#define PCM_DECODER_1(id_, sample_fmt_, name_, long_name_)                  \
+#define PCM_DECODER_0(id, sample_fmt, name, long_name, dec_cb)
+#define PCM_DECODER_1(id_, sample_fmt_, name_, long_name_, dec_cb_)         \
 const FFCodec ff_ ## name_ ## _decoder = {                                  \
     .p.name         = #name_,                                               \
     .p.long_name    = NULL_IF_CONFIG_SMALL(long_name_),                     \
@@ -603,23 +651,27 @@ const FFCodec ff_ ## name_ ## _decoder = {                                  \
     .p.id           = AV_CODEC_ID_ ## id_,                                  \
     .priv_data_size = sizeof(PCMDecode),                                    \
     .init           = pcm_decode_init,                                      \
-    FF_CODEC_DECODE_CB(pcm_decode_frame),                                    \
+    FF_CODEC_DECODE_CB(dec_cb_),                                            \
     .p.capabilities = AV_CODEC_CAP_DR1,                                     \
     .p.sample_fmts  = (const enum AVSampleFormat[]){ sample_fmt_,           \
                                                      AV_SAMPLE_FMT_NONE },  \
     .caps_internal  = FF_CODEC_CAP_INIT_THREADSAFE,                         \
 }
 
-#define PCM_DECODER_2(cf, id, sample_fmt, name, long_name)                  \
-    PCM_DECODER_ ## cf(id, sample_fmt, name, long_name)
-#define PCM_DECODER_3(cf, id, sample_fmt, name, long_name)                  \
-    PCM_DECODER_2(cf, id, sample_fmt, name, long_name)
+#define PCM_DECODER_2(cf, id, sample_fmt, name, long_name, dec_cb)          \
+    PCM_DECODER_ ## cf(id, sample_fmt, name, long_name, dec_cb)
+#define PCM_DECODER_3(cf, id, sample_fmt, name, long_name, dec_cb)          \
+    PCM_DECODER_2(cf, id, sample_fmt, name, long_name, dec_cb)
 #define PCM_DECODER(id, sample_fmt, name, long_name)                        \
-    PCM_DECODER_3(CONFIG_ ## id ## _DECODER, id, sample_fmt, name, long_name)
+    PCM_DECODER_3(CONFIG_ ## id ## _DECODER, id, sample_fmt, name, long_name, pcm_decode_frame)
 
 #define PCM_CODEC(id, sample_fmt_, name, long_name_)                    \
     PCM_ENCODER(id, sample_fmt_, name, long_name_);                     \
     PCM_DECODER(id, sample_fmt_, name, long_name_)
+
+#define PCM_DIRECT(id, sample_fmt_, name, long_name_)                         \
+    PCM_ENCODER_3(CONFIG_ ## id ## _ENCODER, id, sample_fmt_, name, long_name_, pcm_encode_frame_direct);  \
+    PCM_DECODER_3(CONFIG_ ## id ## _DECODER, id, sample_fmt_, name, long_name_, pcm_decode_frame_direct)
 
 /* Note: Do not forget to add new entries to the Makefile as well. */
 #if CONFIG_PCM_ALAW_DECODER || CONFIG_PCM_ALAW_ENCODER
@@ -627,36 +679,36 @@ PCM_CODEC  (PCM_ALAW,         AV_SAMPLE_FMT_S16, pcm_alaw,         "PCM A-law / 
 #endif
 PCM_DECODER(PCM_F16LE,        AV_SAMPLE_FMT_FLT, pcm_f16le,        "PCM 16.8 floating point little-endian");
 PCM_DECODER(PCM_F24LE,        AV_SAMPLE_FMT_FLT, pcm_f24le,        "PCM 24.0 floating point little-endian");
-PCM_CODEC  (PCM_F32BE,        AV_SAMPLE_FMT_FLT, pcm_f32be,        "PCM 32-bit floating point big-endian");
-PCM_CODEC  (PCM_F32LE,        AV_SAMPLE_FMT_FLT, pcm_f32le,        "PCM 32-bit floating point little-endian");
-PCM_CODEC  (PCM_F64BE,        AV_SAMPLE_FMT_DBL, pcm_f64be,        "PCM 64-bit floating point big-endian");
-PCM_CODEC  (PCM_F64LE,        AV_SAMPLE_FMT_DBL, pcm_f64le,        "PCM 64-bit floating point little-endian");
+PCM_DIRECT (PCM_F32BE,        AV_SAMPLE_FMT_FLT, pcm_f32be,        "PCM 32-bit floating point big-endian");
+PCM_DIRECT (PCM_F32LE,        AV_SAMPLE_FMT_FLT, pcm_f32le,        "PCM 32-bit floating point little-endian");
+PCM_DIRECT (PCM_F64BE,        AV_SAMPLE_FMT_DBL, pcm_f64be,        "PCM 64-bit floating point big-endian");
+PCM_DIRECT (PCM_F64LE,        AV_SAMPLE_FMT_DBL, pcm_f64le,        "PCM 64-bit floating point little-endian");
 PCM_DECODER(PCM_LXF,          AV_SAMPLE_FMT_S32P,pcm_lxf,          "PCM signed 20-bit little-endian planar");
 #if CONFIG_PCM_MULAW_DECODER || CONFIG_PCM_MULAW_ENCODER
 PCM_CODEC  (PCM_MULAW,        AV_SAMPLE_FMT_S16, pcm_mulaw,        "PCM mu-law / G.711 mu-law");
 #endif
 PCM_CODEC  (PCM_S8,           AV_SAMPLE_FMT_U8,  pcm_s8,           "PCM signed 8-bit");
 PCM_CODEC  (PCM_S8_PLANAR,    AV_SAMPLE_FMT_U8P, pcm_s8_planar,    "PCM signed 8-bit planar");
-PCM_CODEC  (PCM_S16BE,        AV_SAMPLE_FMT_S16, pcm_s16be,        "PCM signed 16-bit big-endian");
+PCM_DIRECT (PCM_S16BE,        AV_SAMPLE_FMT_S16, pcm_s16be,        "PCM signed 16-bit big-endian");
 PCM_CODEC  (PCM_S16BE_PLANAR, AV_SAMPLE_FMT_S16P,pcm_s16be_planar, "PCM signed 16-bit big-endian planar");
-PCM_CODEC  (PCM_S16LE,        AV_SAMPLE_FMT_S16, pcm_s16le,        "PCM signed 16-bit little-endian");
+PCM_DIRECT (PCM_S16LE,        AV_SAMPLE_FMT_S16, pcm_s16le,        "PCM signed 16-bit little-endian");
 PCM_CODEC  (PCM_S16LE_PLANAR, AV_SAMPLE_FMT_S16P,pcm_s16le_planar, "PCM signed 16-bit little-endian planar");
 PCM_CODEC  (PCM_S24BE,        AV_SAMPLE_FMT_S32, pcm_s24be,        "PCM signed 24-bit big-endian");
 PCM_CODEC  (PCM_S24DAUD,      AV_SAMPLE_FMT_S16, pcm_s24daud,      "PCM D-Cinema audio signed 24-bit");
 PCM_CODEC  (PCM_S24LE,        AV_SAMPLE_FMT_S32, pcm_s24le,        "PCM signed 24-bit little-endian");
 PCM_CODEC  (PCM_S24LE_PLANAR, AV_SAMPLE_FMT_S32P,pcm_s24le_planar, "PCM signed 24-bit little-endian planar");
-PCM_CODEC  (PCM_S32BE,        AV_SAMPLE_FMT_S32, pcm_s32be,        "PCM signed 32-bit big-endian");
-PCM_CODEC  (PCM_S32LE,        AV_SAMPLE_FMT_S32, pcm_s32le,        "PCM signed 32-bit little-endian");
+PCM_DIRECT (PCM_S32BE,        AV_SAMPLE_FMT_S32, pcm_s32be,        "PCM signed 32-bit big-endian");
+PCM_DIRECT (PCM_S32LE,        AV_SAMPLE_FMT_S32, pcm_s32le,        "PCM signed 32-bit little-endian");
 PCM_CODEC  (PCM_S32LE_PLANAR, AV_SAMPLE_FMT_S32P,pcm_s32le_planar, "PCM signed 32-bit little-endian planar");
-PCM_CODEC  (PCM_U8,           AV_SAMPLE_FMT_U8,  pcm_u8,           "PCM unsigned 8-bit");
+PCM_DIRECT (PCM_U8,           AV_SAMPLE_FMT_U8,  pcm_u8,           "PCM unsigned 8-bit");
 PCM_CODEC  (PCM_U16BE,        AV_SAMPLE_FMT_S16, pcm_u16be,        "PCM unsigned 16-bit big-endian");
 PCM_CODEC  (PCM_U16LE,        AV_SAMPLE_FMT_S16, pcm_u16le,        "PCM unsigned 16-bit little-endian");
 PCM_CODEC  (PCM_U24BE,        AV_SAMPLE_FMT_S32, pcm_u24be,        "PCM unsigned 24-bit big-endian");
 PCM_CODEC  (PCM_U24LE,        AV_SAMPLE_FMT_S32, pcm_u24le,        "PCM unsigned 24-bit little-endian");
 PCM_CODEC  (PCM_U32BE,        AV_SAMPLE_FMT_S32, pcm_u32be,        "PCM unsigned 32-bit big-endian");
 PCM_CODEC  (PCM_U32LE,        AV_SAMPLE_FMT_S32, pcm_u32le,        "PCM unsigned 32-bit little-endian");
-PCM_CODEC  (PCM_S64BE,        AV_SAMPLE_FMT_S64, pcm_s64be,        "PCM signed 64-bit big-endian");
-PCM_CODEC  (PCM_S64LE,        AV_SAMPLE_FMT_S64, pcm_s64le,        "PCM signed 64-bit little-endian");
+PCM_DIRECT (PCM_S64BE,        AV_SAMPLE_FMT_S64, pcm_s64be,        "PCM signed 64-bit big-endian");
+PCM_DIRECT (PCM_S64LE,        AV_SAMPLE_FMT_S64, pcm_s64le,        "PCM signed 64-bit little-endian");
 #if CONFIG_PCM_VIDC_DECODER || CONFIG_PCM_VIDC_ENCODER
 PCM_CODEC  (PCM_VIDC,         AV_SAMPLE_FMT_S16, pcm_vidc,         "PCM Archimedes VIDC");
 #endif
