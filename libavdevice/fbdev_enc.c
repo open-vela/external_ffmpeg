@@ -227,7 +227,10 @@ static av_cold int fbdev_write_trailer(AVFormatContext *h)
 {
     FBDevContext *fbdev = h->priv_data;
 
-    munmap(fbdev->data, fbdev->fixinfo.smem_len);
+    if (fbdev->data && fbdev->data != MAP_FAILED) {
+        munmap(fbdev->data, fbdev->fixinfo.smem_len);
+        fbdev->data = NULL;
+    }
     SAFE_CLOSE(fbdev->fd);
 
     return 0;
