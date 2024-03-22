@@ -31,6 +31,8 @@
 #include "fbdev_common.h"
 #include "avdevice.h"
 
+#define SAFE_CLOSE(fd) do { if (fd >= 0) { close(fd); fd = -1; } } while (0)
+
 typedef struct {
     AVClass *class;                   ///< class for private options
     int xoffset;                      ///< x coordinate of top left corner
@@ -113,7 +115,7 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     return 0;
 
 fail:
-    close(fbdev->fd);
+    SAFE_CLOSE(fbdev->fd);
     return ret;
 }
 
@@ -226,7 +228,7 @@ static av_cold int fbdev_write_trailer(AVFormatContext *h)
     FBDevContext *fbdev = h->priv_data;
 
     munmap(fbdev->data, fbdev->fixinfo.smem_len);
-    close(fbdev->fd);
+    SAFE_CLOSE(fbdev->fd);
 
     return 0;
 }
@@ -253,11 +255,11 @@ static int fbdev_capbility_query_ranges(struct AVOptionRanges **ranges_, void *o
         return AVERROR(errno);
 
     if (ioctl(fd, FBIOGET_VSCREENINFO, &varinfo) < 0) {
-        close(fd);
+        SAFE_CLOSE(fd);
         return AVERROR(errno);
     }
 
-    close(fd);
+    SAFE_CLOSE(fd);
 
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
     if (!ranges)
