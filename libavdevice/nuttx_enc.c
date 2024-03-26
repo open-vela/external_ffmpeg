@@ -187,6 +187,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         case AV_APP_TO_DEV_TOGGLE_MUTE:
             return ff_nuttx_set_mute(s1, priv, !priv->mute);
         case AV_APP_TO_DEV_GET_VOLUME:
+            snprintf(data, data_size, "vol:%f", priv->volume);
             return ff_nuttx_notify_changed(s1, priv, true);
         case AV_APP_TO_DEV_GET_MUTE:
             return ff_nuttx_notify_changed(s1, priv, false);
