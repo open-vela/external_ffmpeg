@@ -44,6 +44,9 @@ typedef struct AudioFadeContext {
     int crossfade_is_over;
     int64_t pts;
 
+    int fq_max;
+    FFFrameQueue fq;
+
     void (*fade_samples)(uint8_t **dst, uint8_t * const *src,
                          int nb_samples, int channels, int direction,
                          int64_t start, int64_t range, int curve);
@@ -54,6 +57,10 @@ typedef struct AudioFadeContext {
 } AudioFadeContext;
 
 enum CurveType { NONE = -1, TRI, QSIN, ESIN, HSIN, LOG, IPAR, QUA, CUB, SQU, CBR, PAR, EXP, IQSIN, IHSIN, DESE, DESI, LOSI, SINC, ISINC, NB_CURVES };
+
+#define AFADE_DIR_NONE -1
+#define AFADE_DIR_IN 0
+#define AFADE_DIR_OUT 1
 
 #define OFFSET(x) offsetof(AudioFadeContext, x)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
@@ -216,8 +223,8 @@ static int config_output(AVFilterLink *outlink)
 #if CONFIG_AFADE_FILTER
 
 static const AVOption afade_options[] = {
-    { "type",         "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = 0    }, 0, 1, TFLAGS, "type" },
-    { "t",            "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = 0    }, 0, 1, TFLAGS, "type" },
+    { "type",         "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = AFADE_DIR_NONE}, AFADE_DIR_NONE, 1, TFLAGS, "type" },
+    { "t",            "set the fade direction",                      OFFSET(type),         AV_OPT_TYPE_INT,    {.i64 = AFADE_DIR_NONE}, AFADE_DIR_NONE, 1, TFLAGS, "type" },
     { "in",           "fade-in",                                     0,                    AV_OPT_TYPE_CONST,  {.i64 = 0    }, 0, 0, TFLAGS, "type" },
     { "out",          "fade-out",                                    0,                    AV_OPT_TYPE_CONST,  {.i64 = 1    }, 0, 0, TFLAGS, "type" },
     { "start_sample", "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,  {.i64 = 0    }, -1, INT64_MAX, TFLAGS },
@@ -228,6 +235,7 @@ static const AVOption afade_options[] = {
     { "st",           "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
     { "duration",     "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
     { "d",            "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
+    { "f",            "set fade fifo max number",                    OFFSET(fq_max),       AV_OPT_TYPE_INT,    {.i64 = 2 },    1, INT64_MAX, TFLAGS },
     { "curve",        "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,    {.i64 = TRI  }, NONE, NB_CURVES - 1, TFLAGS, "curve" },
     { "c",            "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,    {.i64 = TRI  }, NONE, NB_CURVES - 1, TFLAGS, "curve" },
     { "nofade",       "no fade; keep audio as-is",                   0,                    AV_OPT_TYPE_CONST,  {.i64 = NONE }, 0, 0, TFLAGS, "curve" },
@@ -262,59 +270,210 @@ static av_cold int init(AVFilterContext *ctx)
     if (INT64_MAX - s->nb_samples < s->start_sample)
         return AVERROR(EINVAL);
 
+    ff_framequeue_init(&s->fq, NULL);
+
     return 0;
 }
 
-static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
+static av_cold void uninit(AVFilterContext *ctx)
 {
-    AudioFadeContext *s     = inlink->dst->priv;
-    AVFilterLink *outlink   = inlink->dst->outputs[0];
-    int nb_samples          = buf->nb_samples;
-    AVFrame *out_buf;
-    int64_t cur_sample = av_rescale_q(buf->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
+    AudioFadeContext *priv = ctx->priv;
 
-    if ((!s->type && (s->start_sample + s->nb_samples < cur_sample)) ||
-        ( s->type && (cur_sample + nb_samples < s->start_sample)))
-        return ff_filter_frame(outlink, buf);
+    ff_framequeue_free(&priv->fq);
+}
 
-    if (av_frame_is_writable(buf)) {
-        out_buf = buf;
-    } else {
-        out_buf = ff_get_audio_buffer(outlink, nb_samples);
-        if (!out_buf)
-            return AVERROR(ENOMEM);
-        av_frame_copy_props(out_buf, buf);
-    }
+static void fade_clear_queue(AVFilterContext *ctx, int drain)
+{
+    AVFilterLink *outlink = ctx->outputs[0];
+    AudioFadeContext *priv = ctx->priv;
 
-    if ((!s->type && (cur_sample + nb_samples < s->start_sample)) ||
-        ( s->type && (s->start_sample + s->nb_samples < cur_sample))) {
-        av_samples_set_silence(out_buf->extended_data, 0, nb_samples,
-                               out_buf->ch_layout.nb_channels, out_buf->format);
-    } else {
-        int64_t start;
-
-        if (!s->type)
-            start = cur_sample - s->start_sample;
+    while (ff_framequeue_queued_frames(&priv->fq)) {
+        AVFrame *frame = ff_framequeue_take(&priv->fq);
+        if (drain)
+            ff_filter_frame(outlink, frame);
         else
-            start = s->start_sample + s->nb_samples - cur_sample;
+            av_frame_free(&frame);
+    }
+}
 
-        s->fade_samples(out_buf->extended_data, buf->extended_data,
-                        nb_samples, buf->ch_layout.nb_channels,
-                        s->type ? -1 : 1, start,
-                        s->nb_samples, s->curve);
+static int fade_frame(AVFilterContext *ctx, int drain)
+{
+    AVFilterLink *outlink = ctx->outputs[0];
+    AVFilterLink *inlink = ctx->inputs[0];
+    AudioFadeContext *priv = ctx->priv;
+    AVFrame *out_frame;
+    AVFrame *in_frame;
+    int64_t nb_samples;
+    int64_t cur_sample;
+    int64_t start;
+    int ret;
+
+    nb_samples = ff_framequeue_queued_samples(&priv->fq) / (drain ? 1 : priv->fq_max);
+
+    do {
+        in_frame = ff_framequeue_take(&priv->fq);
+        cur_sample = av_rescale_q(in_frame->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
+
+        if (!priv->start_sample)
+            priv->start_sample = cur_sample;
+
+        if (av_frame_is_writable(in_frame))
+            out_frame = in_frame;
+        else {
+            out_frame = ff_get_audio_buffer(outlink, in_frame->nb_samples);
+            if (!out_frame)
+                return AVERROR(ENOMEM);
+
+            av_frame_copy_props(out_frame, in_frame);
+        }
+
+        if (priv->type == AFADE_DIR_IN)
+            start = cur_sample - priv->start_sample;
+        else
+            start = priv->start_sample + nb_samples - cur_sample;
+
+        /* apply the fade in/out effect to the obtained frame */
+        priv->fade_samples(out_frame->extended_data, in_frame->extended_data,
+                           in_frame->nb_samples, in_frame->ch_layout.nb_channels,
+                           priv->type ? -1 : 1, start, nb_samples, priv->curve);
+
+        if (priv->start_sample &&
+            (cur_sample + in_frame->nb_samples >= priv->start_sample + nb_samples)) {
+            priv->start_sample = 0;
+            nb_samples = 0;
+        }
+
+        if (in_frame != out_frame)
+            av_frame_free(&in_frame);
+
+        ret = ff_filter_frame(outlink, out_frame);
+        if (ret < 0)
+            break;
+
+    } while(drain && ff_framequeue_queued_frames(&priv->fq));
+
+    return ret;
+}
+
+static int activate(AVFilterContext *ctx)
+{
+    AVFilterLink *outlink = ctx->outputs[0];
+    AVFilterLink *inlink = ctx->inputs[0];
+    AudioFadeContext *priv = ctx->priv;
+    int ret = 0, status;
+    AVFrame *frame;
+    int64_t pts;
+  
+    FF_FILTER_FORWARD_STATUS_BACK_ALL(outlink, ctx);
+  
+    ff_inlink_acknowledge_status(inlink, &status, &pts);
+    if (status == AVERROR_EOF) {
+        av_log(ctx, AV_LOG_INFO, "[%s][%d] fade_clear_queue fq_nbs:%d\n", __func__, __LINE__,
+               ff_framequeue_queued_frames(&priv->fq));
+
+        /* when EOF is received during the stop/reset/close operation.
+           the fade in/out has been triggered by src. we should
+           clear frame in fq. */
+        fade_clear_queue(ctx, 0);
+
+        priv->type = AFADE_DIR_NONE;
+        ff_outlink_set_status(outlink, status, pts);
+        goto out;
     }
 
-    if (buf != out_buf)
-        av_frame_free(&buf);
+    if (ff_inlink_check_available_frame(inlink)) {
+        ret = ff_inlink_consume_frame(inlink, &frame);
+        if (ret < 0)
+            goto out;
 
-    return ff_filter_frame(outlink, out_buf);
+        ret = ff_framequeue_add(&priv->fq, frame);
+        if (ret < 0) {
+            av_frame_free(&frame);
+            goto out;
+        }
+    }
+
+    if (ff_framequeue_queued_frames(&priv->fq) <= priv->fq_max) {
+        ff_inlink_request_frame(inlink);
+        goto out;
+    }
+
+    if (priv->type == AFADE_DIR_IN) {
+        ret = fade_frame(ctx, 1);
+        priv->type = AFADE_DIR_NONE;
+    } else {
+        frame = ff_framequeue_take(&priv->fq);
+        if (priv->type == AFADE_DIR_OUT) {
+            av_log(ctx, AV_LOG_INFO, "[%s][%d] mute frame\n", __func__, __LINE__);
+            av_samples_set_silence(frame->extended_data, 0, frame->nb_samples,
+                                   frame->ch_layout.nb_channels, frame->format);
+        }
+
+        ret = ff_filter_frame(outlink, frame);
+        if (ret < 0)
+            goto out;
+    }
+
+    if (ff_outlink_frame_wanted(outlink))
+        ff_inlink_request_frame(inlink);
+
+out:
+    return ret;
+}
+
+static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
+                                   char *res, int res_len, int flags)
+{
+    AudioFadeContext *priv = ctx->priv;
+    int ret = AVERROR(ENOSYS);
+
+    if (!strcmp(cmd, "dump"))
+        ret = snprintf(res, res_len, "fq_nbs:%d", ff_framequeue_queued_frames(&priv->fq));
+    else if (!strcmp(cmd, "fade")) {
+        int drain;
+        ret = sscanf(args, "%d,%d", &priv->type, &drain);
+        if (ret != 2) {
+            av_log(ctx, AV_LOG_ERROR, "[%s][%d] fade arg Invalid\n", __func__, __LINE__);
+            return -EINVAL;
+        }
+
+        if (ff_framequeue_queued_frames(&priv->fq)) {
+            av_log(ctx, AV_LOG_INFO, "[%s][%d] fq_nbs:%d", __func__, __LINE__,
+                ff_framequeue_queued_frames(&priv->fq));
+            if (priv->type == AFADE_DIR_NONE)
+                fade_clear_queue(ctx, 1);
+            else {
+                ret = fade_frame(ctx, drain);
+                if (priv->type == AFADE_DIR_IN)
+                    priv->type = AFADE_DIR_NONE;
+            }
+        }
+    } else
+        ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+
+    return ret;
+}
+
+static int forward_command(AVFilterContext *ctx,
+                                   int pad_idx, const char *target, const char *cmd,
+                                   const char *arg, char *res, int res_len, int flags)
+{
+    AudioFadeContext *priv = ctx->priv;
+
+    if (!strcmp(cmd, "flush")) {
+        fade_clear_queue(ctx, 0);
+
+        if (arg && !strcmp(arg, "seek"))
+            priv->type = AFADE_DIR_IN;
+    }
+
+    return avfilter_forward_command(ctx, pad_idx, target, cmd, arg, res, res_len, flags);
 }
 
 static const AVFilterPad avfilter_af_afade_inputs[] = {
     {
         .name         = "default",
         .type         = AVMEDIA_TYPE_AUDIO,
-        .filter_frame = filter_frame,
     },
 };
 
@@ -331,10 +490,14 @@ const AVFilter ff_af_afade = {
     .description     = NULL_IF_CONFIG_SMALL("Fade in/out input audio."),
     .priv_size       = sizeof(AudioFadeContext),
     .init            = init,
+    .uninit          = uninit,
     FILTER_INPUTS(avfilter_af_afade_inputs),
     FILTER_OUTPUTS(avfilter_af_afade_outputs),
     FILTER_SAMPLEFMTS_ARRAY(sample_fmts),
     .priv_class      = &afade_class,
+    .activate        = activate,
+    .process_command = process_command,
+    .forward_command = forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
 
@@ -607,6 +770,7 @@ const AVFilter ff_af_acrossfade = {
     FILTER_INPUTS(avfilter_af_acrossfade_inputs),
     FILTER_OUTPUTS(avfilter_af_acrossfade_outputs),
     FILTER_SAMPLEFMTS_ARRAY(sample_fmts),
+    .process_command = process_command,
 };
 
 #endif /* CONFIG_ACROSSFADE_FILTER */
