@@ -1148,14 +1148,47 @@ static int movie_async_activate(AVFilterContext *ctx)
     return ret;
 }
 
+static int movie_async_compute_src_latency(AVFilterContext *ctx, int64_t *latency)
+{
+    MovieAsyncContext *movie = ctx->priv;
+    int64_t src_latency = 0;
+    int i, nb_frames, pad;
+    AVFrame *frame;
+    AVPacket *pkt;
+
+    for (pad = 0; pad < ctx->nb_outputs; pad++) {
+        if (movie->streams[pad].type == AVMEDIA_TYPE_AUDIO)
+            break;
+    }
+
+    if (pad == ctx->nb_outputs)
+        return AVERROR(EINVAL);
+
+    pthread_mutex_lock(&movie->mutex);
+    nb_frames = ff_framequeue_queued_frames(&movie->streams[pad].dat_queue);
+    for (i = 0; i < nb_frames; i++) {
+        frame = ff_framequeue_peek(&movie->streams[pad].dat_queue, i);
+        unwrap_frame(frame, &pkt, NULL);
+        src_latency += av_rescale_q(pkt->duration, movie->streams[pad].time_base, AV_TIME_BASE_Q);
+    }
+    pthread_mutex_unlock(&movie->mutex);
+
+    *latency = src_latency;
+    return pad;
+}
+
 static int movie_async_get_position(AVFilterContext *ctx, char *res, int res_len)
 {
     MovieAsyncContext *movie = ctx->priv;
+    int64_t latency;
 
     if (!res || !res_len)
         return AVERROR(EINVAL);
 
-    snprintf(res, res_len, "%u", movie->current_ms);
+    if (movie_async_compute_src_latency(ctx, &latency) >= 0)
+        latency = av_rescale_q(latency, AV_TIME_BASE_Q, av_make_q(1, 1000));
+
+    snprintf(res, res_len, "%u", movie->current_ms - (unsigned)latency);
     return 0;
 }
 
@@ -1175,21 +1208,15 @@ static int movie_async_get_latency(AVFilterContext *ctx, char *res, int res_len)
     MovieAsyncContext *movie = ctx->priv;
     int64_t timestamp = 0, sink_latency = 0, src_latency = 0;
     int64_t *data[2] = {&timestamp, &sink_latency};
-    int ret, i, nb_frames, pad;
-    AVPacket *pkt;
-    AVFrame *frame;
     AVFilterContext* sink_filter;
+    int ret, pad;
 
     if (!res || !res_len)
         return AVERROR(EINVAL);
 
-    for (pad = 0; pad < ctx->nb_outputs; pad++) {
-        if (movie->streams[pad].type == AVMEDIA_TYPE_AUDIO)
-            break;
-    }
-
-    if (pad == ctx->nb_outputs)
-        return AVERROR(EINVAL);
+    pad = movie_async_compute_src_latency(ctx, &src_latency);
+    if (pad < 0)
+        return pad;
 
     if (ff_outlink_get_status(ctx->outputs[pad]))
         return AVERROR(EINVAL);
@@ -1206,14 +1233,8 @@ static int movie_async_get_latency(AVFilterContext *ctx, char *res, int res_len)
     /* rescale adevsink frames as decoding sample_rate */
     sink_latency = av_rescale_q(sink_latency, AV_TIME_BASE_Q, av_make_q(1, ctx->outputs[pad]->sample_rate));
 
-    pthread_mutex_lock(&movie->mutex);
-    nb_frames = ff_framequeue_queued_frames(&movie->streams[pad].dat_queue);
-    for (i = 0; i < nb_frames; i++) {
-        frame = ff_framequeue_peek(&movie->streams[pad].dat_queue, i);
-        unwrap_frame(frame, &pkt, NULL);
-        src_latency += av_rescale_q(pkt->duration, movie->streams[pad].time_base, av_make_q(1, ctx->outputs[pad]->sample_rate));
-    }
-    pthread_mutex_unlock(&movie->mutex);
+    /* rescale src filter frames as decoding sample_rate */
+    src_latency = av_rescale_q(src_latency, AV_TIME_BASE_Q, av_make_q(1, ctx->outputs[pad]->sample_rate));
 
     snprintf(res, res_len, "%lld", sink_latency > src_latency ? sink_latency : src_latency);
     return 0;
