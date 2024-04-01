@@ -606,6 +606,10 @@ static int pcm_decode_frame_direct(AVCodecContext *avctx, AVFrame *frame,
     if (ret < 0)
         return ret;
 
+    ret = ff_decode_frame_props(avctx, frame);
+    if (ret < 0)
+        return ret;
+
     frame->nb_samples    = buf_size / channels / sample_size;
     frame->buf[0]        = avpkt->buf;
     avpkt->buf           = NULL;
