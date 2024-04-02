@@ -1357,6 +1357,11 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         return movie_async_get_duration(ctx, res, res_len);
     } else if (!strcmp(cmd, "get_latency")) {
         return movie_async_get_latency(ctx, res, res_len);
+    } else if (!strcmp(cmd, "volume") || !strcmp(cmd, "get_volume")) {
+        for (int i = 0; i < ctx->nb_outputs; i++)
+            avfilter_forward_command(ctx, i, "all", cmd, args, res, res_len, AVFILTER_CMD_FLAG_ONE);
+
+        return 0;
     } else if (!strcmp(cmd, "dump")) {
         return movie_async_dump(ctx, res, res_len);
     } else if (!res && !res_len) {
