@@ -486,6 +486,10 @@ static int adevsink_process_command(AVFilterContext *ctx,
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_GET_VOLUME,
                                     res, res_len);
+    } else if (!strcmp(cmd, "get_position")) {
+        return avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                    AV_APP_TO_DEV_GET_POSITION,
+                                    res, res_len);
     } else if (!strcmp(cmd, "get_pollfd")) {
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
