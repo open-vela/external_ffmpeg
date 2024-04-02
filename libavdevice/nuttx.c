@@ -168,8 +168,10 @@ static int ff_nuttx_enqueue_buffer(NuttxPriv *priv, struct ap_buffer_s *buffer, 
         memset(buffer->samp + buffer->curbyte, 0,
                buffer->nmaxbytes - buffer->curbyte);
 
-    if (eos)
+    if (eos) {
         buffer->flags |= AUDIO_APB_FINAL;
+        av_log(NULL, AV_LOG_INFO, "[%s][%s] apb final.\n", __func__, priv->devname);
+    }
 
     buffer->nbytes  = buffer->curbyte;
     buffer->curbyte = 0;
