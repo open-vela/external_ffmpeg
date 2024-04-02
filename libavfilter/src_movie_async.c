@@ -1427,6 +1427,13 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         snprintf(res, res_len, "%d", movie->state == AVMOVIE_ASYNC_STATE_STARTED);
         return 0;
     } else if (!strcmp(cmd, "get_position")) {
+        memset(res, 0, res_len);
+        for (int i = 0; i < ctx->nb_outputs; i++) {
+            int ret = avfilter_forward_command(ctx, i, NULL, "get_position", NULL, res, res_len, 0);
+            if (ret > 0)
+                return ret;
+        }
+
         return movie_async_get_position(ctx, res, res_len);
     } else if (!strcmp(cmd, "get_duration")) {
         return movie_async_get_duration(ctx, res, res_len);

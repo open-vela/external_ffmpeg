@@ -191,6 +191,13 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
             return ff_nuttx_notify_changed(s1, priv, true);
         case AV_APP_TO_DEV_GET_MUTE:
             return ff_nuttx_notify_changed(s1, priv, false);
+        case AV_APP_TO_DEV_GET_POSITION: {
+            long ret = ff_nuttx_get_position(priv);
+            if (ret < 0)
+                return AVERROR(ret);
+            snprintf(data, data_size, "%ld", ret);
+            return 0;
+        }
         case AV_APP_TO_DEV_GET_POLLFD: {
             struct pollfd *poll = data;
 

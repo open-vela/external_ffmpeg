@@ -987,3 +987,15 @@ int ff_nuttx_notify_changed(struct AVFormatContext *s1, NuttxPriv *priv, bool vo
         return avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_MUTE_STATE_CHANGED,
                                                    &priv->mute, sizeof(priv->mute));
 }
+
+long ff_nuttx_get_position(NuttxPriv *priv)
+{
+    long pos;
+    int ret;
+
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_GETPOSITION, &pos);
+    if (ret < 0)
+        return ret;
+
+    return pos;
+}

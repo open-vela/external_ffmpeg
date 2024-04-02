@@ -94,5 +94,6 @@ long ff_nuttx_get_latency(NuttxPriv *priv);
 int ff_nuttx_pause(NuttxPriv *priv);
 int ff_nuttx_resume(NuttxPriv *priv);
 int ff_nuttx_flush(NuttxPriv *priv);
+long ff_nuttx_get_position(NuttxPriv *priv);
 
 #endif /* AVDEVICE_NUTTX_H */

@@ -262,6 +262,11 @@ enum AVAppToDevMessageType {
      */
 
     AV_APP_TO_DEV_FLUSH = MKBETAG('F', 'L', 'S', 'H'),
+
+    /**
+     * Get position
+    */
+    AV_APP_TO_DEV_GET_POSITION = MKBETAG('G', 'P', 'O', 'S'),
 };
 
 /**
