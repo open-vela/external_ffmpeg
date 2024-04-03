@@ -408,7 +408,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             set_volume(ctx);
             vol->voluming = true;
         }
-    } else if (!strcmp(cmd, "dump")) {
+    } else if (!strcmp(cmd, "dump") || !strcmp(cmd, "get_volume")) {
         ret = snprintf(res, res_len, "vol:%f", vol->volume);
     }
 
