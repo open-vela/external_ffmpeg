@@ -190,8 +190,7 @@ int ff_get_wav_header(AVFormatContext *s, AVIOContext *pb,
         par->bits_per_coded_sample = par->bit_rate / par->sample_rate;
 
     av_channel_layout_uninit(&par->ch_layout);
-    par->ch_layout.order       = AV_CHANNEL_ORDER_UNSPEC;
-    par->ch_layout.nb_channels = channels;
+    av_channel_layout_default(&par->ch_layout, channels);
 
     return 0;
 }
