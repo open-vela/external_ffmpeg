@@ -47,6 +47,12 @@
 #define AVMOVIE_ASYNC_CMD_QUEUE_IDX           (1 << 0)
 #define AVMOVIE_ASYNC_DATA_QUEUE_IDX          (1 << 1)
 
+enum MovieFadeType {
+    AVMOVIE_ASYNC_FADE_NONE = -1,
+    AVMOVIE_ASYNC_FADE_IN,
+    AVMOVIE_ASYNC_FADE_OUT,
+};
+
 typedef struct MovieCmd {
     SIMPLEQ_ENTRY(MovieCmd) entry;
     int                     cmd;
@@ -748,6 +754,23 @@ static int movie_async_send_vsyncmode(AVFilterContext *ctx, int audio_alive)
     return 0;
 }
 
+static int movie_async_do_fade(AVFilterContext *ctx, int type, int drain)
+{
+    AVFilterContext *fade;
+    char fade_arg[32];
+
+    fade = avfilter_find_on_link(ctx, "afade", NULL, true, NULL);
+    if (!fade) {
+        av_log(ctx, AV_LOG_ERROR, "can't find afade filter\n");
+        return AVERROR(EINVAL);
+    }
+
+    av_log(ctx, AV_LOG_INFO, "set fade direction %d to %s filter.\n", type, fade->name);
+    snprintf(fade_arg, sizeof(fade_arg), "%d,%d", type, drain);
+
+    return avfilter_process_command(fade, "fade", fade_arg, NULL, 0, 0);
+}
+
 static void movie_async_proc_event(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -783,8 +806,11 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                 break;
 
             case AVMOVIE_ASYNC_EVENT_SEEKED:
-                for (i = 0; i < ctx->nb_outputs; i++)
-                    avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
+                for (i = 0; i < ctx->nb_outputs; i++) {
+                    if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+                        movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
+                    avfilter_forward_command(ctx, i, NULL, "flush", "seek", NULL, 0, 0);
+                }
                 break;
 
             case AVMOVIE_ASYNC_EVENT_STOPPED:
@@ -1427,21 +1453,35 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "start")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_PAUSED)
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_IN, 1);
+
         av_log(ctx, AV_LOG_INFO, "%s filter %s start.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     } else if (!strcmp(cmd, "pause")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 0);
 
         av_log(ctx, AV_LOG_INFO, "%s filter %s pause.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PAUSE, NULL, 0);
     } else if (!strcmp(cmd, "seek")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SEEK, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "stop")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
+
         av_log(ctx, AV_LOG_INFO, "%s filter %s stop.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
     } else if (!strcmp(cmd, "reset")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
+
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_RESET, NULL, 0);
     } else if (!strcmp(cmd, "close")) {
+        if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
+
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
@@ -1507,8 +1547,12 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
                 break;
         }
 
-        if (i == ctx->nb_outputs)
+        if (i == ctx->nb_outputs) {
+
+            /* we should drain fade cache when player completed */
+            movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_NONE, 1);
             return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_COMPLETED, NULL, 0);
+        }
 
         if (movie->streams[pad_idx].type == AVMEDIA_TYPE_AUDIO)
             return movie_async_send_vsyncmode(ctx, false);
