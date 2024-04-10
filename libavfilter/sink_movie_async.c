@@ -245,8 +245,13 @@ static int moviesink_clear_dat(AVFilterContext *ctx)
 
 static int moviesink_send_empty_frame(AVFilterContext *ctx)
 {
+    MovieSinkPriv *priv = ctx->priv;
     AVFrame *frame;
-    int i, ret;
+    int i, ret = AVERROR(EPERM);
+
+    if (priv->state != AVMOVIE_ASYNC_STATE_STARTED &&
+        priv->state != AVMOVIE_ASYNC_STATE_PAUSED)
+        return ret;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         frame = av_frame_alloc();
@@ -260,7 +265,7 @@ static int moviesink_send_empty_frame(AVFilterContext *ctx)
         }
     }
 
-    return 0;
+    return ret;
 }
 
 static void moviesink_close_muxer(AVFilterContext *ctx)
@@ -554,16 +559,13 @@ static void moviesink_stop(AVFilterContext *ctx)
     if (priv->state == AVMOVIE_ASYNC_STATE_STOPPED)
         return;
 
-    if (priv->state == AVMOVIE_ASYNC_STATE_PREPARED ||
-        priv->state == AVMOVIE_ASYNC_STATE_COMPLETED)
-        goto close_muxer;
-
     ret = moviesink_send_empty_frame(ctx);
+    if (ret < 0)
+        av_log(ctx, AV_LOG_INFO, "moviesink_send_empty_frame ret %d, current state:%d", ret, priv->state);
     while (ret == 0) {
         ret = moviesink_proc_dat(ctx);
     }
 
-close_muxer:
     moviesink_clean(ctx);
 }
 
@@ -651,6 +653,9 @@ static int moviesink_reconfig(AVFilterContext *ctx)
     int64_t pts;
     int i, ret;
 
+    if (priv->current_ms)
+        return 0;
+
     for (i = 0; i < ctx->nb_inputs; i++) {
         link = ctx->inputs[i];
 
@@ -689,8 +694,10 @@ static int moviesink_activate(AVFilterContext *ctx)
 
         link = ctx->inputs[i];
         ff_inlink_acknowledge_status(link, &ret, &pts);
-        if (ret < 0)
+        if (ret < 0) {
+            moviesink_send_empty_frame(ctx);
             continue;
+        }
 
         ret = ff_inlink_consume_frame(link, &frame);
         if (ret > 0) {

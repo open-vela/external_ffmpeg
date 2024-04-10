@@ -43,6 +43,7 @@ typedef struct NuttxPriv {
     bool            running;
     bool            draining;
     bool            underflow;
+    bool            ioerr;
 
     char            devname[32];  ///< device name
     char            mqname[32];   ///< message queue name

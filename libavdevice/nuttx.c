@@ -717,6 +717,9 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow\n", __func__, priv->devname);
             ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
             priv->underflow = true;
+        } else if (msg.msg_id == AUDIO_MSG_IOERR) {
+            av_log(priv, AV_LOG_ERROR, "[%s][%s]io error occur\n", __func__, priv->devname);
+            priv->ioerr = true;
         }
 
         nonblock = true;
@@ -830,6 +833,11 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
     struct ap_buffer_s *buffer;
     int left = size;
     int ret = 0;
+
+    if (priv->ioerr) {
+        priv->ioerr = false;
+        return AVERROR_EOF;
+    }
 
     while (left > 0) {
         int len;
