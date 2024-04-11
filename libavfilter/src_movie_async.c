@@ -770,7 +770,7 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
     if (ret != AVERROR_EOF) {
         av_log(ctx, AV_LOG_ERROR, "Failed read frame ret,%d,%s.\n", ret, av_err2str(ret));
         movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
-        return true;
+        return false;
     }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
