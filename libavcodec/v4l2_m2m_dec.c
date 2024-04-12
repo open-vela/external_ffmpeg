@@ -40,6 +40,8 @@ static int v4l2_try_start(AVCodecContext *avctx)
     V4L2Context *const capture = &s->capture;
     V4L2Context *const output = &s->output;
     struct v4l2_selection selection = { 0 };
+    struct v4l2_format *fmt;
+    int pixelformat;
     int ret;
 
     /* 1. start the output process */
@@ -63,7 +65,10 @@ static int v4l2_try_start(AVCodecContext *avctx)
     }
 
     /* 2.1 update the AVCodecContext */
-    avctx->pix_fmt = ff_v4l2_format_v4l2_to_avfmt(capture->format.fmt.pix_mp.pixelformat, AV_CODEC_ID_RAWVIDEO);
+    fmt = &capture->format;
+    pixelformat = V4L2_TYPE_IS_MULTIPLANAR(fmt->type) ?
+                  fmt->fmt.pix_mp.pixelformat : fmt->fmt.pix.pixelformat;
+    avctx->pix_fmt = ff_v4l2_format_v4l2_to_avfmt(pixelformat, AV_CODEC_ID_RAWVIDEO);
     capture->av_pix_fmt = avctx->pix_fmt;
 
     /* 3. set the crop parameters */
