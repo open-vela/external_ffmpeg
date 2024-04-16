@@ -234,7 +234,7 @@ static int device_init(AVFormatContext *ctx, int *width, int *height,
 
     if ((*width != fmt.fmt.pix.width) || (*height != fmt.fmt.pix.height)) {
         av_log(ctx, AV_LOG_INFO,
-               "The V4L2 driver changed the video from %dx%d to %dx%d\n",
+               "The V4L2 driver changed the video from %dx%d to %"PRIu32"x%"PRIu32"\n",
                *width, *height, fmt.fmt.pix.width, fmt.fmt.pix.height);
         *width = fmt.fmt.pix.width;
         *height = fmt.fmt.pix.height;
