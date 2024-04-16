@@ -661,6 +661,7 @@ static void movie_async_completed(AVFilterContext *ctx)
     MovieAsyncContext *movie = ctx->priv;
     int ret;
 
+    movie->state = AVMOVIE_ASYNC_STATE_COMPLETED;
     ret = movie_async_loop(ctx);
     if (ret < 0) {
         av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
