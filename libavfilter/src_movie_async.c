@@ -356,6 +356,9 @@ static bool movie_async_dat_available(AVFilterContext *ctx)
 
     /* As long as one data queue less than movie->dat_max, continue read */
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (movie->streams[i].index < 0)
+            continue;
+
         if (ff_framequeue_queued_frames(&movie->streams[i].dat_queue) < movie->dat_max)
             return true;
     }
@@ -484,10 +487,14 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     for (i = 0; i < ctx->nb_outputs; i++) {
         ret = av_find_best_stream(movie->format_ctx, movie->streams[i].type, -1, -1, NULL, 0);
         if (ret < 0) {
-            av_log(ctx, AV_LOG_WARNING, "Failed to find best stream ret %d %s.\n", ret, av_err2str(ret));
-            goto out;
+            if (ctx->nb_outputs > 1 && movie->streams[i].type == AVMEDIA_TYPE_AUDIO) {
+                movie->streams[i].index = -1;
+                continue;
+            } else {
+                av_log(ctx, AV_LOG_WARNING, "Failed to find best stream ret %d %s.\n", ret, av_err2str(ret));
+                goto out;
+            }
         }
-
         stream = movie->format_ctx->streams[ret];
 
         stream->discard              = AVDISCARD_DEFAULT;
@@ -741,7 +748,8 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                 for (i = 0; i < ctx->nb_outputs; i++)
                     avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
 
-                movie_async_send_vsyncmode(ctx, ctx->outputs[0]->type == AVMEDIA_TYPE_AUDIO);
+                movie_async_send_vsyncmode(ctx, movie->streams[0].type == AVMEDIA_TYPE_AUDIO &&
+                                           movie->streams[0].index >= 0);
                 break;
 
             case AVMOVIE_ASYNC_EVENT_PAUSED:
@@ -756,8 +764,10 @@ static void movie_async_proc_event(AVFilterContext *ctx)
 
             case AVMOVIE_ASYNC_EVENT_STOPPED:
                 for (i = 0; i < ctx->nb_outputs; i++) {
-                    avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
-                    ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                    if (!ff_outlink_get_status(ctx->outputs[i])) {
+                        avfilter_forward_command(ctx, i, NULL, "flush", NULL, NULL, 0, 0);
+                        ff_avfilter_link_set_in_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                    }
                     avcodec_parameters_free(&movie->streams[i].codecpar);
                 }
                 break;
@@ -807,6 +817,9 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
     }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (movie->streams[i].index < 0)
+            continue;
+
         ret = movie_async_send_eos_frame(ctx, i);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "Failed outputs %d/%d send eos frame ret,%d,%s.\n",
@@ -974,6 +987,9 @@ static int movie_async_output_props(AVFilterLink *outlink)
             }
             break;
         case AVMEDIA_TYPE_AUDIO:
+            if (movie->streams[out_id].index < 0)
+                ff_outlink_set_status(outlink, AVERROR_EOF, AV_NOPTS_VALUE);
+
             break;
     }
 
@@ -1079,6 +1095,9 @@ static int movie_async_query_formats(AVFilterContext *ctx)
         return FFERROR_NOT_READY;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (movie->streams[i].index < 0)
+            continue;
+
         if (!movie_async_peek_info(ctx, i, &p)) {
             ready = false;
             continue;
@@ -1131,6 +1150,8 @@ static int movie_async_reconfig(AVFilterContext *ctx)
     int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (movie->streams[i].index < 0)
+            continue;
         if (ff_outlink_get_status(ctx->outputs[i]) == 0)
             return 0;
         if (movie_async_dat_count(ctx, i) < movie->dat_cnt)
@@ -1165,6 +1186,9 @@ static int movie_async_activate(AVFilterContext *ctx)
         return ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (movie->streams[i].index < 0)
+            continue;
+
         if (!movie_async_dat_count(ctx, i))
             continue;
 
@@ -1429,9 +1453,12 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
         av_log(ctx, AV_LOG_INFO, "%s stream %d %s completed.\n",
                ctx->name, pad_idx, av_get_media_type_string(movie->streams[pad_idx].type));
 
-        for (i = 0; i < ctx->nb_outputs; i++)
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (movie->streams[i].index < 0)
+                continue;
             if (movie->streams[i].completed == false)
                 break;
+        }
 
         if (i == ctx->nb_outputs)
             return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_COMPLETED, NULL, 0);
