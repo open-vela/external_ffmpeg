@@ -1057,12 +1057,14 @@ static int movie_async_query_formats(AVFilterContext *ctx)
         switch (outlink->type) {
             case AVMEDIA_TYPE_AUDIO:
                 list[0] = p->sample_rate;
+                ff_formats_unref(&outlink->incfg.samplerates);
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.samplerates)) < 0)
                     return ret;
 
                 if ((ret = av_channel_layout_copy(&list64[0], &p->ch_layout) < 0))
                     return ret;
 
+                ff_channel_layouts_unref(&outlink->incfg.channel_layouts);
                 if ((ret = ff_channel_layouts_ref(ff_make_channel_layout_list(list64),
                                                   &outlink->incfg.channel_layouts)) < 0)
                     return ret;
@@ -1073,12 +1075,14 @@ static int movie_async_query_formats(AVFilterContext *ctx)
                     list[0] = AV_CODEC_ID_RAWAUDIO;
 
                 /* codec id */
+                ff_formats_unref(&outlink->incfg.codecs);
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.codecs)) < 0)
                     return ret;
 
                 list[0] = p->format;
 
                 /* format */
+                ff_formats_unref(&outlink->incfg.formats);
                 if ((ret = ff_formats_ref(ff_make_format_list(list), &outlink->incfg.formats)) < 0)
                     return ret;
 
