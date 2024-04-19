@@ -474,7 +474,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
         stream = movie->format_ctx->streams[ret];
 
-        movie->format_ctx->streams[i]->discard = AVDISCARD_DEFAULT;
+        stream->discard              = AVDISCARD_DEFAULT;
         movie->streams[i].index      = stream->index;
         movie->streams[i].time_base  = stream->time_base;
         movie->streams[i].frame_rate = stream->r_frame_rate;
