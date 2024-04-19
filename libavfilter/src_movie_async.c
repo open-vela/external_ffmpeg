@@ -122,11 +122,6 @@ static const AVOption movie_async_options[]= {
     { NULL },
 };
 
-static inline bool movie_async_output_inactive(MovieAsyncContext *movie, int pad_id)
-{
-    return movie->streams[pad_id].index == -1;
-}
-
 static inline void movie_async_notify_event(MovieAsyncContext *movie, int event, int ret, const char *extra)
 {
     if (movie->event != NULL && movie->cookie != NULL) {
@@ -343,15 +338,6 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
     MovieAsyncContext *movie = ctx->priv;
     MovieStream *stream;
     int i;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_output_inactive(movie, i))
-            continue;
-
-        stream = &movie->streams[i];
-        if (stream)
-            stream->index = -1;
-    }
 
     if (movie->format_ctx)
         avformat_close_input(&movie->format_ctx);
@@ -1255,7 +1241,7 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
     pos += ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie_async_output_inactive(movie, i))
+        if (movie->streams[i].index < 0)
             continue;
 
         idx = movie->streams[i].index;
