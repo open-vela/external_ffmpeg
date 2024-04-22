@@ -809,8 +809,17 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
     }
 
     /* eos is on, consume remaining data. */
-    if (size == 0)
+    if (size == 0) {
         ret = ff_nuttx_drain_buffer(priv, true);
+
+        if (!priv->running) {
+            ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
+            if (ret < 0)
+                return ret;
+
+            priv->running = true;
+        }
+    }
 
     return left != size ? size - left : ret;
 }
