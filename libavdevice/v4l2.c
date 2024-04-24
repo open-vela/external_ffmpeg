@@ -568,7 +568,7 @@ static int mmap_read_frame(AVFormatContext *ctx, AVPacket *pkt)
 
         if (s->frame_size > 0 && buf.bytesused != s->frame_size) {
             av_log(ctx, AV_LOG_WARNING,
-                   "Dequeued v4l2 buffer contains %"PRIu32" bytes, but %d were expected. Flags: 0x%08"PRIx16".\n",
+                   "Dequeued v4l2 buffer contains %"PRIu32" bytes, but %d were expected. Flags: 0x%08"PRIx32".\n",
                    buf.bytesused, s->frame_size, buf.flags);
             buf.bytesused = 0;
         }
