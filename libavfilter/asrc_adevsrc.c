@@ -27,6 +27,7 @@
 #include <libavformat/internal.h>
 #include <libavformat/demux.h>
 #include <libavcodec/avcodec.h>
+#include "libavcodec/bytestream.h"
 
 #include "avfilter.h"
 #include "filters.h"
@@ -89,15 +90,28 @@ static void adevsrc_close(AVFilterContext *ctx)
 static int adevsrc_open(AVFilterContext *ctx)
 {
     AVFilterLink *link = ctx->outputs[0];
-    ADevSrcPriv *priv = ctx->priv;
+    ADevSrcPriv *priv  = ctx->priv;
+    AVDictionary *dict = NULL;
     const AVCodec *dec;
     AVStream *st;
+    char *param;
     int ret;
 
     if (priv->state)
         return 0;
 
     priv->fmt_ctx->audio_codec_id = link->codec;
+
+    if (avfilter_process_command(link->dst, "get_options", NULL,
+                                 (char*)&dict, sizeof(AVDictionary **), 0) >= 0) {
+        if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
+            avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                                AV_APP_TO_DEV_SET_PARAMETER,
+                                                param, 0);
+            av_freep(&param);
+        }
+    }
+
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
@@ -246,6 +260,45 @@ error:
     return ret;
 }
 
+static int adevsrc_alloc_codecparams(AVFilterContext *ctx, AVCodecParameters **dst)
+{
+    AVFilterLink *link = ctx->outputs[0];
+    AVCodecParameters *params = NULL;
+    uint8_t *p;
+
+    params = avcodec_parameters_alloc();
+    if(!params)
+        return AVERROR(ENOMEM);
+
+    params->codec_type  = link->type;
+    params->format      = link->format;
+    params->sample_rate = link->sample_rate;
+    params->codec_id    = link->codec;
+    av_channel_layout_copy(&params->ch_layout, &link->ch_layout);
+
+    if (params->codec_id == AV_CODEC_ID_OPUS) {
+        /* Write extradata. Reference opusenc.c & libopusenc.c */
+        params->extradata_size = 19; /* Opus header information fixed length */
+        params->extradata = av_malloc(params->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!params->extradata) {
+            avcodec_parameters_free(&params);
+            return  AVERROR(ENOMEM);
+        }
+
+        p = params->extradata;
+        bytestream_put_buffer(&p, "OpusHead", 8); /* Opus tag */
+        bytestream_put_byte(&p, 1); /* Opus version */
+        bytestream_put_byte(&p, params->ch_layout.nb_channels); /* Opus channels */
+        bytestream_put_le16(&p, 120); /* Frames to be skipped */
+        bytestream_put_le32(&p, params->sample_rate); /* Opus sample rate */
+        bytestream_put_le16(&p, 0); /* Gain of 0dB is recommended. */
+        bytestream_put_byte(&p, 0); /* Channel mapping. channels <=2,it should be 0 */
+    }
+
+    *dst = params;
+    return 0;
+}
+
 static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
 {
     AVFilterLink *link = ctx->outputs[0];
@@ -264,15 +317,9 @@ static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
         goto error;
 
     if (!(priv->state & ASRC_ADEVSRC_STARTED)) {
-        dst = avcodec_parameters_alloc();
-        if (!dst)
+        ret = adevsrc_alloc_codecparams(ctx, &dst);
+        if (ret < 0)
             goto error;
-
-        dst->codec_type  = link->type;
-        dst->format      = link->format;
-        dst->sample_rate = link->sample_rate;
-        dst->codec_id    = link->codec;
-        av_channel_layout_copy(&dst->ch_layout, &link->ch_layout);
 
         priv->state = ASRC_ADEVSRC_STARTED;
     }
