@@ -105,6 +105,11 @@ static int ff_nuttx_avcodec_to_fmt(int codec_id)
             return AUDIO_FMT_OGG_VORBIS;
         case AV_CODEC_ID_FLAC:
             return AUDIO_FMT_FLAC;
+        case AV_CODEC_ID_AMR_NB:
+        case AV_CODEC_ID_AMR_WB:
+            return AUDIO_FMT_AMR;
+        case AV_CODEC_ID_OPUS:
+            return AUDIO_FMT_OPUS;
     }
 
     return AUDIO_FMT_PCM;
@@ -245,62 +250,83 @@ static int ff_nuttx_capbility_query_smpfmts(struct AVFormatContext *s1, int form
     return x == 0 ? AVERROR(EPERM) : x;
 }
 
+static int ff_nuttx_fmt_to_avcodec(int *codec_id, int *formats)
+{
+    int codec  = AV_CODEC_ID_NONE;
+    int format = AUDIO_FMT_UNDEF;
+
+    if (*formats & (1 << (AUDIO_FMT_PCM - 1))) {
+        codec     = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
+        format    = AUDIO_FMT_PCM;
+        *formats &= ~(1 << (AUDIO_FMT_PCM - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_MP3 - 1))) {
+        codec     = AV_CODEC_ID_MP3;
+        format    = AUDIO_FMT_MP3;
+        *formats &= ~(1 << (AUDIO_FMT_MP3 - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AC3 - 1))) {
+        codec     = AV_CODEC_ID_AC3;
+        format    = AUDIO_FMT_AC3;
+        *formats &= ~(1 << (AUDIO_FMT_AC3 - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_WMA - 1))) {
+        codec     = AV_CODEC_ID_WMAV2;
+        format    = AUDIO_FMT_WMA;
+        *formats &= ~(1 << (AUDIO_FMT_WMA - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_DTS - 1))) {
+        codec     = AV_CODEC_ID_DTS;
+        format    = AUDIO_FMT_WMA;
+        *formats &= ~(1 << (AUDIO_FMT_DTS - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
+        codec     = AV_CODEC_ID_VORBIS;
+        format    = AUDIO_FMT_OGG_VORBIS;
+        *formats &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_FLAC - 1))) {
+        codec     = AV_CODEC_ID_FLAC;
+        format    = AUDIO_FMT_FLAC;
+        *formats &= ~(1 << (AUDIO_FMT_FLAC - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AMR - 1))) {
+        codec     = AV_CODEC_ID_AMR_NB;
+        format    = AUDIO_FMT_AMR;
+        *formats &= ~(1 << (AUDIO_FMT_AMR - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OTHER - 1))) {
+        format    = AUDIO_FMT_OTHER;
+        *formats &= ~(1 << (AUDIO_FMT_OTHER - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OPUS - 1))) {
+        codec     = AV_CODEC_ID_OPUS;
+        format    = AUDIO_FMT_OPUS;
+        *formats &= ~(1 << (AUDIO_FMT_OPUS - 1));
+    }
+
+    *codec_id = codec;
+
+    return format;
+}
+
 static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
                                            int format, int codecs[], int num)
 {
     int ac_subtype = AUDIO_FMT_UNDEF;
     int codec = AV_CODEC_ID_NONE;
     struct audio_caps_s caps;
-    int nb_codecs = 0;
-    int ret, i, x;
+    int i, nb_codecs = 0;
 
-    for (i = 0; i < num && format; i++) {
-        if (format & (1 << (AUDIO_FMT_PCM - 1))) {
-            ac_subtype = AUDIO_FMT_PCM;
-            codec = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
-            format &= ~(1 << (AUDIO_FMT_PCM - 1));
-        } else if (format & (1 << (AUDIO_FMT_MP3 - 1))) {
-            ac_subtype = AUDIO_FMT_MP3;
-            codec = AV_CODEC_ID_MP3;
-            format &= ~(1 << (AUDIO_FMT_MP3 - 1));
-        } else if (format & (1 << (AUDIO_FMT_AC3 - 1))) {
-            ac_subtype = AUDIO_FMT_AC3;
-            codec = AV_CODEC_ID_AC3;
-            format &= ~(1 << (AUDIO_FMT_AC3 - 1));
-        } else if (format & (1 << (AUDIO_FMT_WMA - 1))) {
-            ac_subtype = AUDIO_FMT_WMA;
-            codec = AV_CODEC_ID_WMAV2;
-            format &= ~(1 << (AUDIO_FMT_WMA - 1));
-        } else if (format & (1 << (AUDIO_FMT_DTS - 1))) {
-            ac_subtype = AUDIO_FMT_WMA;
-            codec = AV_CODEC_ID_DTS;
-            format &= ~(1 << (AUDIO_FMT_DTS - 1));
-        } else if (format & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
-            ac_subtype = AUDIO_FMT_OGG_VORBIS;
-            codec = AV_CODEC_ID_VORBIS;
-            format &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
-        } else if (format & (1 << (AUDIO_FMT_FLAC - 1))) {
-            ac_subtype = AUDIO_FMT_FLAC;
-            codec = AV_CODEC_ID_FLAC;
-            format &= ~(1 << (AUDIO_FMT_FLAC - 1));
-        } else if (format & (1 << (AUDIO_FMT_AMR - 1))) {
-            ac_subtype = AUDIO_FMT_AMR;
-            codec = AV_CODEC_ID_AMR_NB;
-            format &= ~(1 << (AUDIO_FMT_AMR - 1));
-        }
-
-        ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps);
-        if (ret < 0)
+    while (nb_codecs < num && format) {
+        ac_subtype = ff_nuttx_fmt_to_avcodec(&codec, &format);
+        if (ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps) < 0)
             continue;
 
-        for (x = 0; x < sizeof(caps.ac_controls.b); x++) {
-            if (caps.ac_controls.b[x] == AUDIO_SUBFMT_END) {
-                if (x == 0)
+        if (ac_subtype == AUDIO_FMT_OTHER) {
+            nb_codecs += ff_nuttx_capbility_query_codecs(s1, caps.ac_controls.w, &codecs[nb_codecs], num - nb_codecs);
+            continue;
+        }
+
+        for (i = 0; i < sizeof(caps.ac_controls.b) && nb_codecs < num; i++) {
+            if (caps.ac_controls.b[i] == AUDIO_SUBFMT_END) {
+                if (i == 0)
                     codecs[nb_codecs++] = codec;
                 break;
             }
 
-            codecs[nb_codecs++] = ff_nuttx_subfmt_to_avcodec(caps.ac_controls.b[x]);
+            codecs[nb_codecs++] = ff_nuttx_subfmt_to_avcodec(caps.ac_controls.b[i]);
         }
     }
 
