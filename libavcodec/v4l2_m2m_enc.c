@@ -147,12 +147,14 @@ static inline int v4l2_mpeg4_profile_from_ff(int p)
 
 static int v4l2_check_b_frame_support(V4L2m2mContext *s)
 {
-    if (s->avctx->max_b_frames)
-        av_log(s->avctx, AV_LOG_WARNING, "Encoder does not support b-frames yet\n");
+    int bframes;
 
-    v4l2_set_ext_ctrl(s, MPEG_CID(B_FRAMES), 0, "number of B-frames", 0);
-    v4l2_get_ext_ctrl(s, MPEG_CID(B_FRAMES), &s->avctx->max_b_frames, "number of B-frames", 0);
     if (s->avctx->max_b_frames == 0)
+        return 0;
+
+    v4l2_set_ext_ctrl(s, MPEG_CID(B_FRAMES), s->avctx->max_b_frames, "number of B-frames", 0);
+    v4l2_get_ext_ctrl(s, MPEG_CID(B_FRAMES), &bframes, "number of B-frames", 0);
+    if (bframes == s->avctx->max_b_frames)
         return 0;
 
     avpriv_report_missing_feature(s->avctx, "DTS/PTS calculation for V4L2 encoding");
