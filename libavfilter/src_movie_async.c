@@ -1240,6 +1240,9 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
     ret = snprintf(res, res_len, "st: %d", movie->state);
     pos += ret;
 
+    if (!movie->format_ctx)
+        return 0;
+
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (movie->streams[i].index < 0)
             continue;
