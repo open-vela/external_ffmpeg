@@ -1563,7 +1563,11 @@ static void graph_clear_formats(AVFilterGraph *graph, void *log_ctx)
 
 int avfilter_graph_reconfig(AVFilterGraph *graphctx, void *log_ctx)
 {
+    AVClass *avc = log_ctx ? *(AVClass **)log_ctx : NULL;
     int ret;
+
+    if (avc)
+        av_log(log_ctx, AV_LOG_INFO, "%s set graph reconfig\n", avc->item_name(log_ctx));
 
     graph_clear_formats(graphctx, log_ctx);
     if ((ret = graph_config_formats(graphctx, log_ctx)))
