@@ -1138,7 +1138,7 @@ static int mov_read_ftyp(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     av_log(c->fc, AV_LOG_INFO, "ISO: File Type Major Brand: %.4s\n",(char *)&type);
     av_dict_set(&c->fc->metadata, "major_brand", type, 0);
     c->is_still_picture_avif = !strncmp(type, "avif", 4);
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     c->is_fmp4 = !strncmp(type, "mp42", 4);
 #endif
     minor_ver = avio_rb32(pb); /* minor version */
@@ -4331,7 +4331,7 @@ static void mov_build_index(MOVContext *mov, AVStream *st)
     mov_estimate_video_delay(mov, st);
 }
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
 /* If the media is fmp4, there is no need for memory optimization,
    Only audio streams will be optimized for memory */
 static bool mov_media_type_check(MOVContext *c, AVStream *st)
@@ -4806,7 +4806,7 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     fix_timescale(c, sc);
 
     avpriv_set_pts_info(st, 64, 1, sc->time_scale);
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     /* ignore media editlist info if do memory optimization */
     c->ignore_editlist = 1;
 
@@ -7915,7 +7915,7 @@ static int mov_read_iloc(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             }
         }
     }
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     if(mov_media_type_check(c, st))
         mov_build_dynamic_index(c, st);
     else
@@ -8960,7 +8960,7 @@ static int mov_read_header(AVFormatContext *s)
     return 0;
 }
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
 static int mov_build_one_AVIndexEntry(MOVContext *mov, AVStream *st, AVIndexEntry *e)
 {
     MOVStreamContext *sc = st->priv_data;
@@ -9233,7 +9233,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
     int ret;
     mov->fc = s;
  retry:
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     sample = mov_find_next_sample_in_dynamic_index(s, &st);
 #else
     sample = mov_find_next_sample(s, &st);
@@ -9331,7 +9331,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
         }
     } else {
         int64_t next_dts;
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
         if (mov_media_type_check(mov, st)) {
             int current_index;
             if ((sc->current_sample / MOV_DEMUXER_INDEX_SIZE) % 2)
@@ -9454,7 +9454,7 @@ static int can_seek_to_key_sample(AVStream *st, int sample, int64_t requested_pt
     return 1;
 }
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
 static int mov_get_sample_by_timestap(AVFormatContext *s, AVStream *st, int64_t timestamp, int flags)
 {
     MOVStreamContext *sc = st->priv_data;
@@ -9546,7 +9546,7 @@ static int mov_seek_stream(AVFormatContext *s, AVStream *st, int64_t timestamp, 
     if (ret < 0)
         return ret;
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     if (mov_media_type_check(mov, st))
         sample = mov_get_sample_by_timestap(s, st, timestamp, flags);
     else {
@@ -9620,7 +9620,7 @@ static int64_t mov_get_skip_samples(MOVContext *c, AVStream *st, int sample)
     int64_t ts;
     int64_t off;
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     if (mov_media_type_check(c, st)) {
         first_ts = sti->first_timestamp;
         ts = sti->index_entries[0].timestamp;
@@ -9662,7 +9662,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
     if (sample < 0)
         return sample;
 
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     if (mov_media_type_check(mc, st)) {
         mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
         av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
@@ -9672,7 +9672,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 
     if (mc->seek_individually) {
         int64_t seek_timestamp;
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
         if (mov_media_type_check(mc, st)) {
             int current_sample = sample % MOV_DEMUXER_INDEX_SIZE;
             seek_timestamp = sti->index_entries[current_sample].timestamp;
@@ -9700,7 +9700,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
             sample = mov_seek_stream(s, st, timestamp, flags);
             if (sample >= 0) {
                 sti->skip_samples = mov_get_skip_samples(mc, st, sample);
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
                 if (mov_media_type_check(mc, st)) {
                     mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
                     av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
@@ -9718,7 +9718,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
         }
         while (1) {
             MOVStreamContext *sc;
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
             AVIndexEntry *entry = mov_find_next_sample_in_dynamic_index(s, &st);
 #else
             AVIndexEntry *entry = mov_find_next_sample(s, &st);

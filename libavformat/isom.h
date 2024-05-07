@@ -318,7 +318,7 @@ typedef struct MOVContext {
     uint32_t max_stts_delta;
     int is_still_picture_avif;
     int primary_item_id;
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     int is_fmp4;   ///FMP4 does not require memory optimization
 #endif
 } MOVContext;

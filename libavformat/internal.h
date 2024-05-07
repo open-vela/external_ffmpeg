@@ -402,7 +402,7 @@ typedef struct FFStream {
      */
     int64_t first_dts;
     int64_t cur_dts;
-#if MOV_DEMUXER_INDEX_SIZE
+#ifdef MOV_DEMUXER_INDEX_SIZE
     int64_t last_offset;
     int64_t last_chunk_offsets;
     int64_t last_dts;
