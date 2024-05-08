@@ -164,7 +164,7 @@ static int devsink_control_message(struct AVFormatContext *s, int type,
     if (type == AV_DEV_TO_APP_BUFFER_WRITABLE)
         ff_filter_set_ready(ctx, 100);
     else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
-        avfilter_graph_reconfig(ctx->graph, NULL);
+        avfilter_graph_reconfig(ctx->graph, ctx);
         ff_filter_set_ready(ctx, 100);
     }
 

@@ -661,7 +661,7 @@ static int moviesink_reconfig(AVFilterContext *ctx)
     }
 
     if (reconfig && priv->format) {
-        ret = avfilter_graph_reconfig(ctx->graph, NULL);
+        ret = avfilter_graph_reconfig(ctx->graph, ctx);
         if (ret < 0)
             return ret;
     }

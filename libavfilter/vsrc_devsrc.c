@@ -123,7 +123,7 @@ static int devsrc_start(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    return avfilter_graph_reconfig(ctx->graph, NULL);
+    return avfilter_graph_reconfig(ctx->graph, ctx);
 out:
     devsrc_stop(ctx);
     return ret;
@@ -142,7 +142,7 @@ static int devsrc_control_message(struct AVFormatContext *s, int type,
     DevSrcPriv *priv = ctx->priv;
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED)
-        avfilter_graph_reconfig(ctx->graph, NULL);
+        avfilter_graph_reconfig(ctx->graph, ctx);
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||
         type == AV_DEV_TO_APP_BUFFER_READABLE) {
