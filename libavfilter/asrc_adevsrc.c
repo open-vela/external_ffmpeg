@@ -136,7 +136,7 @@ static int adevsrc_open(AVFilterContext *ctx)
 
 reconfig:
     priv->state = ASRC_ADEVSRC_OPENED;
-    return avfilter_graph_reconfig(ctx->graph, NULL);
+    return avfilter_graph_reconfig(ctx->graph, ctx);
 out:
     adevsrc_close(ctx);
     return ret;
@@ -156,7 +156,7 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED) {
         avcodec_free_context(&priv->dec_ctx);
-        avfilter_graph_reconfig(ctx->graph, NULL);
+        avfilter_graph_reconfig(ctx->graph, ctx);
     }
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||

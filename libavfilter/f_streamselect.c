@@ -240,7 +240,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             if (s->map[i] < 0)
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
 
-        ret = avfilter_graph_reconfig(ctx->graph, NULL);
+        ret = avfilter_graph_reconfig(ctx->graph, ctx);
         if (ret >= 0) {
             for (int i = 0; i < ctx->nb_outputs; i++)
                 if (ctx->outputs[i]->incfg.formats)

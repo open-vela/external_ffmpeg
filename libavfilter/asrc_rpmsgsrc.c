@@ -80,7 +80,7 @@ static int rpmsgsrc_handle_message_header(AVFilterContext *ctx)
         case RPMSG_FORMAT_NEG:
             priv->format_info = info;
 
-            avfilter_graph_reconfig(ctx->graph, NULL);
+            avfilter_graph_reconfig(ctx->graph, ctx);
 
             priv->frame_info.flag = RPMSG_FRAME_REQ;
             ret = send(priv->fd, &priv->frame_info, sizeof(priv->frame_info), 0);

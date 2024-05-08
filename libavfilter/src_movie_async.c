@@ -1091,7 +1091,7 @@ static int movie_async_reconfig(AVFilterContext *ctx)
             return 0;
     }
 
-    ret = avfilter_graph_reconfig(ctx->graph, NULL);
+    ret = avfilter_graph_reconfig(ctx->graph, ctx);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "reconfig failed:%s \n", ctx->name);
         return ret;
