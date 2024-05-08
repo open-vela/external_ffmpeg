@@ -749,6 +749,9 @@ static void movie_async_proc_event(AVFilterContext *ctx)
         if (!event)
             break;
 
+        if (event->ret < 0)
+            goto notify;
+
         switch (event->event) {
             case AVMOVIE_ASYNC_EVENT_STARTED:
                 for (i = 0; i < ctx->nb_outputs; i++)
@@ -779,6 +782,7 @@ static void movie_async_proc_event(AVFilterContext *ctx)
                 break;
         }
 
+notify:
         movie_async_notify_event(movie, event->event, event->ret, event->extra);
         av_freep(&event);
     }
