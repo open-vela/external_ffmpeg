@@ -84,7 +84,7 @@ int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter);
 int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock);
 #define ff_nuttx_poll_available(priv) ff_nuttx_poll_available(priv, true)
 int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size);
-int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size);
+int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size, uint32_t *samples);
 
 int ff_nuttx_set_volume(struct AVFormatContext *s1, NuttxPriv *priv, double volume);
 int ff_nuttx_set_mute(struct AVFormatContext *s1, NuttxPriv *priv, bool mute);

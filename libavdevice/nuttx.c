@@ -853,12 +853,14 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
     return left != size ? size - left : ret;
 }
 
-int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
+int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size, uint32_t *samples)
 {
     struct audio_buf_desc_s desc;
     struct ap_buffer_s *buffer;
     int left = size;
     int ret = 0;
+
+    *samples = 0;
 
     if (priv->ioerr) {
         priv->ioerr = false;
@@ -876,9 +878,14 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
         memcpy(data, buffer->samp + buffer->curbyte, len);
         if (priv->mute)
             memset(data, 0x00, len);
-        buffer->curbyte += len;
 
+        data += len;
+        left -= len;
+
+        buffer->curbyte += len;
         if (buffer->curbyte == buffer->nbytes) {
+            uint32_t nsamples = buffer->nsamples;
+
             dq_remfirst(&priv->bufferq);
 
             buffer->curbyte = 0;
@@ -888,10 +895,13 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size)
             ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
             if (ret < 0)
                 break;
-        }
 
-        data += len;
-        left -= len;
+            /* For non-pcm, use apb->nsamples and return len directly */
+            if(!avcodec_is_pcm_lossless(priv->codec)) {
+                *samples = nsamples;
+                break;
+            }
+        }
     }
 
     return left != size ? size - left : ret;
