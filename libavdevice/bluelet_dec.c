@@ -181,9 +181,10 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
             }
 
             if (poll->revents & POLLOUT) {
-                if (priv->ctrl_fd == poll->fd)
+                if (priv->ctrl_fd == poll->fd) {
+                    priv->available = false;
                     priv->ctrl_connected = true;
-                else
+                } else
                     priv->data_connected = true;
             }
 
