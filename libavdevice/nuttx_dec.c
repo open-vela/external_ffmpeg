@@ -186,6 +186,7 @@ static int nuttx_read_close(AVFormatContext *s1)
 static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
 {
     NuttxPriv *priv = s1->priv_data;
+    uint32_t samples;
     int ret;
 
     if (priv->stopped)
@@ -195,7 +196,7 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
     if (ret < 0)
         return ret;
 
-    ret = ff_nuttx_read_data(priv, pkt->data, priv->period_bytes);
+    ret = ff_nuttx_read_data(priv, pkt->data, priv->period_bytes, &samples);
     if (ret < 0) {
         av_packet_unref(pkt);
         return ret;
@@ -203,7 +204,7 @@ static int nuttx_read_packet(AVFormatContext *s1, AVPacket *pkt)
 
     pkt->size = ret;
     pkt->pts = priv->timestamp;
-    priv->timestamp += ret / priv->sample_bytes;
+    priv->timestamp += samples > 0 ? samples : ret / priv->sample_bytes;
 
     return 0;
 }
