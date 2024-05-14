@@ -30,6 +30,9 @@
 #include "get_bits.h"
 #include "mpeg4audio.h"
 #include "libavutil/intreadwrite.h"
+#include "aac.h"
+#include "aactab.h"
+#include "aacdectab.h"
 
 #include <aacdec.h>
 
@@ -37,6 +40,7 @@
 #define SYNCWORDL 0xf0
 #define LIBHELIX_AAC_MAX_CHANNELS 2
 #define LIBHELIX_AAC_MAX_NSAMPS   2048
+#define AAC_CHANNEL_LAYOUT_ONLY 1
 
 typedef struct HAACDecContext {
     AVClass *class;
@@ -46,10 +50,16 @@ typedef struct HAACDecContext {
     MPEG4AudioConfig m4ac;
 } HAACDecContext;
 
+
+#include "aacdec_template.c"
+
 static int aac_decode_init(AVCodecContext *avctx)
 {
     HAACDecContext *aac = avctx->priv_data;
     GetBitContext gb;
+    uint8_t layout_map[MAX_ELEM_ID*4][3];
+    int layout_map_tags;
+    uint64_t layout = 0;
     int ret;
 
     aac->context = AACInitDecoder();
@@ -72,6 +82,12 @@ static int aac_decode_init(AVCodecContext *avctx)
         if ((ret = ff_mpeg4audio_get_config_gb(&aac->m4ac, &gb, 1, NULL)) < 0)
             return ret;
 
+        if ((ret = set_default_channel_config(NULL, avctx, layout_map, &layout_map_tags, aac->m4ac.chan_config)) < 0)
+            return ret;
+
+        layout = sniff_channel_order(layout_map, layout_map_tags);
+        if (layout)
+            av_channel_layout_from_mask(&avctx->ch_layout, layout);
     }
 
     return 0;

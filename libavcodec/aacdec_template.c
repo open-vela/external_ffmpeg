@@ -93,6 +93,7 @@
 #include "libavutil/thread.h"
 #include "internal.h"
 
+#ifndef AAC_CHANNEL_LAYOUT_ONLY
 static VLC vlc_scalefactors;
 static VLC vlc_spectral[11];
 
@@ -190,6 +191,7 @@ static int frame_configure_elements(AVCodecContext *avctx)
 
     return 0;
 }
+#endif
 
 struct elem_to_channel {
     uint64_t av_position;
@@ -497,6 +499,7 @@ end_of_layout_definition:
     return layout;
 }
 
+#ifndef AAC_CHANNEL_LAYOUT_ONLY
 /**
  * Save current output configuration if and only if it has been locked.
  */
@@ -619,7 +622,7 @@ static void flush(AVCodecContext *avctx)
         }
     }
 }
-
+#endif
 /**
  * Set up channel positions based on a default channel configuration
  * as specified in table 1.17.
@@ -666,6 +669,7 @@ static int set_default_channel_config(AACContext *ac, AVCodecContext *avctx,
     return 0;
 }
 
+#ifndef AAC_CHANNEL_LAYOUT_ONLY
 static ChannelElement *get_che(AACContext *ac, int type, int elem_id)
 {
     /* For PCE based channel configurations map the channels solely based
@@ -3589,3 +3593,4 @@ static const AVClass aac_decoder_class = {
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
+#endif
