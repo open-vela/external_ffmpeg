@@ -110,6 +110,8 @@ static int ff_nuttx_avcodec_to_fmt(int codec_id)
             return AUDIO_FMT_AMR;
         case AV_CODEC_ID_OPUS:
             return AUDIO_FMT_OPUS;
+        case AV_CODEC_ID_AAC:
+            return AUDIO_FMT_AAC;
     }
 
     return AUDIO_FMT_PCM;
@@ -292,6 +294,9 @@ static int ff_nuttx_fmt_to_avcodec(int *codec_id, int *formats)
     } else if (*formats & (1 << (AUDIO_FMT_OTHER - 1))) {
         format    = AUDIO_FMT_OTHER;
         *formats &= ~(1 << (AUDIO_FMT_OTHER - 1));
+    } else if (format & (1 << (AUDIO_FMT_AAC - 1))) {
+        format    = AUDIO_FMT_AAC;
+        *formats &= ~(1 << (AUDIO_FMT_AAC - 1));
     } else if (*formats & (1 << (AUDIO_FMT_OPUS - 1))) {
         codec     = AV_CODEC_ID_OPUS;
         format    = AUDIO_FMT_OPUS;
