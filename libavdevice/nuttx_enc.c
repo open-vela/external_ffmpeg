@@ -32,6 +32,7 @@
 
 #include "libavformat/internal.h"
 #include "libavformat/mux.h"
+#include "libavcodec/bsf.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
@@ -98,10 +99,13 @@ static int nuttx_write_header(AVFormatContext *s1)
 
 static int nuttx_write_trailer(struct AVFormatContext *s1)
 {
+    FFStream *const sti = ffstream(s1->streams[0]);
     NuttxPriv *priv = s1->priv_data;
 
     ff_nuttx_close(priv);
     priv->timestamp = 0;
+    if (sti->bsfc)
+        av_bsf_flush(sti->bsfc);
     return 0;
 }
 
@@ -303,6 +307,22 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
     return ff_nuttx_get_device_list(device_list, true);
 }
 
+static int nuttx_check_bitstream(struct AVFormatContext *s, struct AVStream *st, const AVPacket *pkt)
+{
+    int ret = 1;
+
+    if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
+        /* check aac header, if adts header is exist, skip add bitstream filter */
+        if (pkt->size > 2 && pkt->data[0] == 0xFF
+                          && (pkt->data[1] & 0xF0) == 0xF0)
+            return ret;
+        av_log(s, AV_LOG_DEBUG, "aac_rawtoadts bitstream filter is added\n");
+        ret = ff_stream_add_bitstream_filter(st, "aac_rawtoadts", NULL);
+    }
+
+    return ret;
+}
+
 #define OFFSET(x) offsetof(NuttxPriv, x)
 #define FLAGS AV_OPT_FLAG_ENCODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
@@ -335,6 +355,7 @@ const AVOutputFormat ff_nuttx_muxer = {
     .write_uncoded_frame        = nuttx_write_frame,
     .get_output_timestamp       = nuttx_get_output_timestamp,
     .get_device_list            = nuttx_get_device_list,
+    .check_bitstream            = nuttx_check_bitstream,
     .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
     .priv_class                 = &nuttx_muxer_class,
 };
