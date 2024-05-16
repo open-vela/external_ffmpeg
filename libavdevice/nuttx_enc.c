@@ -194,7 +194,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         case AV_APP_TO_DEV_GET_POSITION: {
             long ret = ff_nuttx_get_position(priv);
             if (ret < 0)
-                return AVERROR(ret);
+                return ret;
             snprintf(data, data_size, "%ld", ret);
             return 0;
         }
