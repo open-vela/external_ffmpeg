@@ -1187,6 +1187,7 @@ OBJS-$(CONFIG_A2DP_RECHUNK_BSF)           += a2dp_rechunk_bsf.o sbc_parser.o
 OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += aac_adtstoasc_bsf.o mpeg4audio.o
 OBJS-$(CONFIG_AAC_RAWTOLATM_BSF)          += aac_rawtolatm_bsf.o mpeg4audio.o
 OBJS-$(CONFIG_AAC_ADTSTOASC_BSF)          += aac_adtstoasc_bsf.o
+OBJS-$(CONFIG_AAC_RAWTOADTS_BSF)          += aac_rawtoadts_bsf.o
 OBJS-$(CONFIG_AV1_METADATA_BSF)           += av1_metadata_bsf.o
 OBJS-$(CONFIG_AV1_FRAME_MERGE_BSF)        += av1_frame_merge_bsf.o
 OBJS-$(CONFIG_AV1_FRAME_SPLIT_BSF)        += av1_frame_split_bsf.o
