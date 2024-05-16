@@ -258,6 +258,20 @@ typedef struct MOVStreamContext {
         AVEncryptionInfo *default_encrypted_sample;
         MOVEncryptionIndex *encryption_index;
     } cenc;
+#ifdef MOV_DEMUXER_INDEX_SIZE
+    int64_t last_offset;
+    int64_t last_chunk_offsets;
+    int64_t last_dts;
+    int64_t first_timestamp;
+    unsigned int last_chunk_index;
+    unsigned int last_chunk_sample;
+    unsigned int last_stsc_index;
+    unsigned int last_stts_index;
+    unsigned int last_stts_sample;
+    unsigned int build_nb_sample;
+    unsigned int current_build_index;
+    int had_new_build;
+#endif
 } MOVStreamContext;
 
 typedef struct MOVContext {
