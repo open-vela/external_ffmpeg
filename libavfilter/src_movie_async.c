@@ -1430,7 +1430,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         memset(res, 0, res_len);
         for (int i = 0; i < ctx->nb_outputs; i++) {
             int ret = avfilter_forward_command(ctx, i, NULL, "get_position", NULL, res, res_len, 0);
-            if (ret > 0)
+            if (ret >= 0)
                 return ret;
         }
 
