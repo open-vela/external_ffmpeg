@@ -2596,6 +2596,8 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
                 fps_analyze_framecount = ic->fps_probe_size;
             if (st->disposition & AV_DISPOSITION_ATTACHED_PIC)
                 fps_analyze_framecount = 0;
+            if (!strcmp(ic->iformat->name, "rtsp"))
+                fps_analyze_framecount = 0;
             /* variable fps and no guess at the real fps */
             count = (ic->iformat->flags & AVFMT_NOTIMESTAMPS) ?
                        sti->info->codec_info_duration_fields/2 :
