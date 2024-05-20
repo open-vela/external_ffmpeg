@@ -99,6 +99,7 @@ typedef struct MovieAsyncContext {
 
     int                       state;
     bool                      eof_reached;
+    bool                      live_stream;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
@@ -119,6 +120,7 @@ static const AVOption movie_async_options[]= {
     { "stack_size",   "stack size of work thread",          OFFSET(stack_size),   AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT_MAX, FLAGS },
     { "priority",     "priority of work thread",            OFFSET(priority),     AV_OPT_TYPE_INT,    {.i64 = 244 },    0, INT_MAX, FLAGS },
     { "protocol_map", "mapping of protocol",                OFFSET(protocol_map), AV_OPT_TYPE_STRING, {.str = NULL},    0, 0,       FLAGS },
+    { "live_stream",  "realtime stream mode",               OFFSET(live_stream),  AV_OPT_TYPE_BOOL,   {.i64 = 0},       0, 1,       FLAGS },
     { NULL },
 };
 
@@ -241,6 +243,31 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
     return false;
 }
 
+static void movie_async_drop_dat(AVFilterContext *ctx, int pad_id)
+{
+    MovieAsyncContext *movie = ctx->priv;
+
+    pthread_mutex_lock(&movie->mutex);
+    if (ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue) > 1) {
+        AVFrame *frame = ff_framequeue_take(&movie->streams[pad_id].dat_queue);
+        if (frame->opaque_ref) {
+            AVFrame *peek_frame = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, 0);
+            if (peek_frame->opaque_ref)
+                av_buffer_unref(&peek_frame->opaque_ref);
+            peek_frame->opaque_ref = frame->opaque_ref;
+            frame->opaque_ref = NULL;
+        }
+
+        av_log(ctx, AV_LOG_WARNING, "drop a %s frame, pts %" PRId64 ", size %d.",
+               (movie->streams[pad_id].type == AVMEDIA_TYPE_AUDIO) ? "audio" : "video",
+               frame->pts, frame->linesize[0]);
+
+        av_frame_free(&frame);
+    }
+
+    pthread_mutex_unlock(&movie->mutex);
+}
+
 static AVFrame *movie_async_recv_dat(AVFilterContext *ctx, int pad_id)
 {
     MovieAsyncContext *movie = ctx->priv;
@@ -323,6 +350,9 @@ static bool movie_async_dat_available(AVFilterContext *ctx)
 
     if (movie->state >= AVMOVIE_ASYNC_STATE_STOPPED)
         return false;
+
+    if (movie->live_stream)
+        return true;
 
     /* As long as one data queue less than movie->dat_max, continue read */
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -624,6 +654,17 @@ static int movie_async_read_frame(AVFilterContext *ctx)
         }
     }
 
+    /* drop frame if the number of data queue exceeds max data number.
+     * only drop audio frames. */
+    if (movie->live_stream) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (movie->streams[i].type == AVMEDIA_TYPE_AUDIO &&
+                movie_async_dat_count(ctx, i) > movie->dat_max) {
+                movie_async_drop_dat(ctx, i);
+            }
+        }
+    }
+
 out:
     av_packet_free(&pkt);
     return ret;
@@ -661,11 +702,16 @@ static void movie_async_completed(AVFilterContext *ctx)
 static int movie_async_send_vsyncmode(AVFilterContext *ctx, int audio_alive)
 {
     MovieAsyncContext *movie = ctx->priv;
+    const char *mode;
     int i, ret;
 
     for (i = 0; i < ctx->nb_outputs; i++)
         if (movie->streams[i].type == AVMEDIA_TYPE_VIDEO) {
-            const char *mode = audio_alive ? "audio" : "system";
+            if (movie->live_stream)
+                mode = "bypass";
+            else
+                mode = audio_alive ? "audio" : "system";
+
             ret = avfilter_forward_command(ctx, i, NULL, "syncmode", mode, NULL, 0, 0);
             if (ret < 0)
                 av_log(ctx, AV_LOG_ERROR, "Failed to set syncmode:%s ret %d, %s.\n", mode, ret, av_err2str(ret));
