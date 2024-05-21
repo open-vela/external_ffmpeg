@@ -210,6 +210,8 @@ static const AVOption amix_options[] = {
             OFFSET(weights_str), AV_OPT_TYPE_STRING, {.str="1 1"}, 0, 0, A|F|T },
     { "normalize", "Scale inputs",
             OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, A|F|T },
+    { "sample_rate", "sample_rate",
+            OFFSET(sample_rate), AV_OPT_TYPE_INT, {.i64=0}, -1, INT32_MAX, A|F },
     { NULL }
 };
 
@@ -730,11 +732,20 @@ static int query_formats(AVFilterContext *ctx)
         AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P,
         AV_SAMPLE_FMT_NONE
     };
+    MixContext *s = ctx->priv;
     int ret;
 
-    if ((ret = ff_set_common_formats(ctx, ff_make_format_list(sample_fmts))) < 0 ||
-        (ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
+    if ((ret = ff_set_common_formats(ctx, ff_make_format_list(sample_fmts))) < 0)
         return ret;
+
+    if (s->sample_rate) {
+        int sample_rates[] = { s->sample_rate, -1 };
+        if ((ret = ff_set_common_samplerates(ctx, ff_make_format_list(sample_rates))) < 0)
+            return ret;
+    } else {
+        if ((ret = ff_set_common_samplerates(ctx, ff_all_samplerates())) < 0)
+            return ret;
+    }
 
     return ff_set_common_channel_layouts(ctx, ff_all_channel_counts());
 }
