@@ -39,6 +39,7 @@
 enum SyncMode {
     SYNC_MODE_AUDIO,
     SYNC_MODE_SYSTEM,
+    SYNC_MODE_BYPASS,
 };
 
 typedef struct DevSinkPriv {
@@ -450,6 +451,8 @@ static int devsink_process_command(AVFilterContext *ctx,
             mode = SYNC_MODE_AUDIO;
         else if (!strcmp(args, "system"))
             mode = SYNC_MODE_SYSTEM;
+        else if (!strcmp(args, "bypass"))
+            mode = SYNC_MODE_BYPASS;
         else {
             av_log(ctx, AV_LOG_ERROR, "Unsupport vsync mode: %s\n", args);
             return AVERROR(EINVAL);
