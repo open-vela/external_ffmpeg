@@ -102,6 +102,7 @@ typedef struct MovieAsyncContext {
     int                       live_stream;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
+    unsigned                  lastseek_ms;    /** < timestamp of seek, only used in offload */
     unsigned                  duration_ms;    /** < duration of whole stream */
     int                       loop_count;
     int                       pending_stop;
@@ -379,6 +380,7 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
         av_dict_free(&movie->format_opt);
 
     movie->current_ms = 0;
+    movie->lastseek_ms = 0;
 }
 
 static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
@@ -401,6 +403,7 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_DATA_QUEUE_IDX);
 
     movie->current_ms = ms;
+    movie->lastseek_ms = ms;
 
     movie->eof_reached = false;
     for (i = 0; i < ctx->nb_outputs; i++)
@@ -1431,8 +1434,10 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         memset(res, 0, res_len);
         for (int i = 0; i < ctx->nb_outputs; i++) {
             int ret = avfilter_forward_command(ctx, i, NULL, "get_position", NULL, res, res_len, 0);
-            if (ret >= 0)
+            if (ret >= 0) {
+                snprintf(res, res_len, "%lu", movie->lastseek_ms + strtoul(res, NULL, 0));
                 return ret;
+            }
         }
 
         return movie_async_get_position(ctx, res, res_len);
