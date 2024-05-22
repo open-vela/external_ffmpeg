@@ -9080,7 +9080,7 @@ static AVIndexEntry *mov_find_next_sample_in_dynamic_index(AVFormatContext *s, A
         }
 
         if (!current_sample)
-            return NULL;
+            continue;
 
         dts = av_rescale(current_sample->timestamp, AV_TIME_BASE, msc->time_scale);
         if (avst->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
