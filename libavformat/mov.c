@@ -8995,7 +8995,7 @@ static int mov_build_one_AVIndexEntry(MOVContext *mov, AVStream *st, AVIndexEntr
     else {
         sc->last_chunk_index++;
         sc->last_chunk_sample = 1;
-        if(sc->last_chunk_index + 1 == sc->stsc_data[sc->last_stsc_index + 1].first)
+        if(sc->last_stsc_index < sc->stsc_count - 1 && sc->last_chunk_index + 1 == sc->stsc_data[sc->last_stsc_index + 1].first)
             sc->last_stsc_index++;
 
         e->pos = sc->chunk_offsets[sc->last_chunk_index];
