@@ -196,6 +196,19 @@ static AVFrame *moviesink_recv_dat(AVFilterContext *ctx, int pad_id)
     return frame;
 }
 
+static AVFrame *moviesink_peek_dat(AVFilterContext *ctx, int pad_id)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    AVFrame *frame = NULL;
+
+    pthread_mutex_lock(&priv->mutex);
+    if (ff_framequeue_queued_frames(&priv->streams[pad_id].dat_queue))
+        frame = ff_framequeue_peek(&priv->streams[pad_id].dat_queue, 0);
+    pthread_mutex_unlock(&priv->mutex);
+
+    return frame;
+}
+
 static bool moviesink_dat_full(AVFilterContext *ctx, int pad_id)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -490,7 +503,7 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
     int i, ret = 0;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        frame = moviesink_recv_dat(ctx, i);
+        frame = moviesink_peek_dat(ctx, i);
         if (!frame)
             continue;
 
@@ -498,20 +511,23 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
         ret = moviesink_init_stream(ctx, i, frame);
         if (ret < 0) {
             av_log(ctx, AV_LOG_WARNING, "moviesink_init_stream error %d\n.", ret);
+            frame = moviesink_recv_dat(ctx, i);
             av_frame_free(&frame);
             return ret;
         } else if (priv->format_ctx->nb_streams < ctx->nb_inputs) {
             priv->streams[i].sync_pts = frame->pts;
-            av_frame_free(&frame);
             continue;
         } else if (ret > 0) {
             priv->streams[i].sync_pts = frame->pts;
             ret = avformat_write_header(priv->format_ctx, NULL);
             if (ret < 0) {
+                frame = moviesink_recv_dat(ctx, i);
                 av_frame_free(&frame);
                 goto out;
             }
         }
+
+        frame = moviesink_recv_dat(ctx, i);
 
         /* user request stop, send frame which linesize = 0 */
         if (!frame->linesize[0]) {
