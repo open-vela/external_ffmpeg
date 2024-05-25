@@ -437,7 +437,6 @@ static void moviesink_start(AVFilterContext *ctx, const char *params)
     ret = 0;
 
 out:
-    ff_filter_set_ready(ctx, 100);
     moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_STARTED, ret, NULL);
 }
 
