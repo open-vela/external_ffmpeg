@@ -265,6 +265,23 @@ out:
     return ret;
 }
 
+static int decoder_process_command(AVFilterContext *ctx,
+                                   const char *cmd, const char *args,
+                                   char *res, int res_len, int flags)
+{
+    DecoderContext *priv = ctx->priv;
+
+    if (!priv->codec_ctx)
+        return AVERROR(EINVAL);
+
+    if (!strcmp(cmd, "poll_available")) {
+        ff_filter_set_ready(ctx, 100);
+        return 0;
+    } else
+        return avcodec_process_command(priv->codec_ctx,
+                                       cmd, args, res, res_len, flags);
+}
+
 static int decoder_forward_command(AVFilterContext *ctx,
                                    int pad_idx, const char *target, const char *cmd,
                                    const char *arg, char *res, int res_len, int flags)
@@ -355,15 +372,16 @@ static const AVClass vdecoder_class = {
 };
 
 const AVFilter ff_vf_decoder = {
-    .name        = "decoder",
-    .description = NULL_IF_CONFIG_SMALL("video decoder filter."),
-    .priv_size   = sizeof(DecoderContext),
-    .priv_class  = &vdecoder_class,
-    .activate    = decoder_activate,
-    .flags       = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
+    .name            = "decoder",
+    .description     = NULL_IF_CONFIG_SMALL("video decoder filter."),
+    .priv_size       = sizeof(DecoderContext),
+    .priv_class      = &vdecoder_class,
+    .activate        = decoder_activate,
+    .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SUPPORT_POLL,
     FILTER_QUERY_FUNC(decoder_query_formats),
     FILTER_INPUTS(avfilter_vf_decoder_inputs),
     FILTER_OUTPUTS(avfilter_vf_decoder_outputs),
+    .process_command = decoder_process_command,
     .forward_command = decoder_forward_command,
 };
 #endif

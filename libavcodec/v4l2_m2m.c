@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <fcntl.h>
+#include <poll.h>
 #include "libavcodec/avcodec.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/imgutils.h"
@@ -322,6 +323,26 @@ int ff_v4l2_m2m_codec_init(V4L2m2mPriv *priv)
     av_log(s->avctx, AV_LOG_INFO, "Using device %s\n", s->devname);
 
     return v4l2_configure_contexts(s);
+}
+
+int ff_v4l2_m2m_codec_get_pollfd(V4L2m2mPriv *priv,
+                                 void *data, int data_size)
+{
+    V4L2m2mContext *s = priv->context;
+    V4L2Context *capture = &s->capture;
+    struct pollfd *pfd = data;
+    int ret = 0;
+
+    if (!data || data_size < sizeof(struct pollfd))
+        return AVERROR(EINVAL);
+
+    if (!capture->done) {
+        pfd[ret].events = POLLIN | POLLRDNORM | POLLPRI;
+        pfd[ret].fd     = s->fd;
+        ret++;
+    }
+
+    return ret;
 }
 
 int ff_v4l2_m2m_create_context(V4L2m2mPriv *priv, V4L2m2mContext **s)

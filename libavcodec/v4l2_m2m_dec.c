@@ -177,7 +177,7 @@ static int v4l2_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     }
 
 dequeue:
-    return ff_v4l2_context_dequeue_frame(capture, frame, -1);
+    return ff_v4l2_context_dequeue_frame(capture, frame, 0);
 fail:
     av_packet_unref(&s->buf_pkt);
     return ret;
@@ -225,6 +225,19 @@ static av_cold int v4l2_decode_close(AVCodecContext *avctx)
     return ff_v4l2_m2m_codec_end(avctx->priv_data);
 }
 
+static av_cold int
+v4l2_decode_process_command(AVCodecContext *avctx,
+                            const char *cmd, const char *args,
+                            char *res, int res_len, int flags)
+{
+    if (!strcmp(cmd, "get_pollfd")) {
+        return ff_v4l2_m2m_codec_get_pollfd(avctx->priv_data,
+                                            res, res_len);
+    }
+
+    return AVERROR(ENOSYS);
+}
+
 #define OFFSET(x) offsetof(V4L2m2mPriv, x)
 #define FLAGS AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_DECODING_PARAM
 
@@ -246,19 +259,20 @@ static const AVOption options[] = {
 #define M2MDEC(NAME, LONGNAME, CODEC, bsf_name) \
     M2MDEC_CLASS(NAME) \
     const FFCodec ff_ ## NAME ## _v4l2m2m_decoder = { \
-        .p.name         = #NAME "_v4l2m2m" , \
-        .p.long_name    = NULL_IF_CONFIG_SMALL("V4L2 mem2mem " LONGNAME " decoder wrapper"), \
-        .p.type         = AVMEDIA_TYPE_VIDEO, \
-        .p.id           = CODEC , \
-        .priv_data_size = sizeof(V4L2m2mPriv), \
-        .p.priv_class   = &v4l2_m2m_ ## NAME ## _dec_class, \
-        .init           = v4l2_decode_init, \
+        .p.name          = #NAME "_v4l2m2m" , \
+        .p.long_name     = NULL_IF_CONFIG_SMALL("V4L2 mem2mem " LONGNAME " decoder wrapper"), \
+        .p.type          = AVMEDIA_TYPE_VIDEO, \
+        .p.id            = CODEC , \
+        .priv_data_size  = sizeof(V4L2m2mPriv), \
+        .p.priv_class    = &v4l2_m2m_ ## NAME ## _dec_class, \
+        .init            = v4l2_decode_init, \
         FF_CODEC_RECEIVE_FRAME_CB(v4l2_receive_frame), \
-        .close          = v4l2_decode_close, \
-        .bsfs           = bsf_name, \
-        .p.capabilities = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING, \
-        .caps_internal  = FF_CODEC_CAP_SETS_PKT_DTS | FF_CODEC_CAP_INIT_CLEANUP, \
-        .p.wrapper_name = "v4l2m2m", \
+        .close           = v4l2_decode_close, \
+        .process_command = v4l2_decode_process_command, \
+        .bsfs            = bsf_name, \
+        .p.capabilities  = AV_CODEC_CAP_HARDWARE | AV_CODEC_CAP_DELAY | AV_CODEC_CAP_AVOID_PROBING, \
+        .caps_internal   = FF_CODEC_CAP_SETS_PKT_DTS | FF_CODEC_CAP_INIT_CLEANUP, \
+        .p.wrapper_name  = "v4l2m2m", \
     }
 
 M2MDEC(h264,  "H.264", AV_CODEC_ID_H264,       "h264_mp4toannexb");
