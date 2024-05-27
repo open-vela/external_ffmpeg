@@ -374,6 +374,23 @@ free_and_end:
     goto end;
 }
 
+int avcodec_process_command(AVCodecContext *avctx,
+                            const char *cmd, const char *args,
+                            char *res, int res_len, int flags)
+{
+    const FFCodec *codec2;
+
+    if (!avcodec_is_open(avctx))
+        return AVERROR(EINVAL);
+
+    codec2 = ffcodec(avctx->codec);
+    if (codec2->process_command)
+        return codec2->process_command(avctx, cmd, args,
+                                       res, res_len, flags);
+
+    return AVERROR(ENOSYS);
+}
+
 void avcodec_flush_buffers(AVCodecContext *avctx)
 {
     AVCodecInternal *avci = avctx->internal;

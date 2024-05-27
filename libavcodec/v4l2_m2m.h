@@ -98,6 +98,9 @@ int ff_v4l2_m2m_create_context(V4L2m2mPriv *priv, V4L2m2mContext **s);
  */
 int ff_v4l2_m2m_codec_init(V4L2m2mPriv *priv);
 
+int ff_v4l2_m2m_codec_get_pollfd(V4L2m2mPriv *priv,
+                                 void *data, int data_size);
+
 /**
  * Releases all the codec resources if all AVBufferRefs have been returned to the
  * ctx. Otherwise keep the driver open.
