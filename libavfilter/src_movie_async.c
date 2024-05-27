@@ -99,7 +99,7 @@ typedef struct MovieAsyncContext {
 
     int                       state;
     bool                      eof_reached;
-    bool                      live_stream;
+    int                       live_stream;
 
     unsigned                  current_ms;     /** < current timestamp of the decoded frame */
     unsigned                  duration_ms;    /** < duration of whole stream */
