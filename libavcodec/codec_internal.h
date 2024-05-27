@@ -231,6 +231,13 @@ typedef struct FFCodec {
     void (*flush)(struct AVCodecContext *);
 
     /**
+     *  process a command
+     */
+    int (*process_command)(struct AVCodecContext *avctx,
+                           const char *cmd, const char *args,
+                           char *res, int res_len, int flags);
+
+    /**
      * Decoding only, a comma-separated list of bitstream filters to apply to
      * packets before decoding.
      */

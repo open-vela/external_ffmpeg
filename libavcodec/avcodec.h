@@ -3127,6 +3127,10 @@ int avcodec_fill_audio_frame(AVFrame *frame, int nb_channels,
                              enum AVSampleFormat sample_fmt, const uint8_t *buf,
                              int buf_size, int align);
 
+int avcodec_process_command(AVCodecContext *avctx,
+                            const char *cmd, const char *args,
+                            char *res, int res_len, int flags);
+
 /**
  * Reset the internal codec state / flush internal buffers. Should be called
  * e.g. when seeking or when switching to a different stream.

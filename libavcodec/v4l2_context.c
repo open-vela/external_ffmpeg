@@ -648,7 +648,7 @@ int ff_v4l2_context_dequeue_packet(V4L2Context* ctx, AVPacket* pkt)
      *  1. encoded packet available
      *  2. an input buffer ready to be dequeued
      */
-    avbuf = v4l2_dequeue_v4l2buf(ctx, -1);
+    avbuf = v4l2_dequeue_v4l2buf(ctx, 0);
     if (!avbuf) {
         if (ctx->done)
             return AVERROR_EOF;
