@@ -539,6 +539,8 @@ static void movie_async_prepare(AVFilterContext *ctx, const char *filename)
     ret = movie_async_open_demuxer(ctx, filename);
     if (ret >= 0)
         movie->state = AVMOVIE_ASYNC_STATE_PREPARED;
+    else if (movie_async_interrupt(ctx))
+        ret = AVERROR(ECANCELED);
 
 out:
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_PREPARED, ret, NULL);
