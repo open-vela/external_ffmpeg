@@ -3077,7 +3077,8 @@ static int mov_read_stts(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (duration)
         st->duration= FFMIN(st->duration, duration);
     sc->track_end = duration;
-    av_log(c->fc, AV_LOG_INFO, "stts_count %u stts_data[0].duration %u\n", sc->stts_count, sc->stts_data[0].duration);
+    if (sc->stts_count > 0)
+        av_log(c->fc, AV_LOG_INFO, "stts_count %u stts_data[0].duration %u\n", sc->stts_count, sc->stts_data[0].duration);
     return 0;
 }
 
