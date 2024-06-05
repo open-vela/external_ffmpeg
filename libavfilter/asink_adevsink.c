@@ -514,6 +514,11 @@ static int adevsink_process_command(AVFilterContext *ctx,
                                     priv->fmt_ctx,
                                     AV_APP_TO_DEV_FLUSH,
                                     res, res_len);
+    } else if (!strcmp(cmd, "drain")) {
+        return avdevice_app_to_dev_control_message(
+                                    priv->fmt_ctx,
+                                    AV_APP_TO_DEV_DRAIN,
+                                    res, res_len);
     } else if (!strcmp(cmd, "dump")) {
         return avdevice_app_to_dev_control_message(
                                     priv->fmt_ctx,
