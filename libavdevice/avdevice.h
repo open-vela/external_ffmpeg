@@ -267,6 +267,13 @@ enum AVAppToDevMessageType {
      * Get position
     */
     AV_APP_TO_DEV_GET_POSITION = MKBETAG('G', 'P', 'O', 'S'),
+
+    /**
+     * Request drain.
+     *
+     * Application requests drain.
+    */
+    AV_APP_TO_DEV_DRAIN = MKBETAG('D', 'R', 'A', 'N'),
 };
 
 /**
