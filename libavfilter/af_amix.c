@@ -174,6 +174,7 @@ typedef struct MixContext {
     int normalize;              /**< if inputs are scaled */
 
     int nb_channels;            /**< number of channels */
+    AVChannelLayout ch_layout;
     int sample_rate;            /**< sample rate */
     int planar;
     AVAudioFifo **fifos;        /**< audio fifo for each input */
@@ -212,6 +213,8 @@ static const AVOption amix_options[] = {
             OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, A|F|T },
     { "sample_rate", "sample_rate",
             OFFSET(sample_rate), AV_OPT_TYPE_INT, {.i64=0}, -1, INT32_MAX, A|F },
+    { "ch_layout", "ch_layout",
+            OFFSET(ch_layout), AV_OPT_TYPE_CHLAYOUT, {.str = NULL}, 0, 0, A|F },
     { NULL }
 };
 
@@ -747,7 +750,11 @@ static int query_formats(AVFilterContext *ctx)
             return ret;
     }
 
-    return ff_set_common_channel_layouts(ctx, ff_all_channel_counts());
+    if (s->ch_layout.nb_channels) {
+        return ff_set_common_channel_layouts(ctx, ff_make_channel_layout_list(&s->ch_layout));
+    } else {
+        return ff_set_common_channel_layouts(ctx, ff_all_channel_layouts());
+    }
 }
 
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
