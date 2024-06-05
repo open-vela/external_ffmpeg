@@ -175,7 +175,11 @@ static int decoder_activate(AVFilterContext *ctx)
             ret = ff_filter_frame(outlink, out);
             break;
         } else if (ret == AVERROR_EOF) {
-            ret = avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
+            av_log(ctx, AV_LOG_INFO, "DEBUG: %s decode completed %d.\n", __func__, ret);
+
+            if (avfilter_forward_command(ctx, 0, NULL, "drain", NULL, NULL, 0, 0) < 0)
+                ret = avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
+
             if (ret < 0)
                 return ret;
             avcodec_flush_buffers(priv->codec_ctx);

@@ -162,6 +162,7 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
                                  void *data, size_t data_size)
 {
     NuttxPriv *priv = s1->priv_data;
+    AVPacket pkt = {0};
 
     switch (type) {
         case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
@@ -243,6 +244,12 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
             return ff_nuttx_flush(priv);
         case AV_APP_TO_DEV_SET_PARAMETER:
             return ff_nuttx_set_parameter(priv, data);
+        case AV_APP_TO_DEV_DRAIN:
+            if (ff_nuttx_get_position(priv) < 0)
+                return AVERROR(ENOTSUP);
+
+            pkt.flags = AV_PKT_FLAG_EVT_EOS;
+            return nuttx_write_packet(s1, &pkt);
         case AV_APP_TO_DEV_DUMP:
             snprintf(data, data_size, "%d|%d|%d|%d|%zu|%d",
                      priv->running, priv->draining,
