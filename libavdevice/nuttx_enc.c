@@ -274,6 +274,9 @@ static void nuttx_get_output_timestamp(struct AVFormatContext *s1, int stream,
     latency = ff_nuttx_get_latency(priv);
     latency = FFMAX(latency, 0);
 
+    if (priv->lastpkt)
+        latency += priv->lastpkt->size / priv->sample_bytes;
+
     *lat = latency;
     *ts = priv->timestamp - latency;
 }
