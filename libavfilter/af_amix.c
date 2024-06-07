@@ -231,13 +231,13 @@ static void calculate_scales(MixContext *s, int nb_samples)
     int ninput_on = 0;
 
     for (i = 0; i < s->nb_inputs; i++)
-        if (s->input_state[i] & INPUT_ON) {
+        if ((s->input_state[i] & INPUT_ON) && av_audio_fifo_size(s->fifos[i]) > 0) {
             weight_sum += FFABS(s->weights[i]);
             ninput_on++;
         }
 
     for (i = 0; i < s->nb_inputs; i++) {
-        if (s->input_state[i] & INPUT_ON) {
+        if ((s->input_state[i] & INPUT_ON) && av_audio_fifo_size(s->fifos[i]) > 0) {
             if (s->scale_norm[i] > weight_sum / FFABS(s->weights[i])) {
                 s->scale_norm[i] -= ((s->weight_sum / FFABS(s->weights[i])) / s->nb_inputs) *
                                     ((float)(s->nb_inputs - ninput_on) / ninput_on) *
@@ -248,7 +248,7 @@ static void calculate_scales(MixContext *s, int nb_samples)
     }
 
     for (i = 0; i < s->nb_inputs; i++) {
-        if (s->input_state[i] & INPUT_ON) {
+        if ((s->input_state[i] & INPUT_ON) && av_audio_fifo_size(s->fifos[i]) > 0) {
             if (!s->normalize)
                 s->input_scale[i] = FFABS(s->weights[i]);
             else
