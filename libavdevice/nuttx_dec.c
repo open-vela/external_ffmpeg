@@ -220,12 +220,13 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
 #define OFFSET(x) offsetof(NuttxPriv, x)
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
-    { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT,      {.i64 = 4},                0,                INT_MAX, FLAGS },
-    { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT,      {.i64 = 0},                0,                INT_MAX, FLAGS },
-    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT,      {.i64 = 20},               0,                INT_MAX, FLAGS },
-    { "codec",        "", OFFSET(codec),        AV_OPT_TYPE_INT,      {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, FLAGS },
-    { "sample_rate",  "", OFFSET(sample_rate),  AV_OPT_TYPE_INT,      {.i64 = 48000},            1,                INT_MAX, FLAGS },
-    { "ch_layout",    "", OFFSET(ch_layout),    AV_OPT_TYPE_CHLAYOUT, {.str = "stereo" },        0,                0,       FLAGS },
+    { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT,        {.i64 = 4},                  0,                  INT_MAX,              FLAGS },
+    { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT,        {.i64 = 0},                  0,                  INT_MAX,              FLAGS },
+    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT,        {.i64 = 20},                 0,                  INT_MAX,              FLAGS },
+    { "codec",        "", OFFSET(codec),        AV_OPT_TYPE_INT,        {.i64 = AV_CODEC_ID_NONE},   AV_CODEC_ID_NONE,   INT_MAX,              FLAGS },
+    { "format",       "", OFFSET(format),       AV_OPT_TYPE_SAMPLE_FMT, {.i64 = AV_SAMPLE_FMT_NONE}, AV_SAMPLE_FMT_NONE, AV_SAMPLE_FMT_NB - 1, FLAGS },
+    { "sample_rate",  "", OFFSET(sample_rate),  AV_OPT_TYPE_INT,        {.i64 = 48000},              1,                  INT_MAX,              FLAGS },
+    { "ch_layout",    "", OFFSET(ch_layout),    AV_OPT_TYPE_CHLAYOUT,   {.str = "stereo" },          0,                  0,                    FLAGS },
     { NULL },
 };
 

@@ -551,6 +551,7 @@ static int adevsrc_config_props(AVFilterLink *link)
     char tmp[64];
     int ret;
 
+    av_dict_set_int(&fmt_opt, "format", link->format, 0);
     av_dict_set_int(&fmt_opt, "sample_rate", link->sample_rate, 0);
     av_channel_layout_describe(&link->ch_layout, tmp, sizeof(tmp));
     av_dict_set(&fmt_opt, "ch_layout", tmp, 0);
