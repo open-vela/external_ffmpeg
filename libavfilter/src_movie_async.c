@@ -598,7 +598,7 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
     int ret;
 
     src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
-    if (ff_outlink_get_status(ctx->outputs[pad_id]) != 0) {
+    if (movie->streams[pad_id].codecpar == NULL) {
         dst = avcodec_parameters_alloc();
         if (!dst)
             return AVERROR(ENOMEM);
