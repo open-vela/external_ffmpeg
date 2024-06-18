@@ -323,6 +323,7 @@ extern const AVOutputFormat ff_oga_muxer;
 extern const AVInputFormat  ff_ogg_demuxer;
 extern const AVOutputFormat ff_ogg_muxer;
 extern const AVOutputFormat ff_ogv_muxer;
+extern const AVInputFormat  ff_offload_demuxer;
 extern const AVInputFormat  ff_oma_demuxer;
 extern const AVOutputFormat ff_oma_muxer;
 extern const AVOutputFormat ff_opus_muxer;
