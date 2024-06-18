@@ -404,6 +404,7 @@ OBJS-$(CONFIG_NUV_DEMUXER)               += nuv.o
 OBJS-$(CONFIG_AV1_DEMUXER)               += av1dec.o
 OBJS-$(CONFIG_OBU_DEMUXER)               += av1dec.o
 OBJS-$(CONFIG_OBU_MUXER)                 += rawenc.o
+OBJS-$(CONFIG_OFFLOAD_DEMUXER)           += offloaddec.o
 OBJS-$(CONFIG_OGG_DEMUXER)               += oggdec.o         \
                                             oggparsecelt.o   \
                                             oggparsedirac.o  \
