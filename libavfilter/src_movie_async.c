@@ -1299,7 +1299,7 @@ static int movie_async_get_latency(AVFilterContext *ctx, char *res, int res_len)
     /* rescale src filter frames as decoding sample_rate */
     src_latency = av_rescale_q(src_latency, AV_TIME_BASE_Q, av_make_q(1, ctx->outputs[pad]->sample_rate));
 
-    snprintf(res, res_len, "%lld", sink_latency > src_latency ? sink_latency : src_latency);
+    snprintf(res, res_len, "%"PRId64, sink_latency > src_latency ? sink_latency : src_latency);
     return 0;
 }
 

@@ -305,7 +305,7 @@ static int rpmsgsink_activate(AVFilterContext *ctx)
     RpmsgInfo info;
     AVFrame *frame;
     int64_t pts;
-    ssize_t ret;
+    int ret;
 
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
     if (ret >= 0 && priv->frame_request) {
