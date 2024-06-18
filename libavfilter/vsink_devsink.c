@@ -143,7 +143,7 @@ static int devsink_sync_video(AVFilterContext *ctx, int64_t pts, int64_t ts, int
     diff  = pts - now;
     diff += priv->lat_base;
 
-    av_log(ctx, AV_LOG_TRACE, "sync pts:%lld ts:%lld now:%lld diff:%lld lat:%lld\n", pts, ts, now, diff, lat);
+    av_log(ctx, AV_LOG_TRACE, "sync pts:%" PRId64 " ts:%" PRId64 " now:%" PRId64 " diff:%" PRId64 " lat:%" PRId64 "\n", pts, ts, now, diff, lat);
 
     if (diff > priv->frame_duration)
         return priv->frame_duration;

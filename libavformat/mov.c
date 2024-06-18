@@ -4470,7 +4470,7 @@ static void mov_build_dynamic_index_info(MOVContext *mov, AVStream *st, int chun
 
             if (sc->current_build_index == MOV_DEMUXER_INDEX_SIZE) {
                 mov_save_last_index_info(st, i, j, stts_index, stts_sample, stsc_index, current_offset, current_dts);
-                av_log(mov,AV_LOG_INFO,"line %d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
+                av_log(mov, AV_LOG_INFO, "line %d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
                        __LINE__, sc->last_stsc_index, sc->last_chunk_index, sc->last_chunk_sample);
                 condition = 1;
                 break;
@@ -4640,7 +4640,7 @@ static void mov_build_dynamic_index(MOVContext *mov, AVStream *st)
                 chunk_samples -= samples;
                 if (sc->current_build_index == MOV_DEMUXER_INDEX_SIZE) {
                     mov_save_last_index_info(st, i, chunk_samples, 1, 0, 0, current_offset, current_dts);
-                    av_log(mov,AV_LOG_INFO,"line:%d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
+                    av_log(mov, AV_LOG_INFO, "line:%d last_stsc_index:%d, last_chunk_index:%d, last_chunk_sample:%d\n",
                            __LINE__, sc->last_stsc_index, sc->last_chunk_index, sc->last_chunk_sample);
                     return;
                 }
@@ -9664,7 +9664,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 
     st = s->streams[stream_index];
     sti = ffstream(st);
-    av_log(s,AV_LOG_INFO,"%s stream:%d seek sample_time:%lld\n",__func__, st->codecpar->codec_type, sample_time);
+    av_log(s, AV_LOG_INFO, "%s stream:%d seek sample_time:%" PRId64 "\n", __func__, st->codecpar->codec_type, sample_time);
     sample = mov_seek_stream(s, st, sample_time, flags);
     if (sample < 0)
         return sample;
@@ -9672,7 +9672,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 #ifdef MOV_DEMUXER_INDEX_SIZE
     if (mov_media_type_check(mc, st)) {
         mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
-        av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
+        av_log(s, AV_LOG_INFO, "%s get chunk_index:%d chunk_sample_index:%d\n", __func__, chunk_index, chunk_sample_index);
         mov_build_index_by_chunkinfo(s, st, chunk_index, chunk_sample_index);
     }
 #endif
@@ -9710,7 +9710,7 @@ static int mov_read_seek(AVFormatContext *s, int stream_index, int64_t sample_ti
 #ifdef MOV_DEMUXER_INDEX_SIZE
                 if (mov_media_type_check(mc, st)) {
                     mov_get_chunkinfo_by_sample(s, st, sample, &chunk_index, &chunk_sample_index);
-                    av_log(s,AV_LOG_INFO,"%s get chunk_index:%d chunk_sample_index:%d\n",__func__,chunk_index,chunk_sample_index);
+                    av_log(s, AV_LOG_INFO, "%s get chunk_index:%d chunk_sample_index:%d\n", __func__, chunk_index, chunk_sample_index);
 	                mov_build_index_by_chunkinfo(s, st, chunk_index, chunk_sample_index);
                 }
 #endif

@@ -220,7 +220,7 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                     int64_t diff   = ts_now - priv->last_ts;
 
                     if (diff > 500000 /* us */)
-                        av_log(NULL, AV_LOG_ERROR, "bluelet poll available time_us: %lld - diff %lld\n", ts_now, diff);
+                        av_log(NULL, AV_LOG_ERROR, "bluelet poll available time_us: %" PRId64 " - diff %" PRId64 "\n", ts_now, diff);
                     priv->last_ts = ts_now;
 
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
