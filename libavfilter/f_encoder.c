@@ -186,6 +186,8 @@ static int encoder_activate(AVFilterContext *ctx)
             encoder_close(ctx);
         }
 
+    } else if (!outlink->frame_wanted_out) {
+        return 0;
     } else if (ff_inlink_check_available_frame(inlink)) {
         if (!priv->codec_ctx) {
             ret = encoder_open(ctx);
