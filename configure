@@ -2095,6 +2095,7 @@ ARCH_EXT_LIST_ARM="
     armv6t2
     armv8
     armv8m_main
+    mve
     neon
     vfp
     vfpv3
@@ -2655,7 +2656,9 @@ armv6_deps="arm"
 armv6t2_deps="arm"
 armv8m_main_deps="arm"
 armv8_deps="aarch64"
+mve_deps="arm"
 neon_deps_any="aarch64 arm"
+intrinsics_mve_deps="mve"
 intrinsics_neon_deps="neon"
 vfp_deps_any="aarch64 arm"
 vfpv3_deps="vfp"
@@ -6060,6 +6063,7 @@ EOF
     enabled armv5te && check_insn armv5te 'qadd r0, r0, r0'
     enabled armv6   && check_insn armv6   'sadd16 r0, r0, r0'
     enabled armv6t2 && check_insn armv6t2 'movt r0, #0'
+    enabled mve     && check_insn mve     'dlstp.16 lr, #0'
     enabled neon    && check_insn neon    'vadd.i16 q0, q0, q0'
     enabled vfp     && check_insn vfp     'fadds s0, s0, s0'
     enabled vfpv3   && check_insn vfpv3   'vmov.f32 s0, #1.0'
@@ -7611,6 +7615,7 @@ if enabled arm; then
     echo "ARMv6 enabled             ${armv6-no}"
     echo "ARMv6T2 enabled           ${armv6t2-no}"
     echo "VFP enabled               ${vfp-no}"
+    echo "MVE enabled               ${mve-no}"
     echo "NEON enabled              ${neon-no}"
     echo "THUMB enabled             ${thumb-no}"
 fi
