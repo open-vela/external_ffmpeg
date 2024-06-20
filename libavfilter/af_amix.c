@@ -754,7 +754,7 @@ static int query_formats(AVFilterContext *ctx)
         const AVChannelLayout layout_list[] = { s->ch_layout, { 0 } };
         return ff_set_common_channel_layouts(ctx, ff_make_channel_layout_list(layout_list));
     } else {
-        return ff_set_common_channel_layouts(ctx, ff_all_channel_layouts());
+        return ff_set_common_channel_layouts(ctx, ff_all_channel_counts());
     }
 }
 
