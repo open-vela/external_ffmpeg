@@ -375,7 +375,8 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
 {
     struct AVDeviceCapabilitiesQuery *devcap = obj;
     struct AVFormatContext *s1 = devcap->device_context;
-    struct audio_caps_s formats, others;
+    struct audio_caps_s formats = { 0 };
+    struct audio_caps_s others = { 0 };
     int ac_type = AUDIO_TYPE_QUERY;
     struct AVOptionRanges *ranges;
     int values0[64], values1[64];
