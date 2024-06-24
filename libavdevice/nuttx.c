@@ -756,30 +756,25 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
 
     new = dq_count(&priv->bufferq);
     if (priv->periods > 1 && new == priv->periods && new > old) {
-        av_log(priv, AV_LOG_WARNING, "audio %s, %s!\n", priv->devname,
-               priv->playback ? "playback underflow" : "capture overflow");
-
         if (priv->playback) {
-            int ret;
-
             /* Try to send the buffer containing the remaining data to the driver */
-            ret = ff_nuttx_drain_buffer(priv, false);
-            if (ret < 0) {
-                return ret;
+            ff_nuttx_drain_buffer(priv, false);
+            old = new;
+            new = dq_count(&priv->bufferq);
+            if (new >= old) {
+                /* No buffer is sent to the driver,execute pause */
+                av_log(priv, AV_LOG_WARNING, "[%s][%s] playback underflow! pause.\n",
+                       __func__, priv->devname);
+                ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+                priv->underflow = true;
             } else {
-                if (dq_count(&priv->bufferq) >= new) {
-                    /* No buffer is sent to the driver,execute pause */
-                    av_log(priv, AV_LOG_INFO, "[%s][%s] pause\n", __func__, priv->devname);
-                    ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-                    priv->underflow = true;
-                } else {
-                    /* A buffer is sent to the driver,pause will be done next time */
-                    new = dq_count(&priv->bufferq);
-                    av_log(priv, AV_LOG_INFO, "[%s][%s] enqueue remaining data\n",
-                           __func__, priv->devname);
-                }
+                /* A buffer is sent to the driver,pause will be done next time */
+                av_log(priv, AV_LOG_INFO, "[%s][%s] enqueue remaining data\n",
+                       __func__, priv->devname);
             }
         } else {
+            av_log(priv, AV_LOG_WARNING, "[%s][%s] capture overflow!\n",
+                   __func__, priv->devname);
             while (!dq_empty(&priv->bufferq)) {
                 buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
                 ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
