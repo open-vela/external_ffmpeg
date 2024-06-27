@@ -46,6 +46,7 @@ static void check_consistency(FFFrameQueue *fq)
 
 void ff_framequeue_init(FFFrameQueue *fq, FFFrameQueueGlobal *fqg)
 {
+    memset(fq, 0, sizeof(FFFrameQueue));
     fq->queue = &fq->first_bucket;
     fq->allocated = 1;
 }
