@@ -424,6 +424,9 @@ static int devsink_process_command(AVFilterContext *ctx,
                                     AV_APP_TO_DEV_START,
                                     res, res_len);
     } else if (!strcmp(cmd, "play")) {
+        if (ff_inlink_check_available_frame(ctx->inputs[0]))
+            ff_filter_set_ready(ctx, 100);
+
         ret = avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_PLAY,
                                     res, res_len);
@@ -431,6 +434,10 @@ static int devsink_process_command(AVFilterContext *ctx,
             priv->ts_base = AV_NOPTS_VALUE; //for pause to resume
 
         return ret;
+    } else if (!strcmp(cmd, "pause")) {
+        devsink_timer_stop(ctx);
+
+        return 0;
     } else if (!strcmp(cmd, "stop")) {
         return avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                     AV_APP_TO_DEV_STOP,
