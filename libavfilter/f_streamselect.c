@@ -232,6 +232,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
                            char *res, int res_len, int flags)
 {
     StreamSelectContext *s = ctx->priv;
+    bool need_reconfig = false;
     int pos = 0, ret, i;
 
     if (!strcmp(cmd, "map")) {
@@ -242,14 +243,18 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         for (i = 0; i < s->nb_map; i++)
             if (s->map[i] < 0)
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+            else
+                need_reconfig = true;
 
-        ret = avfilter_graph_reconfig(ctx->graph, ctx);
-        if (ret >= 0) {
-            for (int i = 0; i < ctx->nb_outputs; i++)
-                if (ctx->outputs[i]->incfg.formats)
-                    ctx->outputs[i]->frame_wanted_out = 1;
-            ff_filter_set_ready(ctx, 100);
+        if (need_reconfig) {
+            ret = avfilter_graph_reconfig(ctx->graph, ctx);
+            if (ret >= 0) {
+                for (int i = 0; i < ctx->nb_outputs; i++)
+                    if (ctx->outputs[i]->incfg.formats)
+                        ctx->outputs[i]->frame_wanted_out = 1;
+            }
         }
+        ff_filter_set_ready(ctx, 100);
 
         return ret;
     } else if (!strcmp(cmd, "dump")) {
