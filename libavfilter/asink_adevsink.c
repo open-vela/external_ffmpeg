@@ -272,8 +272,11 @@ static int adevsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
     } else {
         pkt = frame ? (AVPacket *)frame->data[0] : NULL;
         ret = av_write_frame(priv->fmt_ctx, pkt);
-        if (ret < 0)
-            av_packet_ref(priv->last_pkt, pkt);
+        if (ret < 0) {
+            ret = av_packet_ref(priv->last_pkt, pkt);
+            if (ret < 0)
+                av_log(ctx, AV_LOG_ERROR, "Failed to ref packets!\n");
+        }
 
         status = !frame ? AVERROR_EOF : 0;
     }
