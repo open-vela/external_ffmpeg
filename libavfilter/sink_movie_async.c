@@ -163,6 +163,21 @@ static int moviesink_send_event(AVFilterContext *ctx, int event, int ret, const 
     return 0;
 }
 
+static void moviesink_set_eof(AVFilterContext *ctx)
+{
+    MovieSinkPriv *priv = ctx->priv;
+    AVFilterLink *link;
+    int i;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        link = ctx->inputs[i];
+
+        ff_inlink_set_status(link, AVERROR_EOF);
+    }
+
+    priv->format = NULL;
+}
+
 static void moviesink_proc_event(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -177,6 +192,9 @@ static void moviesink_proc_event(AVFilterContext *ctx)
 
         if (!event)
             break;
+
+        if (event->event == AVMOVIE_ASYNC_EVENT_COMPLETED)
+            moviesink_set_eof(ctx);
 
         moviesink_notify_event(priv, event->event, event->ret, event->extra);
         av_freep(&event);
@@ -478,24 +496,6 @@ static void moviesink_clean(AVFilterContext *ctx)
     }
 }
 
-static void moviesink_set_eof(AVFilterContext *ctx)
-{
-    MovieSinkPriv *priv = ctx->priv;
-    AVFilterLink *link;
-    int i;
-
-    for (i = 0; i < ctx->nb_inputs; i++) {
-        link = ctx->inputs[i];
-
-        ff_inlink_set_status(link, AVERROR_EOF);
-    }
-
-    priv->format = NULL;
-
-    if (priv->format_opt)
-        av_dict_free(&priv->format_opt);
-}
-
 static int moviesink_proc_dat(AVFilterContext *ctx)
 {
     MovieSinkPriv *priv = ctx->priv;
@@ -562,7 +562,6 @@ out:
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
     moviesink_clean(ctx);
-    moviesink_set_eof(ctx);
     return ret;
 }
 
@@ -1095,10 +1094,9 @@ static int moviesink_process_quit(AVFilterContext *ctx, const char *cmd)
     else
         ret = moviesink_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
 
-    if (ret < 0)
-        return ret;
+    if (priv->format_opt)
+        av_dict_free(&priv->format_opt);
 
-    moviesink_set_eof(ctx);
     return ret;
 }
 
