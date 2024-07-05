@@ -366,7 +366,7 @@ static int ff_nuttx_drain_buffer(NuttxPriv *priv, bool eos)
     if (ret < 0)
         return ret;
 
-    if (!buffer || (!eos && !buffer->curbyte))
+    if (!eos && !buffer->curbyte)
         return 0;
 
     dq_remfirst(&priv->bufferq);
