@@ -1215,6 +1215,8 @@ static int movie_async_activate(AVFilterContext *ctx)
         frame = movie_async_recv_dat(ctx, i);
 
         ret = ff_filter_frame(link, frame);
+        if (ret < 0)
+            movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
     }
 
     return ret;
