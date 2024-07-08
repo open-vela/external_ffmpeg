@@ -511,7 +511,7 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
     int ret;
 
     struct mq_attr attr = {
-        .mq_maxmsg  = 8,
+        .mq_maxmsg  = 16,
         .mq_msgsize = sizeof(struct audio_msg_s),
     };
 
