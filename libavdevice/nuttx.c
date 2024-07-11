@@ -746,9 +746,9 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             priv->draining = false;
             return AVERROR_EXIT;
         } else if (msg.msg_id == AUDIO_MSG_UNDERRUN) {
-            av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow\n", __func__, priv->devname);
+            av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow! pause.\n", __func__, priv->devname);
             ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-            priv->underflow = true;
+            priv->paused = true;
         } else if (msg.msg_id == AUDIO_MSG_IOERR) {
             av_log(priv, AV_LOG_ERROR, "[%s][%s]io error occur\n", __func__, priv->devname);
             priv->ioerr = true;
@@ -769,7 +769,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
                 av_log(priv, AV_LOG_WARNING, "[%s][%s] playback underflow! pause.\n",
                        __func__, priv->devname);
                 ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-                priv->underflow = true;
+                priv->paused = true;
             } else {
                 /* A buffer is sent to the driver,pause will be done next time */
                 av_log(priv, AV_LOG_INFO, "[%s][%s] enqueue remaining data\n",
@@ -841,13 +841,13 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
                 priv->running = true;
             }
 
-            if (priv->underflow && dq_count(&priv->bufferq) == 0) {
+            if (priv->paused && dq_count(&priv->bufferq) == 0) {
                 ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
                 av_log(NULL, AV_LOG_INFO, "[%s][%s] resume ret:%d\n", __func__, priv->devname, ret);
                 if (ret < 0)
                     break;
 
-                priv->underflow = false;
+                priv->paused = false;
             }
         }
 
@@ -927,16 +927,29 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size, uint32_t *sampl
 
 int ff_nuttx_pause(NuttxPriv *priv)
 {
-    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+    int ret;
+
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+    av_log(NULL, AV_LOG_INFO, "[%s][%s] pause ret:%d\n", __func__, priv->devname, ret);
+    if (ret >= 0)
+        priv->paused = true;
+
+    return ret;
 }
 
 int ff_nuttx_resume(NuttxPriv *priv)
 {
+    int ret;
+
     if ((!priv->running) || (dq_count(&priv->bufferq) == priv->periods))
         return 0;
 
-    priv->underflow = false;
-    return ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+    av_log(NULL, AV_LOG_INFO, "[%s][%s] resume ret:%d\n", __func__, priv->devname, ret);
+    if (ret >= 0)
+        priv->paused = false;
+
+    return ret;
 }
 
 int ff_nuttx_flush(NuttxPriv *priv)
