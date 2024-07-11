@@ -72,8 +72,10 @@ static int adevsink_open_encoder(AVFilterContext *ctx)
     ADevSinkPriv *priv = ctx->priv;
     AVStream *st = priv->fmt_ctx->streams[0];
     AVDictionary *fmt_opt = NULL;
+    AVDictionary *dict = NULL;
     enum AVCodecID codec_id;
     const AVCodec *enc;
+    char *param;
     int ret;
 
     if (!avcodec_is_pcm_lossless(inlink->codec)) {
@@ -83,6 +85,18 @@ static int adevsink_open_encoder(AVFilterContext *ctx)
         st->codecpar->codec_id    = inlink->codec;
         av_channel_layout_copy(&st->codecpar->ch_layout, &inlink->ch_layout);
         st->time_base = (AVRational){ 1, inlink->sample_rate };
+
+        if (avfilter_forward_command(ctx, 0, NULL, "get_options", NULL, (char*)&dict, sizeof(AVDictionary **), AVFILTER_CMD_FLAG_REVERSE) >= 0) {
+            if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
+                ret = avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                                          AV_APP_TO_DEV_SET_PARAMETER,
+                                                          param, 0);
+
+            av_dict_free(&dict);
+            if (ret < 0)
+                return ret == AVERROR(ENOSYS) ? 0 : ret;
+            }
+        }
 
         return 0;
     }
