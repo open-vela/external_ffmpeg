@@ -98,7 +98,7 @@ static int merge_codecs_internal(AVFilterFormats *a,
     av_assert2(check || (a->refcount && b->refcount));
     if (a == b) return 1;
 
-    MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 0);
+    MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 1);
     return 1;
 }
 
@@ -670,6 +670,11 @@ AVFilterFormats *ff_all_raw_codecs(enum AVMediaType type)
     }
 
     return ret;
+}
+
+AVFilterFormats *ff_all_codecs(enum AVMediaType type)
+{
+    return av_mallocz(sizeof(AVFilterFormats));
 }
 
 AVFilterChannelLayouts *ff_all_channel_layouts(void)
