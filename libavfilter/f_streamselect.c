@@ -426,7 +426,7 @@ static int query_formats(AVFilterContext *ctx)
                 rates   = ctx->inputs[i]->outcfg.samplerates;
                 layouts = ctx->inputs[i]->outcfg.channel_layouts;
             } else {
-                codecs  = ff_all_raw_codecs(ctx->inputs[0]->type);
+                codecs  = ff_all_codecs(ctx->inputs[0]->type);
                 formats = ff_all_formats(ctx->inputs[0]->type);
                 rates   = ff_all_samplerates();
                 layouts = ff_all_channel_counts();
