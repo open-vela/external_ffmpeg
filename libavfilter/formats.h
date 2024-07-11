@@ -123,6 +123,9 @@ AVFilterFormats *ff_all_samplerates(void);
 av_warn_unused_result
 AVFilterFormats *ff_all_raw_codecs(enum AVMediaType type);
 
+av_warn_unused_result
+AVFilterFormats *ff_all_codecs(enum AVMediaType type);
+
 /**
  * Construct an AVFilterChannelLayouts coding for any channel layout, with
  * known or unknown disposition.
