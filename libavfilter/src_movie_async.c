@@ -1479,6 +1479,9 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
             return movie_async_send_vsyncmode(ctx, false);
 
         return 0;
+    } else if (!strcmp(cmd, "get_options")) {
+        AVDictionary **dst = (AVDictionary **)res;
+        return av_dict_copy(dst, movie->format_opt, 0);
     } else {
         av_log(ctx, AV_LOG_ERROR, "src:%s unsupported command:%s.\n", ctx->name, cmd);
         return AVERROR(ENOSYS);
