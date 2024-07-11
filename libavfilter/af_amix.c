@@ -175,6 +175,7 @@ typedef struct MixContext {
 
     int nb_channels;            /**< number of channels */
     AVChannelLayout ch_layout;
+    enum AVSampleFormat sample_fmt;
     int sample_rate;            /**< sample rate */
     int planar;
     AVAudioFifo **fifos;        /**< audio fifo for each input */
@@ -215,6 +216,8 @@ static const AVOption amix_options[] = {
             OFFSET(sample_rate), AV_OPT_TYPE_INT, {.i64=0}, -1, INT32_MAX, A|F },
     { "ch_layout", "ch_layout",
             OFFSET(ch_layout), AV_OPT_TYPE_CHLAYOUT, {.str = NULL}, 0, 0, A|F },
+    { "sample_fmt", "sample_fmt",
+        OFFSET(sample_fmt), AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, A|F },
     { NULL }
 };
 
@@ -738,8 +741,13 @@ static int query_formats(AVFilterContext *ctx)
     MixContext *s = ctx->priv;
     int ret;
 
-    if ((ret = ff_set_common_formats(ctx, ff_make_format_list(sample_fmts))) < 0)
-        return ret;
+    if (s->sample_fmt != AV_SAMPLE_FMT_NONE) {
+        if ((ret = ff_set_common_formats(ctx, ff_make_formats_list_singleton(s->sample_fmt))) < 0)
+            return ret;
+    } else {
+        if ((ret = ff_set_common_formats(ctx, ff_make_format_list(sample_fmts))) < 0)
+            return ret;
+    }
 
     if (s->sample_rate) {
         int sample_rates[] = { s->sample_rate, -1 };
