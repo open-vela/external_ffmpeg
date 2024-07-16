@@ -93,6 +93,9 @@ static int activate(AVFilterContext *ctx)
                         if (ret < 0)
                             return ret;
                     }
+                    ff_inlink_acknowledge_status(ctx->inputs[i], &status, &rpts);
+                    if (status)
+                        ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
                 } else if (!ff_outlink_frame_wanted(ctx->outputs[j])) {
                     request = false;
                 }
