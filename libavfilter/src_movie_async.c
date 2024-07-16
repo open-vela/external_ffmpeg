@@ -1316,21 +1316,20 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
     ret = snprintf(res, res_len, "st: %d", movie->state);
     pos += ret;
 
-    if (!movie->format_ctx)
+    if (!movie->streams)
         return 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (movie->streams[i].index < 0)
+        idx = movie->streams[i].index;
+        if (idx < 0 || !movie->streams[idx].codecpar)
             continue;
 
-        idx = movie->streams[i].index;
-        param = movie->format_ctx->streams[idx]->codecpar;
-
+        param = movie->streams[idx].codecpar;
         if (movie->streams[i].type == AVMEDIA_TYPE_AUDIO) {
             ret = snprintf(res + pos, res_len - pos, ", A: %d %s %"PRIu64" %d %d %zu",
                                     movie->streams[i].index,
                                     avcodec_get_name(param->codec_id),
-                                    movie->format_ctx->bit_rate,
+                                    movie->streams[idx].codecpar->bit_rate,
                                     param->sample_rate,
                                     param->ch_layout.nb_channels,
                                     ff_framequeue_queued_frames(&movie->streams[i].dat_queue));
