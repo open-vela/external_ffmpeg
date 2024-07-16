@@ -372,13 +372,11 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
     MovieStream *stream;
     int i;
 
-    pthread_mutex_lock(&movie->mutex);
     if (movie->format_ctx)
         avformat_close_input(&movie->format_ctx);
 
     if (movie->format_opt)
         av_dict_free(&movie->format_opt);
-    pthread_mutex_unlock(&movie->mutex);
 
     movie->current_ms = 0;
 }
@@ -465,11 +463,9 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
     movie_async_map_protocol(ctx, filename, name, sizeof(name));
 
-    pthread_mutex_lock(&movie->mutex);
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s start open input.\n", name);
     ret = avformat_open_input(&movie->format_ctx, name, iformat, &movie->format_opt);
     if (ret < 0) {
-        pthread_mutex_unlock(&movie->mutex);
         av_log(ctx, AV_LOG_ERROR,
                "Failed to avformat_open_input ret %d, %s.\n", ret, av_err2str(ret));
         goto out;
@@ -479,11 +475,9 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
     ret = avformat_find_stream_info(movie->format_ctx, NULL);
     if (ret < 0) {
-        pthread_mutex_unlock(&movie->mutex);
         av_log(ctx, AV_LOG_WARNING, "Failed to find stream info ret %d, %s.\n", ret, av_err2str(ret));
         goto out;
     }
-    pthread_mutex_unlock(&movie->mutex);
 
     for (i = 0; i < movie->format_ctx->nb_streams; i++)
         movie->format_ctx->streams[i]->discard = AVDISCARD_ALL;
