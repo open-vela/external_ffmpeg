@@ -1027,7 +1027,6 @@ static av_cold void movie_async_uninit(AVFilterContext *ctx)
 static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     MovieAsyncContext *movie = ctx->priv;
-    pthread_mutexattr_t mattr;
     int ret = AVERROR(ENOMEM);
     int i, outputs = 2;
 
@@ -1051,9 +1050,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
 
     SIMPLEQ_INIT(&movie->cmd_queue);
     SIMPLEQ_INIT(&movie->evt_queue);
-    pthread_mutexattr_init(&mattr);
-    pthread_mutexattr_settype(&mattr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&movie->mutex, &mattr);
+    pthread_mutex_init(&movie->mutex, NULL);
     pthread_cond_init(&movie->cond, NULL);
 
     for (i = 0; i < outputs; i++) {
