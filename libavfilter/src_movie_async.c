@@ -1213,6 +1213,8 @@ static int movie_async_activate(AVFilterContext *ctx)
             continue;
 
         frame = movie_async_recv_dat(ctx, i);
+        if (!frame)
+            continue;
 
         ret = ff_filter_frame(link, frame);
         if (ret < 0)
