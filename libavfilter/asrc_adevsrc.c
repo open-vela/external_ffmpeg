@@ -102,7 +102,7 @@ static int adevsrc_open(AVFilterContext *ctx)
 
     priv->fmt_ctx->audio_codec_id = link->codec;
 
-    if (avfilter_process_command(link->dst, "get_options", NULL,
+    if (avfilter_forward_command(ctx, 0, "all", "get_options", NULL,
                                  (char*)&dict, sizeof(AVDictionary **), 0) >= 0) {
         if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
             avdevice_app_to_dev_control_message(priv->fmt_ctx,
