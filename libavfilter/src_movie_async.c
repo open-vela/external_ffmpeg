@@ -1313,12 +1313,11 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
     AVCodecParameters *param;
     int pos = 0, ret, i, idx;
 
-    pthread_mutex_lock(&movie->mutex);
     ret = snprintf(res, res_len, "st: %d", movie->state);
     pos += ret;
 
     if (!movie->format_ctx)
-        goto end;
+        return 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (movie->streams[i].index < 0)
@@ -1345,16 +1344,14 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
         }
 
         if (ret < 0)
-            break;
+            return ret;
 
         pos += ret;
         if (pos >= res_len)
             break;
     }
 
-end:
-    pthread_mutex_unlock(&movie->mutex);
-    return FFMIN(ret, 0);
+    return 0;
 }
 
 static int movie_async_process_proc_cmd(AVFilterContext *ctx, const char *cmd, const char *args)
