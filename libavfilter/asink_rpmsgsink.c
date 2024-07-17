@@ -23,6 +23,7 @@
 
 #include <netpacket/rpmsg.h>
 #include <poll.h>
+#include <sys/socket.h>
 
 #include "libavcodec/avcodec.h"
 #include "libavutil/avstring.h"
