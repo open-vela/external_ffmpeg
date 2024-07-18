@@ -55,10 +55,6 @@ typedef struct AudioFadeContext {
 
 enum CurveType { NONE = -1, TRI, QSIN, ESIN, HSIN, LOG, IPAR, QUA, CUB, SQU, CBR, PAR, EXP, IQSIN, IHSIN, DESE, DESI, LOSI, SINC, ISINC, NB_CURVES };
 
-#define AFADE_BEGIN -1
-#define AFADE_DOING -2
-#define AFADE_DONE  -3
-
 #define OFFSET(x) offsetof(AudioFadeContext, x)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
 #define TFLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
@@ -211,31 +207,10 @@ static int config_output(AVFilterLink *outlink)
 
     if (s->duration)
         s->nb_samples = av_rescale(s->duration, outlink->sample_rate, AV_TIME_BASE);
-    s->duration = 0;
     if (s->start_time)
         s->start_sample = av_rescale(s->start_time, outlink->sample_rate, AV_TIME_BASE);
-    s->start_time = 0;
 
     return 0;
-}
-
-static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                           char *res, int res_len, int flags)
-{
-    AudioFadeContext *s = ctx->priv;
-    AVFilterLink *outlink = ctx->outputs[0];
-    int ret;
-
-    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    if (ret < 0)
-        return ret;
-
-    if (!strcmp(cmd, "st") || !strcmp(cmd, "start_time"))
-        s->start_sample = av_rescale(s->start_time, outlink->sample_rate, AV_TIME_BASE);
-    else if (!strcmp(cmd, "duration"))
-        s->nb_samples = av_rescale(s->duration, outlink->sample_rate, AV_TIME_BASE);
-
-    return config_output(ctx->outputs[0]);
 }
 
 #if CONFIG_AFADE_FILTER
@@ -298,14 +273,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     AVFrame *out_buf;
     int64_t cur_sample = av_rescale_q(buf->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
 
-    if (s->start_time == AFADE_BEGIN) {
-        s->start_sample = cur_sample;
-        s->start_time   = AFADE_DOING;
-    }
-
-    if ((!s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
-        (s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
-        !s->nb_samples)
+    if ((!s->type && (s->start_sample + s->nb_samples < cur_sample)) ||
+        ( s->type && (cur_sample + nb_samples < s->start_sample)))
         return ff_filter_frame(outlink, buf);
 
     if (av_frame_is_writable(buf)) {
@@ -317,8 +286,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         av_frame_copy_props(out_buf, buf);
     }
 
-    if ((!s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
-        (s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample))) {
+    if ((!s->type && (cur_sample + nb_samples < s->start_sample)) ||
+        ( s->type && (s->start_sample + s->nb_samples < cur_sample))) {
         av_samples_set_silence(out_buf->extended_data, 0, nb_samples,
                                out_buf->ch_layout.nb_channels, out_buf->format);
     } else {
@@ -333,10 +302,6 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
                         nb_samples, buf->ch_layout.nb_channels,
                         s->type ? -1 : 1, start,
                         s->nb_samples, s->curve);
-
-        if (s->start_time == AFADE_DOING &&
-            (cur_sample + nb_samples >= s->start_sample + s->nb_samples))
-            s->start_time = AFADE_DONE;
     }
 
     if (buf != out_buf)
@@ -370,7 +335,6 @@ const AVFilter ff_af_afade = {
     FILTER_OUTPUTS(avfilter_af_afade_outputs),
     FILTER_SAMPLEFMTS_ARRAY(sample_fmts),
     .priv_class      = &afade_class,
-    .process_command = process_command,
     .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };
 
@@ -640,7 +604,6 @@ const AVFilter ff_af_acrossfade = {
     .priv_size     = sizeof(AudioFadeContext),
     .activate      = activate,
     .priv_class    = &acrossfade_class,
-    .process_command = process_command,
     FILTER_INPUTS(avfilter_af_acrossfade_inputs),
     FILTER_OUTPUTS(avfilter_af_acrossfade_outputs),
     FILTER_SAMPLEFMTS_ARRAY(sample_fmts),
