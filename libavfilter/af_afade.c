@@ -235,8 +235,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     else if (!strcmp(cmd, "duration"))
         s->nb_samples = av_rescale(s->duration, outlink->sample_rate, AV_TIME_BASE);
 
-    /* return 0 here, avoid reset start_time parameter */
-    return 0;
+    return config_output(ctx->outputs[0]);
 }
 
 #if CONFIG_AFADE_FILTER
@@ -250,8 +249,8 @@ static const AVOption afade_options[] = {
     { "ss",           "set number of first sample to start fading",  OFFSET(start_sample), AV_OPT_TYPE_INT64,  {.i64 = 0    }, -1, INT64_MAX, TFLAGS },
     { "nb_samples",   "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,  {.i64 = 44100}, 1, INT64_MAX, TFLAGS },
     { "ns",           "set number of samples for fade duration",     OFFSET(nb_samples),   AV_OPT_TYPE_INT64,  {.i64 = 44100}, 1, INT64_MAX, TFLAGS },
-    { "start_time",   "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_INT64,  {.i64 = 0 },    -1, INT64_MAX, TFLAGS },
-    { "st",           "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_INT64,  {.i64 = 0 },    -1, INT64_MAX, TFLAGS },
+    { "start_time",   "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
+    { "st",           "set time to start fading",                    OFFSET(start_time),   AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
     { "duration",     "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
     { "d",            "set fade duration",                           OFFSET(duration),     AV_OPT_TYPE_DURATION, {.i64 = 0 },  0, INT64_MAX, TFLAGS },
     { "curve",        "set fade curve type",                         OFFSET(curve),        AV_OPT_TYPE_INT,    {.i64 = TRI  }, NONE, NB_CURVES - 1, TFLAGS, "curve" },
