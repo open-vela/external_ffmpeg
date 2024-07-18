@@ -280,7 +280,6 @@ const AVCodecTag ff_codec_movvideo_tags[] = {
 };
 
 const AVCodecTag ff_codec_movaudio_tags[] = {
-#if !CONFIG_AUDIO_ONLY
     { AV_CODEC_ID_AAC,             MKTAG('m', 'p', '4', 'a') },
     { AV_CODEC_ID_AC3,             MKTAG('a', 'c', '-', '3') }, /* ETSI TS 102 366 Annex F */
     { AV_CODEC_ID_AC3,             MKTAG('s', 'a', 'c', '3') }, /* Nero Recode */
@@ -339,7 +338,6 @@ const AVCodecTag ff_codec_movaudio_tags[] = {
     { AV_CODEC_ID_TRUEHD,          MKTAG('m', 'l', 'p', 'a') }, /* mp4ra.org */
     { AV_CODEC_ID_OPUS,            MKTAG('O', 'p', 'u', 's') }, /* mp4ra.org */
     { AV_CODEC_ID_MPEGH_3D_AUDIO,  MKTAG('m', 'h', 'm', '1') }, /* MPEG-H 3D Audio bitstream */
-#endif
     { AV_CODEC_ID_NONE, 0 },
 };
 
