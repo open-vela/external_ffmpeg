@@ -585,6 +585,7 @@ static void movie_async_stop(AVFilterContext *ctx)
     movie_async_close_demuxer(ctx);
     movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
     movie->pending_stop = 0;
+    movie->loop_count = 0;
 
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
 }
