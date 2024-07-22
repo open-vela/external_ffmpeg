@@ -235,6 +235,59 @@ static void graph_filter_dump(AVBPrint *buf, AVFilterContext *cur)
     } while (++i < cur->nb_outputs);
 }
 
+static void graph_filter_dump_with_params(AVBPrint *buf, AVFilterContext *cur, AVFilterContext *start, AVBPrint *tmp_buf)
+{
+    char tmp[64];
+    char *prev_path = NULL;
+    int i;
+
+    if (cur->nb_outputs > 1 && cur->nb_inputs != 0) {
+        prev_path = av_strdup(tmp_buf->str);
+        if (!prev_path) {
+            av_log(NULL, AV_LOG_ERROR, "dump graph error!\n");
+            return;
+        }
+    }
+
+    for (i = 0; i < cur->nb_outputs; i++) {
+        AVFilterLink *link;
+        AVFilterContext *next;
+
+        if (prev_path) {
+            if (start) {
+                if (i > 0) {
+                    av_bprintf(tmp_buf, "\n---%s---\n", start->name);
+                    av_bprintf(tmp_buf, "%s", prev_path);
+                }
+            } else {
+                av_bprintf(tmp_buf, "\n");
+            }
+        }
+
+        link = cur->outputs[i];
+        next = link->dst;
+
+        av_bprintf(tmp_buf, "%-24s -> %-24s", cur->name, next->name);
+        graph_link_dump(tmp_buf, cur, link);
+
+        if (avfilter_process_command(cur, "dump", NULL, tmp, sizeof(tmp), 0) >= 0)
+            av_bprintf(tmp_buf, "ex:%s\n", tmp);
+        else
+            av_bprintf(tmp_buf, "ex:N/A\n");
+
+        if (next->outputs != 0)
+            graph_filter_dump_with_params(buf, next, start, tmp_buf);
+        else {
+            av_bprintf(tmp_buf, "%-24s -> %-24s\n", next->name, "NULL");
+            av_bprintf(buf, "%s", tmp_buf->str);
+            av_bprint_clear(tmp_buf);
+        }
+    }
+
+    if (prev_path)
+        av_free(prev_path);
+}
+
 char *avfilter_graph_dump_ext(AVFilterGraph *graph, const char *options)
 {
     AVFilterContext *cur;
@@ -247,10 +300,27 @@ char *avfilter_graph_dump_ext(AVFilterGraph *graph, const char *options)
     for (i = 0; i < graph->nb_filters; i++) {
         cur = graph->filters[i];
 
-        if (!cur->nb_inputs || cur->nb_inputs > 1 || cur->nb_outputs > 1)
-            graph_filter_dump(&buf, cur);
+        if (options == NULL) {
+            if (!cur->nb_inputs || cur->nb_inputs > 1 || cur->nb_outputs > 1) {
+                graph_filter_dump(&buf, cur);
+            }
+        } else {
+            if (!cur->nb_inputs) {
+                AVBPrint tmp_buf;
+                av_bprint_init(&tmp_buf, 0, AV_BPRINT_SIZE_UNLIMITED);
+                if (!strcmp(options, "-s")) {
+                    av_bprintf(&buf, "\n---%s---\n", cur->name);
+                    graph_filter_dump_with_params(&buf, cur, NULL, &tmp_buf);
+                } else if (!strcmp(options, "-l")) {
+                    av_bprintf(&buf, "\n---%s---\n", cur->name);
+                    graph_filter_dump_with_params(&buf, cur, cur, &tmp_buf);
+                }
+                av_bprint_finalize(&tmp_buf, NULL);
+            }
+        }
     }
 
+    av_bprintf(&buf, "\ndump successfully!\n");
     av_bprint_finalize(&buf, &dump);
     return dump;
 }
