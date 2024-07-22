@@ -110,6 +110,8 @@ static int adevsrc_open(AVFilterContext *ctx)
                                                 param, 0);
             av_freep(&param);
         }
+
+        av_dict_free(&dict);
     }
 
     ret = avformat_read_header(priv->fmt_ctx);
