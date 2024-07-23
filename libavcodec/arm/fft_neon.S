@@ -144,6 +144,9 @@ function fft16_neon
         vadd.f32        q0,  q12, q13           @ {t1,t2,t5,t6}
         vadd.f32        q1,  q14, q15           @ {t1a,t2a,t5a,t6a}
         movrelx         r2,  X(ff_cos_16)
+.if CONFIG_HARDCODED_TABLES == 0
+        ldr             r2, [r2]
+.endif
         vsub.f32        q13, q12, q13           @ {t3,t4,t7,t8}
         vrev64.32       d1,  d1
         vsub.f32        q15, q14, q15           @ {t3a,t4a,t7a,t8a}
@@ -291,6 +294,9 @@ function fft\n\()_neon
         mov             r0,  r4
         pop             {r4, lr}
         movrelx         r1,  X(ff_cos_\n)
+.if CONFIG_HARDCODED_TABLES == 0
+        ldr             r1, [r1]
+.endif
         mov             r2,  #\n4/2
         b               fft_pass_neon
 endfunc
