@@ -1498,7 +1498,6 @@ static int mov_read_mdhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     return 0;
 }
 
-#if !CONFIG_AUDIO_ONLY
 static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 {
     int i;
@@ -1549,7 +1548,6 @@ static int mov_read_mvhd(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     return 0;
 }
-#endif
 
 static void set_last_stream_little_endian(AVFormatContext *fc)
 {
@@ -8067,6 +8065,7 @@ static const MOVParseTableEntry mov_default_parse_table[] = {
 { MKTAG('m','o','o','f'), mov_read_moof },
 { MKTAG('m','o','o','v'), mov_read_moov },
 { MKTAG('m','v','e','x'), mov_read_default },
+{ MKTAG('m','v','h','d'), mov_read_mvhd },
 { MKTAG('a','l','a','c'), mov_read_alac }, /* alac specific atom */
 { MKTAG('p','a','s','p'), mov_read_pasp },
 { MKTAG('s','i','d','x'), mov_read_sidx },
