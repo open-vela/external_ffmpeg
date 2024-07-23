@@ -86,16 +86,22 @@ static int adevsink_open_encoder(AVFilterContext *ctx)
         av_channel_layout_copy(&st->codecpar->ch_layout, &inlink->ch_layout);
         st->time_base = (AVRational){ 1, inlink->sample_rate };
 
-        if (avfilter_forward_command(ctx, 0, NULL, "get_options", NULL, (char*)&dict, sizeof(AVDictionary **), AVFILTER_CMD_FLAG_REVERSE) >= 0) {
+        if (avfilter_forward_command(ctx, 0, NULL, "get_options", NULL, (char*)&dict,
+                                     sizeof(AVDictionary **),AVFILTER_CMD_FLAG_REVERSE) >= 0) {
             if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
                 ret = avdevice_app_to_dev_control_message(priv->fmt_ctx,
                                                           AV_APP_TO_DEV_SET_PARAMETER,
                                                           param, 0);
 
-            av_dict_free(&dict);
-            if (ret < 0)
-                return ret == AVERROR(ENOSYS) ? 0 : ret;
+                av_freep(&param);
+
+                if (ret < 0) {
+                    av_dict_free(&dict);
+                    return ret == AVERROR(ENOSYS) ? 0 : ret;
+                }
             }
+
+            av_dict_free(&dict);
         }
 
         return 0;
