@@ -354,6 +354,9 @@ function fft\n\()_neon, align=6
         ldp             x28, x30, [sp], #16
         AARCH64_VALIDATE_LINK_REGISTER
         movrel          x4,  X(ff_cos_\n)
+.if CONFIG_HARDCODED_TABLES == 0
+        ldr             x4, [x4]
+.endif
         mov             x2,  #\n4>>1
         b               fft_pass_neon
 endfunc

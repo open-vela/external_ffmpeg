@@ -474,6 +474,9 @@ function .Lfft\n\()_internal_vfp
         add     a1, v1, #8*(\n/4)*2
         bl      .Lfft\n4\()_internal_vfp
         movrelx v5, X(ff_cos_\n), a1
+.if CONFIG_HARDCODED_TABLES == 0
+        ldr     v5, [v5]
+.endif
         add     a1, v1, #8*(\n/4)*3
         bl      .Lfft\n4\()_internal_vfp
  .if \n >= 512
