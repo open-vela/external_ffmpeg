@@ -174,8 +174,6 @@ static void moviesink_set_eof(AVFilterContext *ctx)
 
         ff_inlink_set_status(link, AVERROR_EOF);
     }
-
-    priv->format = NULL;
 }
 
 static void moviesink_proc_event(AVFilterContext *ctx)
@@ -440,10 +438,21 @@ static int moviesink_write_frame(AVFilterContext *ctx, int pad_id, AVFrame *fram
 static void moviesink_prepare(AVFilterContext *ctx, const char *filename)
 {
     MovieSinkPriv *priv = ctx->priv;
+    AVDictionaryEntry *tag;
+    char *format = NULL;
     int ret = AVERROR(EPERM);
 
     if (priv->state != AVMOVIE_ASYNC_STATE_STOPPED)
         goto out;
+
+    if ((tag = av_dict_get(priv->format_opt, "format", NULL, 0)))
+        format = tag->value;
+
+    priv->format = av_guess_format(format, filename, NULL);
+    if (!priv->format) {
+        ret = AVERROR(EINVAL);
+        goto out;
+    }
 
     ret = moviesink_open_muxer(ctx, filename);
     if (ret < 0)
@@ -562,6 +571,7 @@ out:
                             ret == AVERROR_EOF ? 0 : ret , NULL);
 
     moviesink_clean(ctx);
+    priv->format = NULL;
     return ret;
 }
 
@@ -1044,17 +1054,6 @@ static int moviesink_process_open(AVFilterContext *ctx)
 
 static int moviesink_process_prepare(AVFilterContext *ctx, const char *args)
 {
-    MovieSinkPriv *priv = ctx->priv;
-    AVDictionaryEntry *tag;
-    char *format = NULL;
-
-    if ((tag = av_dict_get(priv->format_opt, "format", NULL, 0)))
-        format = tag->value;
-
-    priv->format = av_guess_format(format, args, NULL);
-    if (!priv->format)
-        return AVERROR(EINVAL);
-
     return moviesink_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
 }
 
