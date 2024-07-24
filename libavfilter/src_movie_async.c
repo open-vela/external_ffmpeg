@@ -1396,6 +1396,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
 
         return 0;
     } else if (!strcmp(cmd, "set_options")) {
+        av_dict_parse_string(&movie->global_opts, args, "=", ":", 0);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SET_OPTIONS, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "set_loop")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SET_LOOP, args, strlen(args) + 1);
@@ -1491,7 +1492,7 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
         return 0;
     } else if (!strcmp(cmd, "get_options")) {
         AVDictionary **dst = (AVDictionary **)res;
-        return av_dict_copy(dst, movie->format_opt, 0);
+        return av_dict_copy(dst, movie->global_opts, 0);
     } else {
         av_log(ctx, AV_LOG_ERROR, "src:%s unsupported command:%s.\n", ctx->name, cmd);
         return AVERROR(ENOSYS);
