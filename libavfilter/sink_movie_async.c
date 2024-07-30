@@ -567,11 +567,10 @@ out:
 
     priv->state      = AVMOVIE_ASYNC_STATE_COMPLETED;
     priv->current_ms = 0;
+    priv->format     = NULL;
     moviesink_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED,
                             ret == AVERROR_EOF ? 0 : ret , NULL);
-
     moviesink_clean(ctx);
-    priv->format = NULL;
     return ret;
 }
 
