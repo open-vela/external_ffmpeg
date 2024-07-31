@@ -309,18 +309,22 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
 
 static int nuttx_check_bitstream(struct AVFormatContext *s, struct AVStream *st, const AVPacket *pkt)
 {
-    int ret = 1;
+    const struct CodecBsf {
+        enum AVCodecID id;
+        const char     *name;
+    } codec_bsf_table[] = {
+        {AV_CODEC_ID_AAC,  "aac_rawtoadts"},
+        {AV_CODEC_ID_OPUS, "raw2tlv"}
+    };
 
-    if (st->codecpar->codec_id == AV_CODEC_ID_AAC) {
-        /* check aac header, if adts header is exist, skip add bitstream filter */
-        if (pkt->size > 2 && pkt->data[0] == 0xFF
-                          && (pkt->data[1] & 0xF0) == 0xF0)
-            return ret;
-        av_log(s, AV_LOG_DEBUG, "aac_rawtoadts bitstream filter is added\n");
-        ret = ff_stream_add_bitstream_filter(st, "aac_rawtoadts", NULL);
+    for (size_t i = 0; i < FF_ARRAY_ELEMS(codec_bsf_table); i++) {
+        if (codec_bsf_table[i].id == st->codecpar->codec_id) {
+            av_log(s, AV_LOG_DEBUG, "%s bsf is added\n", codec_bsf_table[i].name);
+            return ff_stream_add_bitstream_filter(st, codec_bsf_table[i].name, NULL);
+        }
     }
 
-    return ret;
+    return 0;
 }
 
 #define OFFSET(x) offsetof(NuttxPriv, x)
