@@ -50,8 +50,8 @@ extern const unsigned char * const ff_mpa_alloc_tables[5];
 extern const int8_t   ff_table_4_3_exp  [TABLE_4_3_SIZE];
 extern const uint32_t ff_table_4_3_value[TABLE_4_3_SIZE];
 #else
-extern int8_t   ff_table_4_3_exp  [TABLE_4_3_SIZE];
-extern uint32_t ff_table_4_3_value[TABLE_4_3_SIZE];
+extern int8_t   *ff_table_4_3_exp;
+extern uint32_t *ff_table_4_3_value;
 #endif
 
 /* VLCs for decoding layer 3 huffman tables */

@@ -34,9 +34,10 @@
 #else
 #include <math.h>
 #include "libavutil/attributes.h"
+#include "libavutil/mem.h"
 
-int8_t   ff_table_4_3_exp  [TABLE_4_3_SIZE];
-uint32_t ff_table_4_3_value[TABLE_4_3_SIZE];
+int8_t   *ff_table_4_3_exp;
+uint32_t *ff_table_4_3_value;
 
 #define FRAC_BITS 23
 #define IMDCT_SCALAR 1.759
@@ -50,6 +51,11 @@ static av_cold void mpegaudiodec_common_tableinit(void)
         1.68179283050742908606, /* 2 ^ (3 * 0.25) */
     };
     double pow43_val = 0;
+
+#if !CONFIG_HARDCODED_TABLES
+    ff_table_4_3_exp = (int8_t *)av_calloc(TABLE_4_3_SIZE, sizeof(int8_t));
+    ff_table_4_3_value = (uint32_t *)av_calloc(TABLE_4_3_SIZE, sizeof(uint32_t));
+#endif
 
     for (int i = 1; i < TABLE_4_3_SIZE; i++) {
         double f, fm;
