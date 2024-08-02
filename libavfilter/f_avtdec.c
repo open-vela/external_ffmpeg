@@ -55,7 +55,7 @@ static int avtdec_open(AVFilterContext *ctx, AVCodecContext **codec_ctx)
     DecoderContext *priv = ctx->priv;
     AVCodecParameters *param;
     const AVCodec *codec;
-    AVFrame *frame;
+    AVFrame *frame = NULL;
     int ret;
 
     pthread_mutex_lock(&priv->mutex);
