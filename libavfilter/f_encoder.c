@@ -75,8 +75,8 @@ static int encoder_open(AVFilterContext *ctx)
 
     /* Some codec context configurations cannot be passed through link. */
 
-    ret = avfilter_process_command(outlink->dst, "get_options", NULL,
-                                   (char*)&dict, sizeof(AVDictionary **), 0);
+    ret = avfilter_forward_command(ctx, 0, "all", "get_options", NULL, (char*)&dict,
+                                   sizeof(AVDictionary **), 0);
     if (ret < 0)
         goto err;
 
