@@ -26,8 +26,9 @@
 #include "bsf.h"
 #include "bsf_internal.h"
 
-#define ADTS_HEADER_SIZE     7
-#define ADTS_MAX_FRAME_BYTES ((1 << 14) - 1)
+#define ADTS_HEADER_SIZE         7
+#define ADTS_MAX_FRAME_BYTES     ((1 << 14) - 1)
+#define ADTS_SAMPLERATE_IDX_NONE 15  /* Not a valid value */
 
 typedef struct ADTSContext {
     AVClass *class;
@@ -53,7 +54,7 @@ static int adts_get_samplerate_idx(int sample_rate)
         }
     }
 
-    return 15; // frequency is written explictly
+    return ADTS_SAMPLERATE_IDX_NONE; // frequency is written explictly
 }
 
 static int adts_get_chan_config(int channels)
@@ -67,7 +68,7 @@ static int adts_decode_extradata(AVBSFContext *ctx, ADTSContext *adts, AVCodecPa
     adts->sample_rate_index = adts_get_samplerate_idx(codecpar->sample_rate);
     adts->channel_conf      = adts_get_chan_config(codecpar->ch_layout.nb_channels);
 
-    if (adts->sample_rate_index == 15) {
+    if (adts->sample_rate_index == ADTS_SAMPLERATE_IDX_NONE) {
         av_log(ctx, AV_LOG_ERROR, "Escape sample rate index illegal in ADTS\n");
         return AVERROR_INVALIDDATA;
     }
@@ -82,7 +83,7 @@ static int adts_write_frame_header(ADTSContext *ctx,
 
     uint32_t full_frame_size = ADTS_HEADER_SIZE + size;
     if (full_frame_size > ADTS_MAX_FRAME_BYTES) {
-        av_log(ctx, AV_LOG_ERROR, "ADTS frame size too large: %u (max %d)\n",
+        av_log(ctx, AV_LOG_ERROR, "ADTS frame size too large: %"PRIu32" (max %d)\n",
                full_frame_size, ADTS_MAX_FRAME_BYTES);
         return AVERROR_INVALIDDATA;
     }
