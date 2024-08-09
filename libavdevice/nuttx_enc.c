@@ -104,8 +104,11 @@ static int nuttx_write_trailer(struct AVFormatContext *s1)
 
     ff_nuttx_close(priv);
     priv->timestamp = 0;
-    if (sti->bsfc)
+    if (sti->bsfc) {
         av_bsf_flush(sti->bsfc);
+        av_bsf_free(&sti->bsfc);
+        sti->bitstream_checked = 0;
+    }
     return 0;
 }
 
