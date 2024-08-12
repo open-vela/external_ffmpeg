@@ -59,41 +59,7 @@ static av_cold void init_ff_cos_tabs(int index)
     int i;
     int m = 1<<index;
     double freq = 2*M_PI/m;
-    FFTSample *tab = (FFTSample *)av_calloc(m / 2, sizeof(FFTSample));
-    if (tab == NULL)
-        return;
-
-    if (m == 16)
-        FFT_NAME(ff_cos_16) = tab;
-    else if (m == 32)
-        FFT_NAME(ff_cos_32) = tab;
-    else if (m == 64)
-        FFT_NAME(ff_cos_64) = tab;
-    else if (m == 128)
-        FFT_NAME(ff_cos_128) = tab;
-    else if (m == 256)
-        FFT_NAME(ff_cos_256) = tab;
-    else if (m == 512)
-        FFT_NAME(ff_cos_512) = tab;
-    else if (m == 1024)
-        FFT_NAME(ff_cos_1024) = tab;
-    else if (m == 2048)
-        FFT_NAME(ff_cos_2048) = tab;
-    else if (m == 4096)
-        FFT_NAME(ff_cos_4096) = tab;
-    else if (m == 8192)
-        FFT_NAME(ff_cos_8192) = tab;
-    else if (m == 16384)
-        FFT_NAME(ff_cos_16384) = tab;
-    else if (m == 32768)
-        FFT_NAME(ff_cos_32768) = tab;
-    else if (m == 65536)
-        FFT_NAME(ff_cos_65536) = tab;
-    else if (m == 131072)
-        FFT_NAME(ff_cos_131072) = tab;
-
-    FFT_NAME(ff_cos_tabs)[index] = tab;
-
+    FFTSample *tab = FFT_NAME(ff_cos_tabs)[index];
     for(i=0; i<=m/4; i++)
         tab[i] = FIX15(cos(i*freq));
     for(i=1; i<m/4; i++)
@@ -151,9 +117,7 @@ av_cold void ff_init_ff_cos_tabs(int index)
 {
     ff_thread_once(&cos_tabs_init_once[index].control, cos_tabs_init_once[index].func);
 }
-
-FFTSample * FFT_NAME(ff_cos_tabs)[18] = {NULL};
-#else
+#endif
 COSTABLE_CONST FFTSample * const FFT_NAME(ff_cos_tabs)[] = {
     NULL, NULL, NULL, NULL,
     FFT_NAME(ff_cos_16),
@@ -171,7 +135,6 @@ COSTABLE_CONST FFTSample * const FFT_NAME(ff_cos_tabs)[] = {
     FFT_NAME(ff_cos_65536),
     FFT_NAME(ff_cos_131072),
 };
-#endif
 
 #endif /* FFT_FLOAT */
 
