@@ -187,6 +187,7 @@ typedef struct MixContext {
     int64_t next_pts;           /**< calculated pts for next output frame */
     FrameList *frame_list;      /**< list of frame info for the first input */
     timer_t timer_id;
+    int fifo_samples;
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -217,7 +218,9 @@ static const AVOption amix_options[] = {
     { "ch_layout", "ch_layout",
             OFFSET(ch_layout), AV_OPT_TYPE_CHLAYOUT, {.str = NULL}, 0, 0, A|F },
     { "sample_fmt", "sample_fmt",
-        OFFSET(sample_fmt), AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, A|F },
+            OFFSET(sample_fmt), AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, A|F },
+    { "fifo_samples", "fifo_samples",
+            OFFSET(fifo_samples), AV_OPT_TYPE_INT, {.i64 = 1024}, 64, 8192, A|F },
     { NULL }
 };
 
@@ -288,7 +291,7 @@ static int config_output(AVFilterLink *outlink)
         if (s->fifos[i])
             av_audio_fifo_free(s->fifos[i]);
 
-        s->fifos[i] = av_audio_fifo_alloc(outlink->format, s->nb_channels, 1024);
+        s->fifos[i] = av_audio_fifo_alloc(outlink->format, s->nb_channels, s->fifo_samples);
         if (!s->fifos[i])
             return AVERROR(ENOMEM);
     }
