@@ -431,6 +431,7 @@ Advanced options (experts only):
   --swr-ch-max=N           the max channel number swresample uses [$swr_ch_max_default]
   --mov-demuxer-index-size=VALUE
                            set mov demuxer index size
+  --avio-buffer-size=N     the max buffer size aviobuf uses [$avio_buffer_size_default]
 
 Optimization options (experts only):
   --disable-asm            disable all assembly optimizations
@@ -2586,6 +2587,7 @@ CMDLINE_SET="
     arch
     as
     assert_level
+    avio_buffer_size
     build_suffix
     cc
     objcc
@@ -3954,6 +3956,8 @@ swr_phase_shift_default=10
 set_default swr_phase_shift
 swr_ch_max_default=64
 set_default swr_ch_max
+avio_buffer_size_default=32768
+set_default avio_buffer_size
 
 src_default_converter=4
 
@@ -7891,6 +7895,7 @@ cat > $TMPH <<EOF
 #define SWR_PHASE_SHIFT $swr_phase_shift
 #define SWR_CH_MAX $swr_ch_max
 #define SRC_DEFAULT_CONVERTER $src_default_converter
+#define AVIO_BUFFER_SIZE $avio_buffer_size
 EOF
 
 test -n "$assert_level" &&
