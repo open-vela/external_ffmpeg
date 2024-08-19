@@ -34,7 +34,7 @@
 #include "url.h"
 #include <stdarg.h>
 
-#define IO_BUFFER_SIZE 32768
+#define IO_BUFFER_SIZE AVIO_BUFFER_SIZE
 
 /**
  * Do seeks within this distance ahead of the current buffer by skipping
