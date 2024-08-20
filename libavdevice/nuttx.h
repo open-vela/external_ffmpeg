@@ -32,9 +32,7 @@
 #include <mqueue.h>
 
 #include "libavutil/log.h"
-#include "libavformat/avformat.h"
 #include "avdevice.h"
-#include "avdevice-nx.h"
 
 typedef struct NuttxPriv {
     AVClass        *class;

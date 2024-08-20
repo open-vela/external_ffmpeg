@@ -25,14 +25,11 @@
 #include <libavutil/eval.h>
 #include <libavutil/samplefmt.h>
 #include <libavdevice/avdevice.h>
-#include <libavdevice/avdevice-nx.h>
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 
 #include "filters.h"
 #include "avfilter.h"
-#include "avfilter-nx.h"
-#include "formats.h"
 #include "internal.h"
 
 typedef struct ADevSinkPriv {
@@ -59,10 +56,12 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
 
     if (type == AV_DEV_TO_APP_BUFFER_WRITABLE)
         ff_filter_set_ready(ctx, 100);
-    else if (type == AV_DEV_TO_APP_BUFFER_DRAINED){
-        //avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
-    } else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
-        //avfilter_graph_reconfig(ctx->graph, ctx);
+    else if (type == AV_DEV_TO_APP_BUFFER_DRAINED)
+        avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
+    else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
+        int *cmd = (int *) data;
+        if (*cmd == AV_APP_TO_DEV_START)
+            avfilter_graph_reconfig(ctx->graph, ctx);
         ff_filter_set_ready(ctx, 100);
     }
 
@@ -80,6 +79,35 @@ static int adevsink_open_encoder(AVFilterContext *ctx)
     const AVCodec *enc;
     char *param;
     int ret;
+
+    if (!avcodec_is_pcm_lossless(inlink->codec)) {
+        st->codecpar->codec_type  = inlink->type;
+        st->codecpar->format      = inlink->format;
+        st->codecpar->sample_rate = inlink->sample_rate;
+        st->codecpar->codec_id    = inlink->codec;
+        av_channel_layout_copy(&st->codecpar->ch_layout, &inlink->ch_layout);
+        st->time_base = (AVRational){ 1, inlink->sample_rate };
+
+        if (avfilter_forward_command(ctx, 0, NULL, "get_options", NULL, (char*)&dict,
+                                     sizeof(AVDictionary **),AVFILTER_CMD_FLAG_REVERSE) >= 0) {
+            if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
+                ret = avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                                          AV_APP_TO_DEV_SET_PARAMETER,
+                                                          param, 0);
+
+                av_freep(&param);
+
+                if (ret < 0) {
+                    av_dict_free(&dict);
+                    return ret == AVERROR(ENOSYS) ? 0 : ret;
+                }
+            }
+
+            av_dict_free(&dict);
+        }
+
+        return 0;
+    }
 
     codec_id = priv->fmt_ctx->oformat->audio_codec != AV_CODEC_ID_NONE ?
                priv->fmt_ctx->oformat->audio_codec : priv->fmt_ctx->audio_codec_id;
@@ -166,16 +194,15 @@ static void adevsink_stop(AVFilterContext *ctx)
     if (priv->last_pkt)
         av_packet_free(&priv->last_pkt);
 
-    av_write_trailer(priv->fmt_ctx);
+    avformat_write_trailer(priv->fmt_ctx);
     adevsink_close_encoder(ctx);
 
     priv->started = false;
 }
 
-static int adevsink_init_dict(AVFilterContext *ctx)
+static int adevsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
 {
     ADevSinkPriv *priv = ctx->priv;
-    AVDictionary **options = NULL;
     AVStream *st;
     int ret;
 
@@ -325,6 +352,7 @@ static int adevsink_activate(AVFilterContext *ctx)
 
 static int adevsink_query_formats(AVFilterContext *ctx)
 {
+    AVDeviceCapabilitiesQuery caps;
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterLink *link = ctx->inputs[0];
     AVFilterFormats *formats = NULL;
@@ -334,12 +362,17 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     bool codec = false;
     int ret, i;
 
+    ret = avdevice_app_to_dev_control_message(priv->fmt_ctx, AV_APP_TO_DEV_GET_CAPS_REQUEST,
+                                              &caps, sizeof(caps));
+    if (ret < 0)
+        return ret == AVERROR(ENOSYS) ? 0 : ret;
+
     if (priv->sample_fmt != AV_SAMPLE_FMT_NONE) {
         ret = ff_add_format(&formats, priv->sample_fmt);
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data, priv->fmt_ctx, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "sample_fmts", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
             for (i = 0; i < ranges->nb_ranges; i++) {
                 ret = ff_add_format(&formats, ranges->range[i]->value_min);
@@ -362,7 +395,7 @@ static int adevsink_query_formats(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data, priv->fmt_ctx, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "sample_rates", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
             for (i = 0; i < ranges->nb_ranges; i++) {
                 ret = ff_add_format(&formats, ranges->range[i]->value_min);
@@ -382,7 +415,7 @@ static int adevsink_query_formats(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
     } else {
-        ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data, priv->fmt_ctx, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
+        ret = av_opt_query_ranges(&ranges, &caps, "channels", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
             int n;
 
@@ -408,6 +441,26 @@ static int adevsink_query_formats(AVFilterContext *ctx)
     }
 
     ret = ff_set_common_channel_layouts(ctx, layouts);
+    if (ret < 0)
+        goto out;
+
+    formats = NULL;
+    ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
+    if (ret >= 0) {
+        int n;
+
+        for (i = 0; i < ranges->nb_ranges; i++) {
+            ret = ff_add_format(&formats, ranges->range[i]->value_min);
+            if (ret < 0)
+                goto out;
+        }
+
+        av_opt_freep_ranges(&ranges);
+    } else {
+        formats = ff_all_raw_codecs(ctx->inputs[0]->type);
+    }
+
+    ret = ff_set_common_codecs(ctx, formats);
     if (ret < 0)
         goto out;
 
@@ -579,12 +632,12 @@ const AVFilter ff_asink_adevsink = {
     .description     = NULL_IF_CONFIG_SMALL("Audio adevice sink"),
     .priv_class      = &adevsink_class,
     .priv_size       = sizeof(ADevSinkPriv),
-    .init            = adevsink_init_dict,
+    .init_dict       = adevsink_init_dict,
     .uninit          = adevsink_uninit,
     .activate        = adevsink_activate,
     FILTER_INPUTS(adevsink_inputs),
     FILTER_QUERY_FUNC(adevsink_query_formats),
     .process_command = adevsink_process_command,
-    //.forward_command = adevsink_forward_command,
+    .forward_command = adevsink_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };
