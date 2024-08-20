@@ -59,7 +59,9 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
     else if (type == AV_DEV_TO_APP_BUFFER_DRAINED)
         avfilter_forward_command(ctx, 0, NULL, "completed", NULL, NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
     else if (type == AV_DEV_TO_APP_STATE_CHANGED) {
-        avfilter_graph_reconfig(ctx->graph, ctx);
+        int *cmd = (int *) data;
+        if (*cmd == AV_APP_TO_DEV_START)
+            avfilter_graph_reconfig(ctx->graph, ctx);
         ff_filter_set_ready(ctx, 100);
     }
 
