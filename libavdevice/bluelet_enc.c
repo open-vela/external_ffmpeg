@@ -228,7 +228,7 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                         avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
                     } else if (action == BLUELET_ACTION_CONFIG) {
                         ctx->audio_codec_id = priv->codec_id;
-                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+                        avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, &type, 0);
                     }
                 }
             } else if (priv->data_fd == poll->fd) {
