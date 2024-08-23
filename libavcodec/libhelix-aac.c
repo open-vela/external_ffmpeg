@@ -42,6 +42,9 @@
 #define LIBHELIX_AAC_MAX_NSAMPS   2048
 #define AAC_CHANNEL_LAYOUT_ONLY 1
 
+#define LATM_SYNCWORDH 0xe0
+#define LATM_SYNCWORDL 0x56
+
 typedef struct HAACDecContext {
     AVClass *class;
     HAACDecoder context;
@@ -150,6 +153,56 @@ static int aac_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return avpkt->size - in_size;
 }
 
+static int aac_latm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+                                 int *got_frame_ptr, AVPacket *avpkt)
+{
+    HAACDecContext *aac = avctx->priv_data;
+    AACFrameInfo info;
+    uint8_t *in_data;
+    int ret, in_size;
+
+    if (!aac)
+        return AVERROR(EIO);
+
+    in_data = avpkt->data;
+    in_size = avpkt->size;
+
+    av_assert0(in_data[0]  == LATM_SYNCWORDL && (in_data[1] & 0xf0) == LATM_SYNCWORDH);
+
+    AACSetFormat(aac->context, AAC_FF_LATM_MCP1);
+
+    in_data += 3;
+    in_size -= 3;
+    ret = AACDecode(aac->context, &in_data, &in_size, (int16_t *)aac->pcm);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "%s error ret %d.\n", __func__, ret);
+        AACFlushCodec(aac->context);
+        return ret;
+    }
+
+    AACGetLastFrameInfo(aac->context, &info);
+
+    if (!avctx->sample_rate)
+         avctx->sample_rate = info.sampRateOut;
+
+    if (!avctx->ch_layout.nb_channels)
+         av_channel_layout_default(&avctx->ch_layout, info.nChans);
+
+    avctx->frame_size = info.outputSamps / info.nChans;
+
+    frame->nb_samples = avctx->frame_size;
+    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+        return ret;
+
+    memcpy(frame->extended_data[0], aac->pcm,
+           avctx->ch_layout.nb_channels * avctx->frame_size *
+           av_get_bytes_per_sample(avctx->sample_fmt));
+
+    *got_frame_ptr = 1;
+
+    return avpkt->size;
+}
+
 static av_cold int aac_decode_close(AVCodecContext *avctx)
 {
     HAACDecContext *aac = avctx->priv_data;
@@ -176,4 +229,22 @@ const FFCodec ff_libhelix_aac_decoder = {
                                                          AV_SAMPLE_FMT_NONE },
     .p.ch_layouts      = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
                                                      AV_CHANNEL_LAYOUT_STEREO, { 0 } },
+};
+
+const FFCodec ff_libhelix_aac_latm_a2dp_decoder = {
+    .p.name            = "libhelix_aac_latm_a2dp",
+    .p.long_name       = NULL_IF_CONFIG_SMALL("libHelix AAC Decoder"),
+    .p.type            = AVMEDIA_TYPE_AUDIO,
+    .p.id              = AV_CODEC_ID_AAC_LATM_A2DP,
+    .priv_data_size    = sizeof(HAACDecContext),
+    .init              = aac_decode_init,
+    FF_CODEC_DECODE_CB(aac_latm_decode_frame),
+    .close             = aac_decode_close,
+    .p.capabilities    = AV_CODEC_CAP_CHANNEL_CONF | AV_CODEC_CAP_DR1,
+    .caps_internal     = FF_CODEC_CAP_INIT_THREADSAFE,
+    .p.sample_fmts     = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                         AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts      = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                     AV_CHANNEL_LAYOUT_STEREO, { 0 } },
+    .bsfs              = "a2dp_rechunk",
 };
