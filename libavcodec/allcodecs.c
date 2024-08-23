@@ -778,6 +778,7 @@ extern const FFCodec ff_libfluoride_sbc_packed_decoder;
 extern const FFCodec ff_libfluoride_sbc_encoder;
 extern const FFCodec ff_libfluoride_sbc_packed_a2dp_decoder;
 extern const FFCodec ff_libhelix_aac_decoder;
+extern const FFCodec ff_libhelix_aac_latm_a2dp_decoder;
 extern const FFCodec ff_libgsm_encoder;
 extern const FFCodec ff_libgsm_decoder;
 extern const FFCodec ff_libgsm_ms_encoder;
