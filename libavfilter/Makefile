@@ -189,6 +189,7 @@ OBJS-$(CONFIG_SINE_FILTER)                   += asrc_sine.o
 
 OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
 OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
+OBJS-$(CONFIG_ANXSINK_FILTER)                += asink_anxsink.o
 OBJS-$(CONFIG_RPMSGSINK_FILTER)              += asink_rpmsgsink.o
 
 # video filters
