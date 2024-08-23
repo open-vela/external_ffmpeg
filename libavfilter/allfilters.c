@@ -174,6 +174,7 @@ extern const AVFilter ff_asrc_sine;
 
 extern const AVFilter ff_asink_adevsink;
 extern const AVFilter ff_asink_anullsink;
+extern const AVFilter ff_asink_anxsink;
 extern const AVFilter ff_asink_rpmsgsink;
 
 extern const AVFilter ff_vf_addroi;
