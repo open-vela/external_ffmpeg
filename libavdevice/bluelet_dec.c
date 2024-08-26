@@ -231,10 +231,18 @@ static int bluelet_dec_control_message(struct AVFormatContext *ctx, int type,
     return ret;
 }
 
-static int bluelet_dec_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
+static int bluelet_dec_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
                                               const char *key, int flags)
 {
-    return ff_bluelet_capbility_query_ranges(ranges, obj, key, flags);
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    BlueletPriv *priv = devcap->device_context->priv_data;
+    const AVCodec *codec;
+
+    codec = avcodec_find_decoder(priv->codec_id);
+    if (!codec)
+        return AVERROR(EINVAL);
+
+    return ff_bluelet_capbility_query_ranges(ranges_, obj, codec, key, flags);
 }
 
 static const AVClass bluelet_dec_cap_class = {
