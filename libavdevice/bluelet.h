@@ -107,6 +107,6 @@ int ff_bluelet_handle_uorb_event(BlueletPriv *priv);
 #endif
 int ff_bluelet_handle_event(BlueletPriv* priv);
 int ff_bluelet_capbility_query_ranges(struct AVOptionRanges** ranges_, void* obj,
-                                      const char* key, int flags);
+                                      const AVCodec* codec, const char* key, int flags);
 
 #endif /* AVDEVICE_BLUELET_H */

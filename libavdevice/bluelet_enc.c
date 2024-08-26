@@ -270,66 +270,13 @@ static int bluelet_enc_capbility_query_ranges(struct AVOptionRanges **ranges_, v
 {
     struct AVDeviceCapabilitiesQuery *devcap = obj;
     BlueletPriv *priv = devcap->device_context->priv_data;
-    int i, nb = 0, ret = AVERROR(ENOMEM);
-    struct AVOptionRanges *ranges;
-    AVOptionRange **range_array;
-    const AVCodec* codec;
-
-    if (!priv->codec_id)
-        return AVERROR(EINVAL);
+    const AVCodec *codec;
 
     codec = avcodec_find_encoder(priv->codec_id);
     if (!codec)
         return AVERROR(EINVAL);
 
-    while (codec->sample_fmts[nb] != AV_SAMPLE_FMT_NONE)
-        nb++;
-
-    ranges = av_mallocz(sizeof(struct AVOptionRanges));
-    if (!ranges)
-        return AVERROR(ENOMEM);
-
-    range_array = av_mallocz(sizeof(AVOptionRange*) * nb);
-    if (!range_array) {
-        av_freep(ranges);
-        return AVERROR(ENOMEM);
-    }
-
-    ranges->range = range_array;
-    ranges->nb_ranges = nb;
-    ranges->nb_components = 1;
-
-    if (!strcmp(key, "sample_fmts")) {
-        for (i = 0; i < nb; i++) {
-            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
-            if (!ranges->range[i])
-                goto out;
-
-            ranges->range[i]->is_range = 0;
-            ranges->range[i]->value_min = codec->sample_fmts[i];
-            ranges->range[i]->value_max = ranges->range[i]->value_min;
-        }
-    } else if (!strcmp(key, "codecs")) {
-        for (i = 0; i < nb; i++) {
-            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
-            if (!ranges->range[i])
-                goto out;
-
-            ranges->range[i]->is_range = 0;
-            ranges->range[i]->value_min = av_get_pcm_codec(codec->sample_fmts[i], -1);
-            ranges->range[i]->value_max = ranges->range[i]->value_min;
-        }
-    } else {
-        ret = ff_bluelet_capbility_query_ranges(ranges_, obj, key, flags);
-        goto out;
-    }
-
-    *ranges_ = ranges;
-    return ranges->nb_components;
-
-out:
-    av_opt_freep_ranges(&ranges);
-    return ret;
+    return ff_bluelet_capbility_query_ranges(ranges_, obj, codec, key, flags);
 }
 
 static const AVClass bluelet_enc_cap_class = {
