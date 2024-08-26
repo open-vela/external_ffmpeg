@@ -76,7 +76,7 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EINVAL);
 
     frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
-    if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
+    if ((ret = av_frame_get_buffer(frame, 0)) < 0)
         return ret;
 
     in_data = avpkt->data + 1;
@@ -87,21 +87,16 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         uint32_t out_size = out_avail;
         OI_STATUS status = OI_CODEC_SBC_DecodeFrame(&sbc->context, &in_data,
                                                     &in_size, (int16_t *)out_ptr, &out_size);
-        if (!OI_SUCCESS(status)) {
-            av_log(avctx, AV_LOG_ERROR, "%s, status:%d\n", __func__, status);
+        if (!OI_SUCCESS(status))
             return AVERROR(status);
-        }
 
         out_avail -= out_size;
         out_ptr   += out_size;
     }
 
-    if (in_size)
-        return AVERROR(EINVAL);
-
     *got_frame_ptr = 1;
 
-    return avpkt->size;
+    return avpkt->size - in_size;
 }
 
 static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
@@ -135,37 +130,6 @@ static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     return avpkt->size - in_size;
 }
 
-#ifdef CONFIG_SBC_CODEC_LATM_PACKED
-
-#define LATM_HEADER     0x56e000        // 0x2b7 (11 bits)
-#define LATM_MASK       0xFFE000        // top 11 bits
-#define LATM_SIZE_MASK  0x001FFF        // bottom 13 bits
-#define LATM_HEADER_SIZE 0x03
-
-static int sbc_packed_a2dp_decode_frame(AVCodecContext *avctx, AVFrame *frame,
-                                   int *got_frame_ptr, AVPacket *avpkt)
-{
-    uint32_t state = avpkt->data[0] << 16 | avpkt->data[1] << 8 | avpkt->data[2];
-    AVPacket pkt;
-    int ret;
-
-    if ((state & LATM_MASK) != LATM_HEADER)
-        return AVERROR(EINVAL);
-
-    if ((state & LATM_SIZE_MASK) != (avpkt->size - LATM_HEADER_SIZE))
-        return AVERROR(EINVAL);
-
-    pkt.data = avpkt->data + LATM_HEADER_SIZE;
-    pkt.size = avpkt->size - LATM_HEADER_SIZE;
-
-    ret = sbc_packed_decode_frame(avctx, frame, got_frame_ptr, &pkt);
-    if (ret < 0)
-        return ret;
-
-    return avpkt->size;
-}
-#endif // CONFIG_SBC_CODEC_LATM_PACKED
-
 const FFCodec ff_libfluoride_sbc_decoder = {
     .p.name                  = "libfluoride_sbc",
     .p.long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC (low-complexity subband codec)"),
@@ -173,15 +137,15 @@ const FFCodec ff_libfluoride_sbc_decoder = {
     .p.id                    = AV_CODEC_ID_SBC,
     .priv_data_size          = sizeof(SBCDecContext),
     .init                    = sbc_decode_init,
-        FF_CODEC_DECODE_CB(sbc_decode_frame),
+    FF_CODEC_DECODE_CB(sbc_decode_frame),
     .p.capabilities          = AV_CODEC_CAP_DR1,
     .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
-    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
-                                                    AV_CHANNEL_LAYOUT_STEREO, { 0 } },
-    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                                AV_SAMPLE_FMT_NONE },
-    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
     .bsfs                    = "a2dp_rechunk",
+    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
+    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
+                                                               AV_SAMPLE_FMT_NONE },
+    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
+                                                           AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };
 
 const FFCodec ff_libfluoride_sbc_packed_decoder = {
@@ -200,23 +164,3 @@ const FFCodec ff_libfluoride_sbc_packed_decoder = {
     .p.ch_layouts            = (const AVChannelLayout[]) { AV_CHANNEL_LAYOUT_MONO,
                                                            AV_CHANNEL_LAYOUT_STEREO, { 0 } },
 };
-
-#ifdef CONFIG_SBC_CODEC_LATM_PACKED
-const FFCodec ff_libfluoride_sbc_packed_a2dp_decoder = {
-    .p.name                  = "libfluoride_sbc-packed_a2dp",
-    .p.long_name             = NULL_IF_CONFIG_SMALL("libfluoride SBC packed (low-complexity subband codec)"),
-    .p.type                  = AVMEDIA_TYPE_AUDIO,
-    .p.id                    = AV_CODEC_ID_SBC_PACKED_A2DP,
-    .priv_data_size          = sizeof(SBCDecContext),
-    .init                    = sbc_decode_init,
-    FF_CODEC_DECODE_CB(sbc_packed_a2dp_decode_frame),
-    .p.capabilities          = AV_CODEC_CAP_DR1,
-    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
-    .p.ch_layouts            = (const AVChannelLayout[]) { AV_CH_LAYOUT_MONO,
-                                                  AV_CH_LAYOUT_STEREO, {0}},
-    .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
-                                                             AV_SAMPLE_FMT_NONE },
-    .p.supported_samplerates = (const int[]) { 16000, 32000, 44100, 48000, 0 },
-    .bsfs                    = "a2dp_rechunk",
-};
-#endif // CONFIG_SBC_CODEC_LATM_PACKED
