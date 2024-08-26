@@ -442,38 +442,91 @@ error:
 }
 
 int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
-                                      const char *key, int flags)
+                                      const AVCodec* codec, const char *key, int flags)
 {
     struct AVDeviceCapabilitiesQuery *devcap = obj;
     BlueletPriv *priv = devcap->device_context->priv_data;
-    struct AVOptionRanges *ranges = av_mallocz(sizeof(struct AVOptionRanges));
-    AVOptionRange **range_array = av_mallocz(sizeof(AVOptionRange*));
-    AVOptionRange *range = av_mallocz(sizeof(AVOptionRange));
-    int ret;
+    struct AVOptionRanges *ranges;
+    AVOptionRange **range_array;
+    AVOptionRange *range;
+    int i, nb = 0, ret = AVERROR(ENOMEM);
 
-    if (!ranges || !range || !range_array) {
-        ret = AVERROR(ENOMEM);
+    ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    if (!ranges)
         goto err;
-    }
 
-    ranges->range = range_array;
-    ranges->range[0] = range;
-    ranges->nb_ranges = 1;
     ranges->nb_components = 1;
-    range->is_range = 0;
 
     if (!strcmp(key, "sample_fmts")) {
-        range->value_min = priv->sample_fmt;
-        range->value_max = priv->sample_fmt;
+        while (codec->sample_fmts[nb] != AV_SAMPLE_FMT_NONE) nb++;
+
+        range_array = av_mallocz(sizeof(AVOptionRange*) * nb);
+        if (!range_array)
+            goto err;
+
+        ranges->range = range_array;
+        ranges->nb_ranges = nb;
+
+        for (i = 0; i < nb; i++) {
+            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+            if (!ranges->range[i])
+                goto err;
+            ranges->range[i]->is_range = 0;
+            ranges->range[i]->value_min = codec->sample_fmts[i];
+            ranges->range[i]->value_max = ranges->range[i]->value_min;
+        }
+
     } else if (!strcmp(key, "channels")) {
+        range_array = av_mallocz(sizeof(AVOptionRange*));
+        if (!range_array)
+            goto err;
+
+        range = av_mallocz(sizeof(AVOptionRange));
+        if (!range)
+            goto err;
+
+        ranges->nb_ranges = 1;
+        ranges->range = range_array;
+        ranges->range[0] = range;
+        range->is_range = 0;
         range->value_min = priv->channels;
         range->value_max = priv->channels;
+
     } else if (!strcmp(key, "sample_rates")) {
+        range_array = av_mallocz(sizeof(AVOptionRange*));
+        if (!range_array)
+            goto err;
+
+        range = av_mallocz(sizeof(AVOptionRange));
+        if (!range)
+            goto err;
+
+        ranges->nb_ranges = 1;
+        ranges->range = range_array;
+        ranges->range[0] = range;
+        range->is_range = 0;
         range->value_min = priv->sample_rate;
         range->value_max = priv->sample_rate;
+
     } else if (!strcmp(key, "codecs")) {
-        range->value_min = av_get_pcm_codec(priv->sample_fmt, -1);
-        range->value_max = range->value_min;
+        while (codec->sample_fmts[nb] != AV_SAMPLE_FMT_NONE) nb++;
+
+        range_array = av_mallocz(sizeof(AVOptionRange*) * nb);
+        if (!range_array)
+            goto err;
+
+        ranges->range = range_array;
+        ranges->nb_ranges = nb;
+
+        for (i = 0; i < nb; i++) {
+            ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+            if (!ranges->range[i])
+                goto err;
+            ranges->range[i]->is_range = 0;
+            ranges->range[i]->value_min = av_get_pcm_codec(codec->sample_fmts[i], -1);
+            ranges->range[i]->value_max = ranges->range[i]->value_min;
+        }
+
     } else {
         ret = AVERROR(EINVAL);
         goto err;
