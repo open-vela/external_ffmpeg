@@ -95,9 +95,24 @@ do {                                                                       \
 static int merge_codecs_internal(AVFilterFormats *a,
                                  AVFilterFormats *b, int check)
 {
+    int i;
+
     av_assert2(check || (a->refcount && b->refcount));
     if (a == b) return 1;
 
+    for (i = 0; i < a->nb_formats; i++)
+        if (!avcodec_is_pcm_lossless(a->formats[i]))
+            goto out;
+    for (i = 0; i < b->nb_formats; i++)
+        if (!avcodec_is_pcm_lossless(b->formats[i]))
+            goto out;
+
+    /* No need between raw codecs. */
+    if (!check)
+        MERGE_REF(a, b, formats, AVFilterFormats,);
+    return 1;
+
+out:
     MERGE_FORMATS(a, b, formats, nb_formats, AVFilterFormats, check, 1);
     return 1;
 }
