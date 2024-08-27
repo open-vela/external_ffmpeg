@@ -367,6 +367,9 @@ struct AACContext {
     unsigned warned_71_wide;
     int warned_gain_control;
 
+    int is_raw_data; ///< raw data flag, default 0, decode no adts header data
+    AVPacket* last_packet;
+
     /* aacdec functions pointers */
     void (*imdct_and_windowing)(AACContext *ac, SingleChannelElement *sce);
     void (*apply_ltp)(AACContext *ac, SingleChannelElement *sce);
