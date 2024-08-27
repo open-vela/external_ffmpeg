@@ -69,7 +69,7 @@ typedef struct NuttxPriv {
     int64_t         timestamp;
 } NuttxPriv;
 
-int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, const char *device,
                                     const char *key, int flags, bool playback);
 int ff_nuttx_get_device_list(struct AVDeviceInfoList *device_list, bool playback);
 
