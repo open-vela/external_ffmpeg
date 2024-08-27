@@ -519,6 +519,11 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         .mq_msgsize = sizeof(struct audio_msg_s),
     };
 
+    if (!priv)
+        return AVERROR(EINVAL);
+
+    memset(priv, 0, sizeof(NuttxPriv));
+
     /* open device */
     priv->fd = open(device, O_RDWR | O_CLOEXEC);
     if (priv->fd < 0)
@@ -543,8 +548,6 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         goto out;
 
     priv->playback = playback;
-    priv->volume = NAN;
-    priv->mute = false;
 
     av_strlcpy(priv->devname, device, sizeof(priv->devname));
     return 0;
