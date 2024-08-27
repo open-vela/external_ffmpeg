@@ -230,7 +230,7 @@ static int ff_nuttx_set_ranges(struct AVOptionRanges *ranges, int nb_ranges, int
     return 0;
 }
 
-static int ff_nuttx_capbility_query_smpfmts(struct AVFormatContext *s1, int format, int values[])
+static int ff_nuttx_capbility_query_smpfmts(const char *device, int format, int values[])
 {
     struct audio_caps_s smpfmts;
     int ret, x;
@@ -238,7 +238,7 @@ static int ff_nuttx_capbility_query_smpfmts(struct AVFormatContext *s1, int form
     if (((format & (1 << (AUDIO_FMT_PCM - 1))) == 0))
         return AVERROR(EPERM);
 
-    ret = ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, AUDIO_FMT_PCM, &smpfmts);
+    ret = ff_nuttx_get_capabilities(device, AUDIO_TYPE_QUERY, AUDIO_FMT_PCM, &smpfmts);
     if (ret < 0)
         return ret;
 
@@ -309,7 +309,7 @@ static int ff_nuttx_fmt_to_avcodec(int *codec_id, int *formats)
     return format;
 }
 
-static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
+static int ff_nuttx_capbility_query_codecs(const char *device,
                                            int format, int codecs[], int num)
 {
     int ac_subtype = AUDIO_FMT_UNDEF;
@@ -319,11 +319,11 @@ static int ff_nuttx_capbility_query_codecs(struct AVFormatContext *s1,
 
     while (nb_codecs < num && format) {
         ac_subtype = ff_nuttx_fmt_to_avcodec(&codec, &format);
-        if (ff_nuttx_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps) < 0)
+        if (ff_nuttx_get_capabilities(device, AUDIO_TYPE_QUERY, ac_subtype, &caps) < 0)
             continue;
 
         if (ac_subtype == AUDIO_FMT_OTHER) {
-            nb_codecs += ff_nuttx_capbility_query_codecs(s1, caps.ac_controls.w, &codecs[nb_codecs], num - nb_codecs);
+            nb_codecs += ff_nuttx_capbility_query_codecs(device, caps.ac_controls.w, &codecs[nb_codecs], num - nb_codecs);
             continue;
         }
 
@@ -379,11 +379,9 @@ static int ff_nuttx_drain_buffer(NuttxPriv *priv, bool eos)
     return ff_nuttx_enqueue_buffer(priv, buffer, eos);
 }
 
-int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, const char *device,
                                     const char *key, int flags, bool playback)
 {
-    struct AVDeviceCapabilitiesQuery *devcap = obj;
-    struct AVFormatContext *s1 = devcap->device_context;
     struct audio_caps_s formats = { 0 };
     struct audio_caps_s others = { 0 };
     int ac_type = AUDIO_TYPE_QUERY;
@@ -397,16 +395,16 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
         return AVERROR(ENOMEM);
 
     if (!strcmp(key, "sample_fmts") || !strcmp(key, "codecs")) {
-        ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &formats);
+        ret = ff_nuttx_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &formats);
         if (ret < 0)
             goto err;
 
         if (!strcmp(key, "sample_fmts")) {
-            ret = ff_nuttx_capbility_query_smpfmts(s1, formats.ac_format.hw, values0);
+            ret = ff_nuttx_capbility_query_smpfmts(device, formats.ac_format.hw, values0);
             if (ret < 0)
                 goto err;
         } else {
-            ret = ff_nuttx_capbility_query_codecs(s1, formats.ac_format.hw, values0, 64);
+            ret = ff_nuttx_capbility_query_codecs(device, formats.ac_format.hw, values0, 64);
             if (ret < 0)
                 goto err;
         }
@@ -414,7 +412,7 @@ int ff_nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
         nb_ranges = ret;
     } else if (!strcmp(key, "channels") || !strcmp(key, "sample_rates")) {
         ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
-        ret = ff_nuttx_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &others);
+        ret = ff_nuttx_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &others);
         if (ret < 0)
             goto err;
 
