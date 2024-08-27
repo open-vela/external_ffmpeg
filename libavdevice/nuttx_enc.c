@@ -42,7 +42,10 @@
 static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
                                         const char *key, int flags)
 {
-    return ff_nuttx_capbility_query_ranges(ranges, obj, key, flags, true);
+    struct AVDeviceCapabilitiesQuery *devcap = obj;
+    struct AVFormatContext *s1 = devcap->device_context;
+
+    return ff_nuttx_capbility_query_ranges(ranges, s1->url, key, flags, true);
 }
 
 static const AVClass nuttx_cap_class = {
