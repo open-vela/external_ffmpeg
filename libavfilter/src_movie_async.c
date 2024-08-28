@@ -376,8 +376,17 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
     if (movie->format_ctx)
         avformat_close_input(&movie->format_ctx);
 
-    if (movie->format_opt)
+    if (movie->format_opt) {
+        AVDictionaryEntry *entry;
+        while ((entry = av_dict_get(movie->format_opt, "", entry, AV_DICT_IGNORE_SUFFIX))) {
+            AVDictionaryEntry *tmp_entry = av_dict_get(movie->global_opts, entry->key, NULL, 0);
+            if (tmp_entry && strcmp(tmp_entry->value, entry->value) == 0) {
+                av_dict_set(&movie->global_opts, entry->key, NULL, 0);
+            }
+        }
+
         av_dict_free(&movie->format_opt);
+    }
 
     movie->current_ms = 0;
     movie->lastseek_ms = 0;
