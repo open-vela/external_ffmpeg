@@ -57,6 +57,7 @@ typedef struct {
     FFFrameQueue queue;
     char *server_path;
     int frame_count;
+    int drop_count;
     int listen_fd;
     int ctrl_fd;
     bool stop;
@@ -257,6 +258,8 @@ static int vtun_write_header(AVFormatContext *h)
         return AVERROR(EINVAL);
     }
 
+    priv->drop_count = 0;
+
     return 0;
 }
 
@@ -277,6 +280,7 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
     if (ff_framequeue_queued_frames(&priv->queue) >= priv->frame_count) {
         dequeue_frame = ff_framequeue_take(&priv->queue);
         av_frame_free(&dequeue_frame);
+        priv->drop_count++;
     }
 
     if ((new_frame = av_frame_clone(*frame)) == NULL) {
@@ -418,6 +422,9 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
             priv->stop = false;
             return 0;
         }
+        case AV_APP_TO_DEV_DUMP:
+            snprintf(data, data_size, "%d|%d", priv->frame_count, priv->drop_count);
+            return 0;
         default:
             ret = AVERROR(ENOSYS);
             break;
