@@ -37,6 +37,7 @@ typedef struct SBCEncContext {
     int64_t        max_delay;
     int            frame_length;
     const char     *sbc_param;
+    int            nb_out_pkts;
 } SBCEncContext;
 
 static int sbc_encoder_parse_param(const char *sbc_param, SBC_ENC_PARAMS *param)
@@ -158,6 +159,7 @@ static int sbc_encode_init(AVCodecContext *avctx)
                      + ((param->s16NumOfBlocks * param->s16BitPool * (1 + dual)
                      + joint * param->s16NumOfSubBands) + 7) / 8;
 
+    avctx->frame_size *= sbc->nb_out_pkts;
     return 0;
 }
 
@@ -165,21 +167,32 @@ static int sbc_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                             const AVFrame *av_frame, int *got_packet_ptr)
 {
     SBCEncContext *sbc = avctx->priv_data;
+    char *pcm, *sbc_data;
     uint32_t encret;
-    int ret;
+    int ret, i;
+    int per;
 
     /* input must be large enough to encode a complete frame */
     if (av_frame->nb_samples < avctx->frame_size)
         return 0;
 
-    if ((ret = ff_alloc_packet(avctx, avpkt, sbc->frame_length)) < 0)
+    if ((ret = ff_alloc_packet(avctx, avpkt, sbc->frame_length * sbc->nb_out_pkts)) < 0)
         return ret;
 
-    encret = SBC_Encode(&sbc->context, (int16_t *)av_frame->extended_data[0], avpkt->data);
-    if (encret != sbc->frame_length) {
-        av_log(avctx, AV_LOG_ERROR, "SBC encode frame error, frame length %d, act %d\n",
-                                     sbc->frame_length, ret);
-        return AVERROR(EIO);
+    pcm = av_frame->extended_data[0];
+    sbc_data = avpkt->data;
+    per = av_frame->ch_layout.nb_channels * av_get_bytes_per_sample(av_frame->format);
+
+    for (i = 0; i < sbc->nb_out_pkts; i++) {
+        encret = SBC_Encode(&sbc->context, (int16_t *)pcm, sbc_data);
+        if (encret != sbc->frame_length) {
+            av_log(avctx, AV_LOG_ERROR, "SBC encode frame error, frame length %d, act %" PRIu32 "\n",
+                   sbc->frame_length, encret);
+            return AVERROR(EIO);
+        }
+
+        sbc_data += sbc->frame_length;
+        pcm += avctx->frame_size * per / sbc->nb_out_pkts;
     }
 
     *got_packet_ptr = 1;
@@ -192,6 +205,7 @@ static const AVOption options[] = {
     { "sbc_delay", "set maximum algorithmic latency",
       OFFSET(max_delay), AV_OPT_TYPE_DURATION, {.i64 = 13000}, 1000,13000, AE },
     { "sbc_param", "", OFFSET(sbc_param), AV_OPT_TYPE_STRING, {.str=NULL}, AE },
+    { "nb_out_pkts", "set out packets num", OFFSET(nb_out_pkts), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 32, AE },
     { NULL },
 };
 

@@ -52,6 +52,7 @@ typedef struct {
 
 typedef struct {
     uint8_t param[128];
+    int nb_out_pkts;
 } bluelet_sbc_t;
 
 typedef struct BlueletPriv {
