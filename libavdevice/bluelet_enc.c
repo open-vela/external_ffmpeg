@@ -240,9 +240,10 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
                 av_channel_layout_describe(&priv->ch_layout, ch_layout, sizeof(ch_layout));
                 av_dict_set(dict, "ch_layout", ch_layout, 0);
                 av_dict_set_int(dict, "ab", priv->bit_rate, 0);
-                if (priv->codec_id == AV_CODEC_ID_SBC)
+                if (priv->codec_id == AV_CODEC_ID_SBC) {
                     av_dict_set(dict, "sbc_param", priv->sbc.param, 0);
-                else if (priv->codec_id == AV_CODEC_ID_AAC) {
+                    av_dict_set_int(dict, "nb_out_pkts", priv->sbc.nb_out_pkts, 0);
+                } else if (priv->codec_id == AV_CODEC_ID_AAC) {
                     av_dict_set_int(dict, "profile", priv->aac.profile, 0);
                     av_dict_set_int(dict, "vbr", priv->aac.vbr, 0);
                     av_dict_set_int(dict, "latm", 1, 0);
@@ -308,6 +309,7 @@ static int bluelet_enc_check_bitstream(struct AVFormatContext *ctx, struct AVStr
 static const AVOption options[] = {
     { "server_name", "Set server name", OFFSET(server_name), AV_OPT_TYPE_STRING, { .str = "local" }, 0, 0, FLAGS },
     { "mode", "Audio mode", OFFSET(mode), AV_OPT_TYPE_STRING, { .str = "a2dp" }, 0, 0,       FLAGS },
+    { "nb_out_pkts", "set out packets num", OFFSET(sbc.nb_out_pkts), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 32, FLAGS },
     { NULL },
 };
 
