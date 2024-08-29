@@ -32,7 +32,6 @@
 #include <oi_codec_sbc.h>
 
 #define SBC_WBS_SAMPLES_PER_FRAME 128
-#define SBC_MAX_FRAME 10
 
 #define DECODER_DATA_SIZE (SBC_MAX_CHANNELS * SBC_MAX_BLOCKS * SBC_MAX_BANDS * 4 \
         + SBC_CODEC_MIN_FILTER_BUFFERS * SBC_MAX_BANDS * SBC_MAX_CHANNELS * 2)
@@ -72,9 +71,6 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     nframes = avpkt->data[0] & 0xf;
-    if (nframes > SBC_MAX_FRAME)
-        return AVERROR(EINVAL);
-
     frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;

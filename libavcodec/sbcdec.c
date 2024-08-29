@@ -40,7 +40,6 @@
 #include "sbcdec_data.h"
 
 #define SBC_WBS_SAMPLES_PER_FRAME 128
-#define SBC_MAX_FRAME 10
 
 struct sbc_decoder_state {
     int32_t V[2][170];
@@ -354,9 +353,6 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     nframes = avpkt->data[0] & 0xf;
-    if (nframes > SBC_MAX_FRAME)
-        return AVERROR(EINVAL);
-
     frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
