@@ -39,9 +39,12 @@ struct offload_codec_table {
     int packet_size;
 };
 
-static const struct offload_codec_table codec_tables[] = {
+static const struct offload_codec_table codec_table[] = {
     { "AUDIO_FORMAT_MP3", AV_CODEC_ID_MP3, AVSTREAM_PARSE_FULL_RAW, 1024 },
     { "AUDIO_FORMAT_PCM_16_BIT", AV_CODEC_ID_PCM_S16LE, AVSTREAM_PARSE_NONE, 1024 },
+    { "AUDIO_FORMAT_AAC_LC", AV_CODEC_ID_AAC, AVSTREAM_PARSE_NONE, 1024 },
+    { "AUDIO_FORMAT_AAC_HE_V1", AV_CODEC_ID_AAC, AVSTREAM_PARSE_NONE, 1024 },
+    { "AUDIO_FORMAT_AAC_HE_V2", AV_CODEC_ID_AAC, AVSTREAM_PARSE_NONE, 1024 },
     { "AUDIO_FORMAT_NONE", AV_CODEC_ID_NONE, AVSTREAM_PARSE_NONE, 0 }
 };
 
@@ -50,8 +53,8 @@ static int offload_get_codec_idx(const char *codec_name)
     int i;
     if (!codec_name)
         return AVERROR(EINVAL);
-    for (i = 0; i < FF_ARRAY_ELEMS(codec_tables); i++)
-        if (!strcmp(codec_name, codec_tables[i].codec_name))
+    for (i = 0; i < FF_ARRAY_ELEMS(codec_table); i++)
+        if (!strcmp(codec_name, codec_table[i].codec_name))
             return i;
 
     av_log(NULL, AV_LOG_ERROR, "unknown codec name %s.", codec_name);
@@ -66,12 +69,12 @@ static int offload_probe(const AVProbeData *p)
 
 static int offload_read_header(AVFormatContext *s)
 {
-    AVStream *st;
-    FFStream *sti;
     OffloadDemuxerContext *s1 = s->priv_data;
+    FFStream *sti;
+    AVStream *st;
 
-    av_log(s, AV_LOG_INFO, "%s codec_name:%s, rate:%d, channels:%d.", __func__,
-           s1->codec_name, s1->sample_rate, s1->ch_layout.nb_channels);
+    av_log(s, AV_LOG_INFO, "%s codec_name:%s, rate:%d, channels:%d.",
+           __func__, s1->codec_name, s1->sample_rate, s1->ch_layout.nb_channels);
 
     if ((s1->idx = offload_get_codec_idx(s1->codec_name)) < 0)
         return AVERROR(EINVAL);
@@ -85,12 +88,12 @@ static int offload_read_header(AVFormatContext *s)
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codecpar->ch_layout   = s1->ch_layout;
     st->codecpar->sample_rate = s1->sample_rate;
-    st->codecpar->codec_id    = codec_tables[s1->idx].codec_id;
-    sti->need_parsing         = codec_tables[s1->idx].parse_type;
-    s1->packet_size           = codec_tables[s1->idx].packet_size;
+    st->codecpar->codec_id    = codec_table[s1->idx].codec_id;
+    sti->need_parsing         = codec_table[s1->idx].parse_type;
+    s1->packet_size           = codec_table[s1->idx].packet_size;
 
-    av_log(s, AV_LOG_INFO, "%s codec_id:%d need_parsing:%d\n", __func__,
-           st->codecpar->codec_id, sti->need_parsing);
+    av_log(s, AV_LOG_INFO, "%s codec_id:%d need_parsing:%d\n",
+           __func__, st->codecpar->codec_id, sti->need_parsing);
 
     return 0;
 }
