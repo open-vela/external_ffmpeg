@@ -89,7 +89,8 @@ typedef struct BlueletPriv {
     };
     AVChannelLayout ch_layout;
 
-    int64_t last_ts;
+    int64_t recv_ts;
+    int64_t send_ts;
 } BlueletPriv;
 
 /*****************************************************************************

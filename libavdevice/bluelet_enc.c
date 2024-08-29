@@ -49,6 +49,8 @@ static int bluelet_enc_init(struct AVFormatContext *ctx)
     BlueletPriv *priv = ctx->priv_data;
 
     priv->playback = true;
+    priv->recv_ts = 0;
+    priv->send_ts = 0;
     ff_bluelet_init(priv, !!(ctx->flags & AVFMT_FLAG_NONBLOCK));
 
     return 1;
@@ -112,6 +114,7 @@ static int bluelet_write_lastpacket(AVFormatContext *ctx)
 static int bluelet_write_packet(AVFormatContext *ctx, AVPacket *pkt)
 {
     BlueletPriv *priv = ctx->priv_data;
+    int64_t ts_now;
     int ret;
 
     if (priv->lastpkt)
@@ -120,6 +123,14 @@ static int bluelet_write_packet(AVFormatContext *ctx, AVPacket *pkt)
     if (!pkt || !pkt->size)
         return 0;
 
+    ts_now = av_gettime_relative();
+    if (priv->send_ts > 0) {
+        int64_t diff = ts_now - priv->send_ts;
+
+        if (diff > 500000 /* us */)
+            av_log(ctx, AV_LOG_WARNING, "send bluelet packet size %d duration %" PRId64 " us\n", pkt->size, diff);
+    }
+    priv->send_ts = ts_now;
     ret = ff_bluelet_write_buffer(priv, pkt->data, pkt->size);
     if (ret < 0)
         return ret;
@@ -217,11 +228,13 @@ static int bluelet_enc_control_message(struct AVFormatContext *ctx, int type,
             } else if (priv->data_fd == poll->fd) {
                 if (priv->lastpkt) {
                     int64_t ts_now = av_gettime_relative();
-                    int64_t diff   = ts_now - priv->last_ts;
+                    if (priv->recv_ts > 0) {
+                        int64_t diff = ts_now - priv->recv_ts;
 
-                    if (diff > 500000 /* us */)
-                        av_log(NULL, AV_LOG_ERROR, "bluelet poll available time_us: %" PRId64 " - diff %" PRId64 "\n", ts_now, diff);
-                    priv->last_ts = ts_now;
+                        if (diff > 500000 /* us */)
+                            av_log(ctx, AV_LOG_WARNING, "recv bluelet poll available duration %" PRId64 " us\n", diff);
+                    }
+                    priv->recv_ts = ts_now;
 
                     avdevice_dev_to_app_control_message(ctx, AV_DEV_TO_APP_BUFFER_WRITABLE, NULL, 0);
                 }
