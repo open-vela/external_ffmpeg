@@ -106,6 +106,7 @@ typedef struct MovieAsyncContext {
     unsigned                  duration_ms;    /** < duration of whole stream */
     int                       loop_count;
     int                       pending_stop;
+    bool                      frame_sent;
 
     void                      *cookie;
     av_movie_async_event_func event;
@@ -598,6 +599,7 @@ static void movie_async_stop(AVFilterContext *ctx)
     movie->state = AVMOVIE_ASYNC_STATE_STOPPED;
     movie->pending_stop = 0;
     movie->loop_count = 0;
+    movie->frame_sent = false;
 
     movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_STOPPED, 0, NULL);
 }
@@ -611,7 +613,7 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
     int ret;
 
     src = movie->format_ctx->streams[pkt->stream_index]->codecpar;
-    if (movie->streams[pad_id].codecpar == NULL) {
+    if (!movie->frame_sent) {
         dst = avcodec_parameters_alloc();
         if (!dst)
             return AVERROR(ENOMEM);
@@ -1228,7 +1230,8 @@ static int movie_async_activate(AVFilterContext *ctx)
         if (ret < 0) {
             movie->eof_reached = true;
             movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
-        }
+        } else if (!movie->frame_sent)
+            movie->frame_sent = true;
     }
 
     return ret;
