@@ -764,7 +764,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
     }
 
     new = dq_count(&priv->bufferq);
-    if (priv->periods > 1 && new == priv->periods && new > old) {
+    if (priv->periods > 1 && new == priv->periods && new > old && !priv->paused) {
         if (priv->playback) {
             /* Try to send the buffer containing the remaining data to the driver */
             ff_nuttx_drain_buffer(priv, false);
