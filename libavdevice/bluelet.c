@@ -447,8 +447,6 @@ int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj
     struct AVDeviceCapabilitiesQuery *devcap = obj;
     BlueletPriv *priv = devcap->device_context->priv_data;
     struct AVOptionRanges *ranges;
-    AVOptionRange **range_array;
-    AVOptionRange *range;
     int i, nb = 0, ret = AVERROR(ENOMEM);
 
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
@@ -460,69 +458,55 @@ int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj
     if (!strcmp(key, "sample_fmts")) {
         while (codec->sample_fmts[nb] != AV_SAMPLE_FMT_NONE) nb++;
 
-        range_array = av_mallocz(sizeof(AVOptionRange*) * nb);
-        if (!range_array)
+        ranges->range = av_mallocz(sizeof(AVOptionRange*) * nb);
+        if (!ranges->range)
             goto err;
-
-        ranges->range = range_array;
         ranges->nb_ranges = nb;
 
         for (i = 0; i < nb; i++) {
             ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
             if (!ranges->range[i])
                 goto err;
-            ranges->range[i]->is_range = 0;
             ranges->range[i]->value_min = codec->sample_fmts[i];
             ranges->range[i]->value_max = ranges->range[i]->value_min;
         }
 
     } else if (!strcmp(key, "channels")) {
-        range_array = av_mallocz(sizeof(AVOptionRange*));
-        if (!range_array)
+        ranges->range = av_mallocz(sizeof(AVOptionRange*));
+        if (!ranges->range)
             goto err;
-
-        range = av_mallocz(sizeof(AVOptionRange));
-        if (!range)
-            goto err;
-
         ranges->nb_ranges = 1;
-        ranges->range = range_array;
-        ranges->range[0] = range;
-        range->is_range = 0;
-        range->value_min = priv->channels;
-        range->value_max = priv->channels;
+    
+        ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[0])
+            goto err;
+        ranges->range[0]->value_min = priv->channels;
+        ranges->range[0]->value_max = priv->channels;
 
     } else if (!strcmp(key, "sample_rates")) {
-        range_array = av_mallocz(sizeof(AVOptionRange*));
-        if (!range_array)
+        ranges->range = av_mallocz(sizeof(AVOptionRange*));
+        if (!ranges->range)
             goto err;
-
-        range = av_mallocz(sizeof(AVOptionRange));
-        if (!range)
-            goto err;
-
         ranges->nb_ranges = 1;
-        ranges->range = range_array;
-        ranges->range[0] = range;
-        range->is_range = 0;
-        range->value_min = priv->sample_rate;
-        range->value_max = priv->sample_rate;
+    
+        ranges->range[0] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[0])
+            goto err;
+        ranges->range[0]->value_min = priv->sample_rate;
+        ranges->range[0]->value_max = priv->sample_rate;
 
     } else if (!strcmp(key, "codecs")) {
         while (codec->sample_fmts[nb] != AV_SAMPLE_FMT_NONE) nb++;
 
-        range_array = av_mallocz(sizeof(AVOptionRange*) * nb);
-        if (!range_array)
+        ranges->range = av_mallocz(sizeof(AVOptionRange*) * nb);
+        if (!ranges->range)
             goto err;
-
-        ranges->range = range_array;
         ranges->nb_ranges = nb;
 
         for (i = 0; i < nb; i++) {
             ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
             if (!ranges->range[i])
                 goto err;
-            ranges->range[i]->is_range = 0;
             ranges->range[i]->value_min = av_get_pcm_codec(codec->sample_fmts[i], -1);
             ranges->range[i]->value_max = ranges->range[i]->value_min;
         }
@@ -537,8 +521,6 @@ int ff_bluelet_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj
 
 err:
     av_opt_freep_ranges(&ranges);
-    av_freep(&range_array);
-    av_freep(range);
     return ret;
 }
 
