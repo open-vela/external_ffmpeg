@@ -361,6 +361,9 @@ static int moviesink_open_muxer(AVFilterContext *ctx, const char *filename)
     cb.opaque   = ctx;
 
     pthread_mutex_lock(&priv->mutex);
+    if (priv->global_opts)
+        av_dict_copy(&priv->format_opt, priv->global_opts, 0);
+
     if (priv->format_opt) {
         av_dict_copy(&dict, priv->format_opt, 0);
         ret = av_opt_set_dict2(priv->format_ctx, &dict, AV_OPT_SEARCH_CHILDREN);
