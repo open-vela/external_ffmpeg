@@ -63,6 +63,7 @@
 
 #if !defined(AV_READ_TIME)
 #   if HAVE_GETHRTIME
+#       include <sys/time.h>
 #       define AV_READ_TIME gethrtime
 #   elif HAVE_MACH_ABSOLUTE_TIME
 #       define AV_READ_TIME mach_absolute_time
