@@ -136,7 +136,7 @@ static const AVClass fd_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-static int file_read(URLContext *h, unsigned char *buf, int size)
+static int ff_file_read(URLContext *h, unsigned char *buf, int size)
 {
     FileContext *c = h->priv_data;
     int ret;
@@ -149,7 +149,7 @@ static int file_read(URLContext *h, unsigned char *buf, int size)
     return (ret == -1) ? AVERROR(errno) : ret;
 }
 
-static int file_write(URLContext *h, const unsigned char *buf, int size)
+static int ff_file_write(URLContext *h, const unsigned char *buf, int size)
 {
     FileContext *c = h->priv_data;
     int ret;
@@ -218,7 +218,7 @@ static int fd_dup(URLContext *h, int oldfd)
 }
 #endif
 
-static int file_close(URLContext *h)
+static int ff_file_close(URLContext *h)
 {
     FileContext *c = h->priv_data;
     int ret = close(c->fd);
@@ -226,7 +226,7 @@ static int file_close(URLContext *h)
 }
 
 /* XXX: use llseek */
-static int64_t file_seek(URLContext *h, int64_t pos, int whence)
+static int64_t ff_file_seek(URLContext *h, int64_t pos, int whence)
 {
     FileContext *c = h->priv_data;
     int64_t ret;
@@ -280,7 +280,7 @@ static int file_move(URLContext *h_src, URLContext *h_dst)
     return 0;
 }
 
-static int file_open(URLContext *h, const char *filename, int flags)
+static int ff_file_open(URLContext *h, const char *filename, int flags)
 {
     FileContext *c = h->priv_data;
     int access;
@@ -407,11 +407,11 @@ static int file_close_dir(URLContext *h)
 
 const URLProtocol ff_file_protocol = {
     .name                = "file",
-    .url_open            = file_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_seek            = file_seek,
-    .url_close           = file_close,
+    .url_open            = ff_file_open,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_seek            = ff_file_seek,
+    .url_close           = ff_file_close,
     .url_get_file_handle = file_get_handle,
     .url_check           = file_check,
     .url_delete          = file_delete,
@@ -461,9 +461,9 @@ static int pipe_open(URLContext *h, const char *filename, int flags)
 const URLProtocol ff_pipe_protocol = {
     .name                = "pipe",
     .url_open            = pipe_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_close           = file_close,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_close           = ff_file_close,
     .url_get_file_handle = file_get_handle,
     .url_check           = file_check,
     .priv_data_size      = sizeof(FileContext),
@@ -506,10 +506,10 @@ static int fd_open(URLContext *h, const char *filename, int flags)
 const URLProtocol ff_fd_protocol = {
     .name                = "fd",
     .url_open            = fd_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_seek            = file_seek,
-    .url_close           = file_close,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_seek            = ff_file_seek,
+    .url_close           = ff_file_close,
     .url_get_file_handle = file_get_handle,
     .url_check           = file_check,
     .priv_data_size      = sizeof(FileContext),
@@ -661,10 +661,10 @@ static const AVClass android_content_class = {
 const URLProtocol ff_android_content_protocol = {
     .name                = "content",
     .url_open            = android_content_open,
-    .url_read            = file_read,
-    .url_write           = file_write,
-    .url_seek            = file_seek,
-    .url_close           = file_close,
+    .url_read            = ff_file_read,
+    .url_write           = ff_file_write,
+    .url_seek            = ff_file_seek,
+    .url_close           = ff_file_close,
     .url_get_file_handle = file_get_handle,
     .url_check           = NULL,
     .priv_data_size      = sizeof(FileContext),

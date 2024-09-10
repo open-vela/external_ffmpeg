@@ -534,6 +534,7 @@ void *allocate_array_elem(void *array, size_t elem_size, int *nb_elems);
 
 double get_rotation(const int32_t *displaymatrix);
 
+#define file_read ff_file_read
 /* read file contents into a string */
 char *file_read(const char *filename);
 
