@@ -6500,7 +6500,7 @@ if ! disabled network; then
 
     # Prefer arpa/inet.h over winsock2
     if check_headers arpa/inet.h ; then
-        check_func closesocket
+        check_func_headers arpa/inet.h closesocket
     elif check_headers winsock2.h ; then
         check_func_headers winsock2.h closesocket -lws2 &&
             network_extralibs="-lws2" ||
