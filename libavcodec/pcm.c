@@ -39,7 +39,7 @@
 #include "pcm_tablegen.h"
 #include "decode.h"
 
-static av_cold int pcm_encode_init(AVCodecContext *avctx)
+av_unused static av_cold int pcm_encode_init(AVCodecContext *avctx)
 {
     avctx->frame_size = 0;
 #if !CONFIG_HARDCODED_TABLES
@@ -99,7 +99,7 @@ static av_cold int pcm_encode_init(AVCodecContext *avctx)
         }                                                               \
     }
 
-static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
+av_unused static int pcm_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
                             const AVFrame *frame, int *got_packet_ptr)
 {
     int n, c, sample_size, ret;
@@ -363,7 +363,7 @@ static av_cold int pcm_decode_init(AVCodecContext *avctx)
         }                                                                      \
     }
 
-static int pcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
+av_unused static int pcm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
             int *got_frame_ptr, AVPacket *avpkt)
 {
     const uint8_t *src = avpkt->data;
