@@ -265,7 +265,7 @@ out:
     return ret;
 }
 
-static int decoder_process_command(AVFilterContext *ctx,
+av_unused static int decoder_process_command(AVFilterContext *ctx,
                                    const char *cmd, const char *args,
                                    char *res, int res_len, int flags)
 {
