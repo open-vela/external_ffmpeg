@@ -416,7 +416,7 @@ static inline enum AVPixelFormat av_get_pix_fmt(const char *name) {
 
 static inline const AVPixFmtDescriptor *av_pix_fmt_desc_get(enum AVPixelFormat pix_fmt) {
     static const AVPixFmtDescriptor av_pix_fmt_descriptors[1] = {
-        NULL, 0, 0, 0, 0, {  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  },  0
+        "NULL", 0, 0, 0, 0, {  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  { 0, 0, 0, 0, 0 },  },  0
     };
     return &av_pix_fmt_descriptors[0];
 }
@@ -481,7 +481,7 @@ static inline int av_get_pix_fmt_loss(enum AVPixelFormat dst_pix_fmt,
 }
 
 static inline const char *av_get_pix_fmt_name(enum AVPixelFormat pix_fmt) {
-    return NULL;
+    return "NULL";
 }
 
 static inline char *av_get_pix_fmt_string(char *buf, int buf_size,
