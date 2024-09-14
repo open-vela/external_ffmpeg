@@ -107,6 +107,7 @@ typedef struct MovieAsyncContext {
     int                       loop_count;
     int                       pending_stop;
     bool                      frame_sent;
+    bool                      need_reconfig;
 
     void                      *cookie;
     av_movie_async_event_func event;
@@ -770,6 +771,7 @@ static void movie_async_proc_event(AVFilterContext *ctx)
 
                 movie_async_send_vsyncmode(ctx, movie->streams[0].type == AVMEDIA_TYPE_AUDIO &&
                                            movie->streams[0].index >= 0);
+                movie->need_reconfig = true;
                 break;
 
             case AVMOVIE_ASYNC_EVENT_PAUSED:
@@ -1112,7 +1114,7 @@ static int movie_async_query_formats(AVFilterContext *ctx)
     /* to avoid reconfiging successfully in advanced before started,
      * because once reconfiging successfully, src filter need sending frame to outlink asap,
      * or amix pending mixing when amix has other active inputs */
-    if (movie->state != AVMOVIE_ASYNC_STATE_STARTED)
+    if (movie->state != AVMOVIE_ASYNC_STATE_STARTED || !movie->need_reconfig)
         return FFERROR_NOT_READY;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -1184,6 +1186,7 @@ static int movie_async_reconfig(AVFilterContext *ctx)
         av_log(NULL, AV_LOG_ERROR, "reconfig failed:%s \n", ctx->name);
         return ret;
     }
+    movie->need_reconfig = false;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (!ff_outlink_get_status(ctx->outputs[i]))
@@ -1401,6 +1404,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
 
     if (!strcmp(cmd, "open")) {
         av_log(ctx, AV_LOG_INFO, "%s filter %s open.\n", __func__, ctx->name);
+        movie->need_reconfig = false;
         return movie_async_proc_open(ctx);
     } else if (!strcmp(cmd, "set_event")) {
         event = (AVMovieAsyncEventCookie *)args;
