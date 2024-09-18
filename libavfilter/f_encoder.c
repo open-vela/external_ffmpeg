@@ -183,6 +183,8 @@ static int encoder_activate(AVFilterContext *ctx)
         ff_inlink_set_status(inlink, ret);
         if (priv->codec_ctx) {
             ret = encoder_encode(ctx, NULL, &out);
+            av_frame_free(&out);
+            out = NULL;
             encoder_close(ctx);
         }
 
