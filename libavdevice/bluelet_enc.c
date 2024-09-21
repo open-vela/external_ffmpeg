@@ -75,6 +75,9 @@ static int bluelet_write_header(AVFormatContext *ctx)
     if (ctx->nb_streams != 1 || ctx->streams[0]->codecpar->codec_type != AVMEDIA_TYPE_AUDIO)
         return AVERROR(EINVAL);
 
+    priv->recv_ts = 0;
+    priv->send_ts = 0;
+
     ret = ff_bluelet_start(priv);
     if (ret >= 0)
         avpriv_set_pts_info(st, 64, 1, priv->sample_rate);
@@ -85,6 +88,9 @@ static int bluelet_write_header(AVFormatContext *ctx)
 static int bluelet_write_trailer(struct AVFormatContext *ctx)
 {
     BlueletPriv *priv = ctx->priv_data;
+
+    priv->recv_ts = 0;
+    priv->send_ts = 0;
 
     return ff_bluelet_stop(priv);
 }
