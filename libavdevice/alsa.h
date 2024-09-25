@@ -30,7 +30,10 @@
 #ifndef AVDEVICE_ALSA_H
 #define AVDEVICE_ALSA_H
 
-#include <alsa/asoundlib.h>
+#include <nuttx/config.h>
+#include <nuttx/audio/audio.h>
+
+#include <asoundlib.h>
 #include "config.h"
 #include "libavutil/log.h"
 #include "timefilter.h"
@@ -59,6 +62,11 @@ typedef struct AlsaData {
     int reorder_buf_size; ///< in frames
     int64_t timestamp; ///< current timestamp, without latency applied.
     AVPacket *pkt;
+    AVPacket *lastpkt;
+    int running;
+    int periods;
+    int period_time;
+    long resume_min;
 } AlsaData;
 
 /**
@@ -107,3 +115,6 @@ av_warn_unused_result
 int ff_alsa_get_device_list(AVDeviceInfoList *device_list, snd_pcm_stream_t stream_type);
 
 #endif /* AVDEVICE_ALSA_H */
+
+int ff_audio_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                    const char *key, int flags, bool playback);

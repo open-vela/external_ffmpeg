@@ -30,38 +30,31 @@
 
 #include "config_components.h"
 
-#include <alsa/asoundlib.h>
 #include "avdevice.h"
 #include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/mem.h"
+#include <asoundlib.h>
+
+#include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include "alsa.h"
 
 static av_cold snd_pcm_format_t codec_id_to_pcm_format(int codec_id)
 {
     switch(codec_id) {
-        case AV_CODEC_ID_PCM_F64LE: return SND_PCM_FORMAT_FLOAT64_LE;
-        case AV_CODEC_ID_PCM_F64BE: return SND_PCM_FORMAT_FLOAT64_BE;
-        case AV_CODEC_ID_PCM_F32LE: return SND_PCM_FORMAT_FLOAT_LE;
-        case AV_CODEC_ID_PCM_F32BE: return SND_PCM_FORMAT_FLOAT_BE;
-        case AV_CODEC_ID_PCM_S32LE: return SND_PCM_FORMAT_S32_LE;
-        case AV_CODEC_ID_PCM_S32BE: return SND_PCM_FORMAT_S32_BE;
-        case AV_CODEC_ID_PCM_U32LE: return SND_PCM_FORMAT_U32_LE;
-        case AV_CODEC_ID_PCM_U32BE: return SND_PCM_FORMAT_U32_BE;
-        case AV_CODEC_ID_PCM_S24LE: return SND_PCM_FORMAT_S24_3LE;
-        case AV_CODEC_ID_PCM_S24BE: return SND_PCM_FORMAT_S24_3BE;
-        case AV_CODEC_ID_PCM_U24LE: return SND_PCM_FORMAT_U24_3LE;
-        case AV_CODEC_ID_PCM_U24BE: return SND_PCM_FORMAT_U24_3BE;
-        case AV_CODEC_ID_PCM_S16LE: return SND_PCM_FORMAT_S16_LE;
-        case AV_CODEC_ID_PCM_S16BE: return SND_PCM_FORMAT_S16_BE;
-        case AV_CODEC_ID_PCM_U16LE: return SND_PCM_FORMAT_U16_LE;
-        case AV_CODEC_ID_PCM_U16BE: return SND_PCM_FORMAT_U16_BE;
-        case AV_CODEC_ID_PCM_S8:    return SND_PCM_FORMAT_S8;
-        case AV_CODEC_ID_PCM_U8:    return SND_PCM_FORMAT_U8;
-        case AV_CODEC_ID_PCM_MULAW: return SND_PCM_FORMAT_MU_LAW;
-        case AV_CODEC_ID_PCM_ALAW:  return SND_PCM_FORMAT_A_LAW;
-        default:                 return SND_PCM_FORMAT_UNKNOWN;
+    case AV_CODEC_ID_PCM_S32LE: return SND_PCM_FORMAT_S32_LE;
+    case AV_CODEC_ID_PCM_S32BE: return SND_PCM_FORMAT_S32_BE;
+    case AV_CODEC_ID_PCM_U32LE: return SND_PCM_FORMAT_U32_LE;
+    case AV_CODEC_ID_PCM_U32BE: return SND_PCM_FORMAT_U32_BE;
+    case AV_CODEC_ID_PCM_S16LE: return SND_PCM_FORMAT_S16_LE;
+    case AV_CODEC_ID_PCM_S16BE: return SND_PCM_FORMAT_S16_BE;
+    case AV_CODEC_ID_PCM_U16LE: return SND_PCM_FORMAT_U16_LE;
+    case AV_CODEC_ID_PCM_U16BE: return SND_PCM_FORMAT_U16_BE;
+    case AV_CODEC_ID_PCM_S8:    return SND_PCM_FORMAT_S8;
+    case AV_CODEC_ID_PCM_U8:    return SND_PCM_FORMAT_U8;
+    default:                 return SND_PCM_FORMAT_UNKNOWN;
     }
 }
 
@@ -170,6 +163,205 @@ static av_cold int find_reorder_func(AlsaData *s, int codec_id, AVChannelLayout 
     return s->reorder_func ? 0 : AVERROR(ENOSYS);
 }
 
+static int ff_audio_samplerate_convert(int samplerate, int *sample_rates, int num)
+{
+    int i;
+
+    for (i = 0; i < num && samplerate; i++) {
+        if (samplerate & AUDIO_SAMP_RATE_8K) {
+            samplerate &= ~AUDIO_SAMP_RATE_8K;
+            sample_rates[i] = 8000;
+        } else if (samplerate & AUDIO_SAMP_RATE_11K) {
+            samplerate &= ~AUDIO_SAMP_RATE_11K;
+            sample_rates[i] = 11025;
+        } else if (samplerate & AUDIO_SAMP_RATE_12K) {
+            samplerate &= ~AUDIO_SAMP_RATE_12K;
+            sample_rates[i] = 12000;
+        } else if (samplerate & AUDIO_SAMP_RATE_16K) {
+            samplerate &= ~AUDIO_SAMP_RATE_16K;
+            sample_rates[i] = 16000;
+        } else if (samplerate & AUDIO_SAMP_RATE_22K) {
+            samplerate &= ~AUDIO_SAMP_RATE_22K;
+            sample_rates[i] = 22050;
+        } else if (samplerate & AUDIO_SAMP_RATE_24K) {
+            samplerate &= ~AUDIO_SAMP_RATE_24K;
+            sample_rates[i] = 24000;
+        } else if (samplerate & AUDIO_SAMP_RATE_32K) {
+            samplerate &= ~AUDIO_SAMP_RATE_32K;
+            sample_rates[i] = 32000;
+        } else if (samplerate & AUDIO_SAMP_RATE_44K) {
+            samplerate &= ~AUDIO_SAMP_RATE_44K;
+            sample_rates[i] = 44100;
+        } else if (samplerate & AUDIO_SAMP_RATE_48K) {
+            samplerate &= ~AUDIO_SAMP_RATE_48K;
+            sample_rates[i] = 48000;
+        } else if (samplerate & AUDIO_SAMP_RATE_96K) {
+            samplerate &= ~AUDIO_SAMP_RATE_96K;
+            sample_rates[i] = 96000;
+        } else if (samplerate & AUDIO_SAMP_RATE_128K) {
+            samplerate &= ~AUDIO_SAMP_RATE_128K;
+            sample_rates[i] = 128000;
+        } else if (samplerate & AUDIO_SAMP_RATE_160K) {
+            samplerate &= ~AUDIO_SAMP_RATE_160K;
+            sample_rates[i] = 160000;
+        } else if (samplerate & AUDIO_SAMP_RATE_172K) {
+            samplerate &= ~AUDIO_SAMP_RATE_172K;
+            sample_rates[i] = 172000;
+        } else if (samplerate & AUDIO_SAMP_RATE_192K) {
+            samplerate &= ~AUDIO_SAMP_RATE_192K;
+            sample_rates[i] = 192000;
+        }
+    }
+
+    return i;
+}
+
+static int ff_audio_subfmt_to_avcodec(int subfmt)
+{
+    switch (subfmt) {
+    case AUDIO_SUBFMT_PCM_U8:
+        return AV_CODEC_ID_PCM_U8;
+    case AUDIO_SUBFMT_PCM_S8:
+        return AV_CODEC_ID_PCM_S8;
+    case AUDIO_SUBFMT_PCM_U16_LE:
+        return AV_CODEC_ID_PCM_U16LE;
+    case AUDIO_SUBFMT_PCM_U16_BE:
+        return AV_CODEC_ID_PCM_U16BE;
+    case AUDIO_SUBFMT_PCM_S16_LE:
+        return AV_CODEC_ID_PCM_S16LE;
+    case AUDIO_SUBFMT_PCM_S16_BE:
+        return AV_CODEC_ID_PCM_S16BE;
+    case AUDIO_SUBFMT_PCM_U32_LE:
+        return AV_CODEC_ID_PCM_U32LE;
+    case AUDIO_SUBFMT_PCM_U32_BE:
+        return AV_CODEC_ID_PCM_U32BE;
+    case AUDIO_SUBFMT_PCM_S32_LE:
+        return AV_CODEC_ID_PCM_S32LE;
+    case AUDIO_SUBFMT_PCM_S32_BE:
+        return AV_CODEC_ID_PCM_S32BE;
+    case AUDIO_SUBFMT_PCM_MU_LAW:
+        return AV_CODEC_ID_PCM_MULAW;
+    case AUDIO_SUBFMT_PCM_A_LAW:
+        return AV_CODEC_ID_PCM_ALAW;
+    case AUDIO_SUBFMT_PCM_MP1:
+        return AV_CODEC_ID_MP1;
+    case AUDIO_SUBFMT_PCM_MP2:
+        return AV_CODEC_ID_MP2;
+    case AUDIO_SUBFMT_PCM_MP3:
+        return AV_CODEC_ID_MP3;
+    case AUDIO_SUBFMT_AMRNB:
+        return AV_CODEC_ID_AMR_NB;
+    case AUDIO_SUBFMT_AMRWB:
+        return AV_CODEC_ID_AMR_WB;
+    }
+
+    return AV_CODEC_ID_FIRST_AUDIO;
+}
+
+static int ff_audio_subfmt_to_smpfmt(int subfmt)
+{
+    switch (subfmt) {
+    case AUDIO_SUBFMT_PCM_U8:
+        return AV_SAMPLE_FMT_U8;
+    case AUDIO_SUBFMT_PCM_S16_LE:
+    case AUDIO_SUBFMT_PCM_S16_BE:
+        return AV_SAMPLE_FMT_S16;
+    case AUDIO_SUBFMT_PCM_S32_LE:
+    case AUDIO_SUBFMT_PCM_S32_BE:
+        return AV_SAMPLE_FMT_S32;
+    }
+
+    return AV_SAMPLE_FMT_NONE;
+}
+
+static int ff_audio_fmt_to_avcodec(int *codec_id, int *formats)
+{
+    int codec = AV_CODEC_ID_NONE;
+    int format = AUDIO_FMT_UNDEF;
+
+    if (*formats & (1 << (AUDIO_FMT_PCM - 1))) {
+        codec = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE);
+        format = AUDIO_FMT_PCM;
+        *formats &= ~(1 << (AUDIO_FMT_PCM - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_MP3 - 1))) {
+        codec = AV_CODEC_ID_MP3;
+        format = AUDIO_FMT_MP3;
+        *formats &= ~(1 << (AUDIO_FMT_MP3 - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AC3 - 1))) {
+        codec = AV_CODEC_ID_AC3;
+        format = AUDIO_FMT_AC3;
+        *formats &= ~(1 << (AUDIO_FMT_AC3 - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_WMA - 1))) {
+        codec = AV_CODEC_ID_WMAV2;
+        format = AUDIO_FMT_WMA;
+        *formats &= ~(1 << (AUDIO_FMT_WMA - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_DTS - 1))) {
+        codec = AV_CODEC_ID_DTS;
+        format = AUDIO_FMT_WMA;
+        *formats &= ~(1 << (AUDIO_FMT_DTS - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
+        codec = AV_CODEC_ID_VORBIS;
+        format = AUDIO_FMT_OGG_VORBIS;
+        *formats &= ~(1 << (AUDIO_FMT_OGG_VORBIS - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_FLAC - 1))) {
+        codec = AV_CODEC_ID_FLAC;
+        format = AUDIO_FMT_FLAC;
+        *formats &= ~(1 << (AUDIO_FMT_FLAC - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AMR - 1))) {
+        codec = AV_CODEC_ID_AMR_NB;
+        format = AUDIO_FMT_AMR;
+        *formats &= ~(1 << (AUDIO_FMT_AMR - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OTHER - 1))) {
+        format = AUDIO_FMT_OTHER;
+        *formats &= ~(1 << (AUDIO_FMT_OTHER - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_OPUS - 1))) {
+        codec = AV_CODEC_ID_OPUS;
+        format = AUDIO_FMT_OPUS;
+        *formats &= ~(1 << (AUDIO_FMT_OPUS - 1));
+    }
+
+    *codec_id = codec;
+
+    return format;
+}
+
+static int ff_audio_pcm_ioctl(int fd, int cmd, unsigned long arg)
+{
+    int ret;
+
+    ret = ioctl(fd, cmd, arg);
+    if (ret < 0) {
+        ret = -errno;
+    }
+
+    return ret;
+}
+
+#define ff_audio_pcm_ioctl(fd, cmd, arg) \
+    ff_audio_pcm_ioctl(fd, cmd, (unsigned long)(arg))
+
+static int ff_audio_get_capabilities(char *device, int ac_type, int ac_subtype,
+    struct audio_caps_s *caps)
+{
+    int ret;
+    int fd;
+    char path[32];
+
+    snprintf(path, sizeof(path), CONFIG_AUDIOUTILS_ALSA_LIB_DEV_PATH "/%s", device);
+    fd = open(path, O_RDWR | O_CLOEXEC);
+
+    if (fd < 0)
+        return -ENOENT;
+
+    caps->ac_len = sizeof(struct audio_caps_s);
+    caps->ac_type = ac_type;
+    caps->ac_subtype = ac_subtype;
+
+    ret = ff_audio_pcm_ioctl(fd, AUDIOIOC_GETCAPS, caps);
+    close(fd);
+    return ret;
+}
+
 av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
                          unsigned int *sample_rate,
                          int channels, enum AVCodecID *codec_id)
@@ -177,7 +369,7 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
     AlsaData *s = ctx->priv_data;
     AVChannelLayout *layout = &ctx->streams[0]->codecpar->ch_layout;
     const char *audio_device;
-    int res, flags = 0;
+    int res, dir = 0;
     snd_pcm_format_t format;
     snd_pcm_t *h;
     snd_pcm_hw_params_t *hw_params;
@@ -195,22 +387,14 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
     }
     s->frame_size = av_get_bits_per_sample(*codec_id) / 8 * channels;
 
-    if (ctx->flags & AVFMT_FLAG_NONBLOCK) {
-        flags = SND_PCM_NONBLOCK;
-    }
-    res = snd_pcm_open(&h, audio_device, mode, flags);
+    res = snd_pcm_open(&h, audio_device, mode, SND_PCM_NONBLOCK);
     if (res < 0) {
         av_log(ctx, AV_LOG_ERROR, "cannot open audio device %s (%s)\n",
                audio_device, snd_strerror(res));
         return AVERROR(EIO);
     }
 
-    res = snd_pcm_hw_params_malloc(&hw_params);
-    if (res < 0) {
-        av_log(ctx, AV_LOG_ERROR, "cannot allocate hardware parameter structure (%s)\n",
-               snd_strerror(res));
-        goto fail1;
-    }
+    snd_pcm_hw_params_alloca(&hw_params);
 
     res = snd_pcm_hw_params_any(h, hw_params);
     if (res < 0) {
@@ -247,26 +431,8 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
         goto fail;
     }
 
-    snd_pcm_hw_params_get_buffer_size_max(hw_params, &buffer_size);
-    buffer_size = FFMIN(buffer_size, ALSA_BUFFER_SIZE_MAX);
-    /* TODO: maybe use ctx->max_picture_buffer somehow */
-    res = snd_pcm_hw_params_set_buffer_size_near(h, hw_params, &buffer_size);
-    if (res < 0) {
-        av_log(ctx, AV_LOG_ERROR, "cannot set ALSA buffer size (%s)\n",
-               snd_strerror(res));
-        goto fail;
-    }
-
-    snd_pcm_hw_params_get_period_size_min(hw_params, &period_size, NULL);
-    if (!period_size)
-        period_size = buffer_size / 4;
-    res = snd_pcm_hw_params_set_period_size_near(h, hw_params, &period_size, NULL);
-    if (res < 0) {
-        av_log(ctx, AV_LOG_ERROR, "cannot set ALSA period size (%s)\n",
-               snd_strerror(res));
-        goto fail;
-    }
-    s->period_size = period_size;
+    snd_pcm_hw_params_set_period_time(h, hw_params, s->period_time * 1000, dir);
+    snd_pcm_hw_params_set_periods(h, hw_params, s->periods, dir);
 
     res = snd_pcm_hw_params(h, hw_params);
     if (res < 0) {
@@ -274,8 +440,6 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
                snd_strerror(res));
         goto fail;
     }
-
-    snd_pcm_hw_params_free(hw_params);
 
     if (channels > 2 && layout->order != AV_CHANNEL_ORDER_UNSPEC) {
         if (find_reorder_func(s, *codec_id, layout, mode == SND_PCM_STREAM_PLAYBACK) < 0) {
@@ -288,20 +452,18 @@ av_cold int ff_alsa_open(AVFormatContext *ctx, snd_pcm_stream_t mode,
             s->reorder_buf_size = buffer_size;
             s->reorder_buf = av_malloc_array(s->reorder_buf_size, s->frame_size);
             if (!s->reorder_buf)
-                goto fail1;
+                goto fail;
         }
     }
 
     s->pkt = av_packet_alloc();
     if (!s->pkt)
-        goto fail1;
+        goto fail;
 
     s->h = h;
     return 0;
 
 fail:
-    snd_pcm_hw_params_free(hw_params);
-fail1:
     snd_pcm_close(h);
     return AVERROR(EIO);
 }
@@ -310,10 +472,7 @@ av_cold int ff_alsa_close(AVFormatContext *s1)
 {
     AlsaData *s = s1->priv_data;
 
-    if (snd_pcm_stream(s->h) == SND_PCM_STREAM_PLAYBACK) {
-        snd_pcm_nonblock(s->h, 0);
-        snd_pcm_drain(s->h);
-    }
+    snd_pcm_drain(s->h);
     av_freep(&s->reorder_buf);
     if (CONFIG_ALSA_INDEV)
         ff_timefilter_destroy(s->timefilter);
@@ -327,7 +486,7 @@ int ff_alsa_xrun_recover(AVFormatContext *s1, int err)
     AlsaData *s = s1->priv_data;
     snd_pcm_t *handle = s->h;
 
-    av_log(s1, AV_LOG_WARNING, "ALSA buffer xrun.\n");
+    av_log(s1, AV_LOG_WARNING, "ALSA buffer xrun ret=%d.\n", err);
     if (err == -EPIPE) {
         err = snd_pcm_prepare(handle);
         if (err < 0) {
@@ -339,6 +498,8 @@ int ff_alsa_xrun_recover(AVFormatContext *s1, int err)
         av_log(s1, AV_LOG_ERROR, "-ESTRPIPE... Unsupported!\n");
 
         return -1;
+    } else if (err == -EAGAIN) {
+        return 0;
     }
     return err;
 }
@@ -362,53 +523,162 @@ int ff_alsa_extend_reorder_buf(AlsaData *s, int min_size)
 /* ported from alsa-utils/aplay.c */
 int ff_alsa_get_device_list(AVDeviceInfoList *device_list, snd_pcm_stream_t stream_type)
 {
-    int ret = 0;
-    void **hints, **n;
-    char *name = NULL, *descr = NULL, *io = NULL, *tmp;
-    AVDeviceInfo *new_device = NULL;
-    const char *filter = stream_type == SND_PCM_STREAM_PLAYBACK ? "Output" : "Input";
+    return 0;
+}
 
-    if (snd_device_name_hint(-1, "pcm", &hints) < 0)
-        return AVERROR_EXTERNAL;
-    n = hints;
-    while (*n && !ret) {
-        name = snd_device_name_get_hint(*n, "NAME");
-        descr = snd_device_name_get_hint(*n, "DESC");
-        io = snd_device_name_get_hint(*n, "IOID");
-        if (!io || !strcmp(io, filter)) {
-            new_device = av_mallocz(sizeof(AVDeviceInfo));
-            if (!new_device) {
-                ret = AVERROR(ENOMEM);
-                goto fail;
-            }
-            new_device->device_name = av_strdup(name);
-            if ((tmp = strrchr(descr, '\n')) && tmp[1])
-                new_device->device_description = av_strdup(&tmp[1]);
-            else
-                new_device->device_description = av_strdup(descr);
-            if (!new_device->device_description || !new_device->device_name) {
-                ret = AVERROR(ENOMEM);
-                goto fail;
-            }
-            if ((ret = av_dynarray_add_nofree(&device_list->devices,
-                                              &device_list->nb_devices, new_device)) < 0) {
-                goto fail;
-            }
-            if (!strcmp(new_device->device_name, "default"))
-                device_list->default_device = device_list->nb_devices - 1;
-            new_device = NULL;
+static int ff_audio_set_ranges(struct AVOptionRanges *ranges, int nb_ranges, int is_range,
+    int min_v[], int max_v[])
+{
+    ranges->nb_components = 1;
+    ranges->nb_ranges = nb_ranges;
+
+    ranges->range = av_mallocz(nb_ranges * sizeof(AVOptionRange*));
+    if (!ranges->range)
+        return AVERROR(ENOMEM);
+
+    for (int i = 0; i < nb_ranges; i++) {
+        ranges->range[i] = av_mallocz(sizeof(AVOptionRange));
+        if (!ranges->range[i])
+            return AVERROR(ENOMEM);
+
+        ranges->range[i]->is_range = is_range;
+        ranges->range[i]->value_min = min_v[i];
+        ranges->range[i]->value_max = is_range ? max_v[i] : min_v[i];
+    }
+
+    return 0;
+}
+
+static int ff_audio_capbility_query_smpfmts(struct AVFormatContext *s1, int format, int values[])
+{
+    struct audio_caps_s smpfmts;
+    int ret, x;
+
+    AlsaData *s = s1->priv_data;
+
+    if (((format & (1 << (AUDIO_FMT_PCM - 1))) == 0))
+        return AVERROR(EPERM);
+
+    ret = ff_audio_get_capabilities(s1->url, AUDIO_TYPE_QUERY, AUDIO_FMT_PCM, &smpfmts);
+    if (ret < 0)
+        return ret;
+
+    for (x = 0; x < sizeof(smpfmts.ac_controls.b); x++) {
+        if (smpfmts.ac_controls.b[x] == AUDIO_SUBFMT_END)
+            break;
+
+        ret = ff_audio_subfmt_to_smpfmt(smpfmts.ac_controls.b[x]);
+        if (ret >= 0)
+            values[x] = ret;
+    }
+
+    return x == 0 ? AVERROR(EPERM) : x;
+}
+
+static int ff_audio_capbility_query_codecs(struct AVFormatContext *s1,
+    int format, int codecs[], int num)
+{
+    int ac_subtype = AUDIO_FMT_UNDEF;
+    int codec = AV_CODEC_ID_NONE;
+    struct audio_caps_s caps;
+    int i, nb_codecs = 0;
+
+    AlsaData *s = s1->priv_data;
+
+    while (nb_codecs < num && format) {
+        ac_subtype = ff_audio_fmt_to_avcodec(&codec, &format);
+        if (ff_audio_get_capabilities(s1->url, AUDIO_TYPE_QUERY, ac_subtype, &caps) < 0)
+            continue;
+
+        if (ac_subtype == AUDIO_FMT_OTHER) {
+            nb_codecs += ff_audio_capbility_query_codecs(s1, caps.ac_controls.w, &codecs[nb_codecs], num - nb_codecs);
+            continue;
         }
-      fail:
-        free(io);
-        free(name);
-        free(descr);
-        n++;
+
+        for (i = 0; i < sizeof(caps.ac_controls.b) && nb_codecs < num; i++) {
+            if (caps.ac_controls.b[i] == AUDIO_SUBFMT_END) {
+                if (i == 0)
+                    codecs[nb_codecs++] = codec;
+                break;
+            }
+
+            codecs[nb_codecs++] = ff_audio_subfmt_to_avcodec(caps.ac_controls.b[i]);
+        }
     }
-    if (new_device) {
-        av_free(new_device->device_description);
-        av_free(new_device->device_name);
-        av_free(new_device);
+
+    return nb_codecs;
+}
+
+int ff_audio_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+    const char *key, int flags, bool playback)
+{
+    struct AVFormatContext *s1 = obj;
+    struct audio_caps_s formats, others;
+    int ac_type = AUDIO_TYPE_QUERY;
+    struct AVOptionRanges *ranges;
+    int values0[64], values1[64];
+    int nb_ranges, is_range = 0;
+    int ret;
+
+    AlsaData *s = s1->priv_data;
+
+    ranges = av_mallocz(sizeof(struct AVOptionRanges));
+    if (!ranges)
+        return AVERROR(ENOMEM);
+
+    if (!strcmp(key, "sample_fmts") || !strcmp(key, "codecs")) {
+        ret = ff_audio_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &formats);
+        if (ret < 0)
+            goto err;
+
+        if (!strcmp(key, "sample_fmts")) {
+            ret = ff_audio_capbility_query_smpfmts(s1, formats.ac_format.hw, values0);
+            if (ret < 0)
+                goto err;
+        } else {
+            ret = ff_audio_capbility_query_codecs(s1, formats.ac_format.hw, values0, 64);
+            if (ret < 0)
+                goto err;
+        }
+
+        nb_ranges = ret;
+    } else if (!strcmp(key, "channels") || !strcmp(key, "sample_rates")) {
+        ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
+        ret = ff_audio_get_capabilities(s1->url, ac_type, AUDIO_TYPE_QUERY, &others);
+        if (ret < 0)
+            goto err;
+
+        if (!strcmp(key, "channels")) {
+            if ((others.ac_channels & 0xf0) == 0) {
+                values0[0] = 1;
+                values1[0] = others.ac_channels;
+            } else {
+                values0[0] = others.ac_channels >> 4;
+                values1[0] = others.ac_channels & 0x0f;
+            }
+
+            nb_ranges = 1;
+            is_range = (values0[0] != values1[0]);
+        } else {
+            ret = ff_audio_samplerate_convert(others.ac_controls.hw[0], values0, 64);
+            if (ret < 0)
+                goto err;
+
+            nb_ranges = ret;
+        }
+    } else {
+        ret = -EINVAL;
+        goto err;
     }
-    snd_device_name_free_hint(hints);
+
+    ret = ff_audio_set_ranges(ranges, nb_ranges, is_range, values0, values1);
+    if (ret < 0)
+        goto err;
+
+    *ranges_ = ranges;
+    return ranges->nb_components;
+
+err:
+    av_opt_freep_ranges(&ranges);
     return ret;
 }
