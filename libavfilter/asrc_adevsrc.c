@@ -47,6 +47,7 @@ typedef struct ADevSrcPriv {
     char            *devname;
 
     int             sample_fmt;
+    int             codec_id;
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
 
@@ -519,17 +520,23 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         goto out;
 
     formats = NULL;
-    ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
-    if (ret >= 0) {
-        for (i = 0; i < ranges->nb_ranges; i++) {
-            ret = ff_add_format(&formats, ranges->range[i]->value_min);
-            if (ret < 0)
-                goto out;
-        }
-
-        av_opt_freep_ranges(&ranges);
+    if (priv->codec_id != AV_CODEC_ID_NONE) {
+        ret = ff_add_format(&formats, priv->codec_id);
+        if (ret < 0)
+            goto out;
     } else {
-        formats = ff_all_raw_codecs(ctx->inputs[0]->type);
+        ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
+        if (ret >= 0) {
+            for (i = 0; i < ranges->nb_ranges; i++) {
+                ret = ff_add_format(&formats, ranges->range[i]->value_min);
+                if (ret < 0)
+                    goto out;
+            }
+
+            av_opt_freep_ranges(&ranges);
+        } else {
+            formats = ff_all_raw_codecs(ctx->inputs[0]->type);
+        }
     }
 
     ret = ff_set_common_codecs(ctx, formats);
@@ -599,6 +606,7 @@ static const AVOption adevsrc_options[] = {
     { "sample_fmt",  "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
     { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                 0, INT_MAX, R },
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       R },
+    { "codec_id",    "", OFFSET(codec_id),    AV_OPT_TYPE_INT,        {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, R },
     { NULL },
 };
 
