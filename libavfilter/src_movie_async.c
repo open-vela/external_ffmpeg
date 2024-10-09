@@ -471,6 +471,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
     movie->format_ctx->interrupt_callback.callback = movie_async_interrupt;
     movie->format_ctx->interrupt_callback.opaque = ctx;
+    movie->format_ctx->flags |= AVFMT_FLAG_FAST_SEEK;
 
     if (movie->global_opts)
         av_dict_copy(&movie->format_opt, movie->global_opts, 0);
