@@ -1459,7 +1459,8 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
         for (int i = 0; i < ctx->nb_outputs; i++) {
             int ret = avfilter_forward_command(ctx, i, NULL, "get_position", NULL, res, res_len, 0);
             if (ret >= 0) {
-                snprintf(res, res_len, "%lu", movie->lastseek_ms + strtoul(res, NULL, 0));
+                unsigned pos = movie->lastseek_ms + strtoul(res, NULL, 0);
+                snprintf(res, res_len, "%u", FFMIN(pos, movie->duration_ms));
                 return ret;
             }
         }
