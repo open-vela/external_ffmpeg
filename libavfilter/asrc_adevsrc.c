@@ -47,7 +47,7 @@ typedef struct ADevSrcPriv {
     char            *devname;
 
     int             sample_fmt;
-    int             codec_id;
+    char           *codec_name;
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
 
@@ -443,7 +443,6 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     AVFilterFormats *formats = NULL;
     ADevSrcPriv *priv = ctx->priv;
     AVOptionRanges *ranges = NULL;
-    bool codec = false;
     int ret, i;
 
     ret = avdevice_app_to_dev_control_message(priv->fmt_ctx, AV_APP_TO_DEV_GET_CAPS_REQUEST,
@@ -520,10 +519,21 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
         goto out;
 
     formats = NULL;
-    if (priv->codec_id != AV_CODEC_ID_NONE) {
-        ret = ff_add_format(&formats, priv->codec_id);
-        if (ret < 0)
+    if (priv->codec_name != NULL) {
+        const AVCodecDescriptor *desc;
+        const AVCodec *codec = avcodec_find_encoder_by_name(priv->codec_name);
+        if (!codec && (desc = avcodec_descriptor_get_by_name(priv->codec_name)))
+            codec = avcodec_find_encoder(desc->id);
+
+        if (codec && codec->type == AVMEDIA_TYPE_AUDIO) {
+            ret = ff_add_format(&formats, codec->id);
+            if (ret < 0)
+                goto out;
+        } else {
+            av_log(ctx, AV_LOG_ERROR, "No codec with name %s found\n", priv->codec_name);
+            ret = AVERROR(EINVAL);
             goto out;
+        }
     } else {
         ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
         if (ret >= 0) {
@@ -606,7 +616,7 @@ static const AVOption adevsrc_options[] = {
     { "sample_fmt",  "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
     { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                 0, INT_MAX, R },
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       R },
-    { "codec_id",    "", OFFSET(codec_id),    AV_OPT_TYPE_INT,        {.i64 = AV_CODEC_ID_NONE}, AV_CODEC_ID_NONE, INT_MAX, R },
+    { "codec_name",  "", OFFSET(codec_name),  AV_OPT_TYPE_STRING,     {.str = NULL},              0, 0,       R },
     { NULL },
 };
 
