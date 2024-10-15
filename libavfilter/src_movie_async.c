@@ -219,20 +219,20 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
     MovieAsyncContext *movie = ctx->priv;
     AVCodecParameters *par = NULL;
     AVFrame *frame = NULL;
+    bool ret = false;
 
     pthread_mutex_lock(&movie->mutex);
     if (ff_framequeue_queued_frames(&movie->streams[pad_id].dat_queue))
         frame = ff_framequeue_peek(&movie->streams[pad_id].dat_queue, 0);
-    pthread_mutex_unlock(&movie->mutex);
 
     if (frame && frame->opaque_ref && movie->streams[pad_id].codecpar == NULL) {
         par = avcodec_parameters_alloc();
         if (!par)
-            return false;
+            goto out;
 
         if (avcodec_parameters_copy(par, (AVCodecParameters*)frame->opaque_ref->data) < 0) {
             avcodec_parameters_free(&par);
-            return false;
+            goto out;
         }
 
         movie->streams[pad_id].codecpar = par;
@@ -240,10 +240,12 @@ static bool movie_async_peek_info(AVFilterContext *ctx, int pad_id, AVCodecParam
 
     if (frame && movie->streams[pad_id].codecpar) {
         *dst = movie->streams[pad_id].codecpar;
-        return true;
+        ret = true;
     }
 
-    return false;
+out:
+    pthread_mutex_unlock(&movie->mutex);
+    return ret;
 }
 
 static void movie_async_drop_dat(AVFilterContext *ctx, int pad_id)
