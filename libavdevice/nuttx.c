@@ -677,7 +677,7 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
     struct audio_buf_desc_s buf_desc;
     int dc = dq_count(&priv->bufferq);
 
-    if (!priv->running && !priv->draining && dc > 0 && dc < priv->periods) {
+    if (!priv->running && !priv->draining && dc > 0 && dc <= priv->periods) {
         av_log(NULL, AV_LOG_INFO, "[%s][%s] start\n", __func__, priv->devname);
         ff_nuttx_ioctl(priv->fd, AUDIOIOC_START, 0);
         priv->running = true;
