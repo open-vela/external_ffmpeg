@@ -94,62 +94,85 @@ static int sbc_encode_init(AVCodecContext *avctx)
     uint8_t joint;
     uint8_t dual;
 
-    if (avctx->profile == FF_PROFILE_SBC_MSBC)
-        return AVERROR(EINVAL);
-
-    if (avctx->global_quality > 255*FF_QP2LAMBDA) {
-        av_log(avctx, AV_LOG_ERROR, "bitpool > 255 is not allowed.\n");
-        return AVERROR(EINVAL);
-    }
-
-    if (sbc_encoder_parse_param(sbc->sbc_param, param) != 0) {
-        if (avctx->ch_layout.nb_channels == 1) {
-            param->s16ChannelMode = SBC_MONO;
-            if (sbc->max_delay <= 3000 || avctx->bit_rate > 270000)
-                param->s16NumOfSubBands = 4;
-            else
-                param->s16NumOfSubBands = 8;
-            } else {
-            if (avctx->bit_rate < 180000 || avctx->bit_rate > 420000)
-                param->s16ChannelMode = SBC_JOINT_STEREO;
-            else
-                param->s16ChannelMode = SBC_STEREO;
-            if (sbc->max_delay <= 4000 || avctx->bit_rate > 420000)
-                param->s16NumOfSubBands = 4;
-            else
-                param->s16NumOfSubBands = 8;
+    if (avctx->profile == FF_PROFILE_SBC_MSBC) {
+        if (avctx->ch_layout.nb_channels != 1) {
+            av_log(avctx, AV_LOG_ERROR, "mSBC require mono channel.\n");
+            return AVERROR(EINVAL);
         }
 
-        /* sbc algorithmic delay is ((s16NumOfBlocks + 10) * s16NumOfSubBands - 2) / sample_rate */
+        if (avctx->sample_rate != 16000) {
+            av_log(avctx, AV_LOG_ERROR, "mSBC require 16 kHz samplerate.\n");
+            return AVERROR(EINVAL);
+        }
 
-        param->s16NumOfBlocks = av_clip(((sbc->max_delay * avctx->sample_rate + 2)
-                    / (1000000 * param->s16NumOfSubBands)) - 10, 4, 16) & ~3;
-
+        param->s16SamplingFreq = SBC_sf16000;
+        param->s16ChannelMode = SBC_MONO;
+        param->s16NumOfSubBands = 8;
+        param->s16NumOfChannels = 1;
+        param->s16NumOfBlocks = 15;
         param->s16AllocationMethod = SBC_LOUDNESS;
+        param->s16BitPool = 26;
+        param->Format = SBC_FORMAT_MSBC;
+
+        avctx->frame_size = 8 * SBC_MAX_NUM_OF_BLOCKS;
+    } else {
+        if (avctx->global_quality > 255*FF_QP2LAMBDA) {
+            av_log(avctx, AV_LOG_ERROR, "bitpool > 255 is not allowed.\n");
+            return AVERROR(EINVAL);
+        }
+
+        if (sbc_encoder_parse_param(sbc->sbc_param, param) != 0) {
+            if (avctx->ch_layout.nb_channels == 1) {
+                param->s16ChannelMode = SBC_MONO;
+
+                if (sbc->max_delay <= 3000 || avctx->bit_rate > 270000)
+                    param->s16NumOfSubBands = 4;
+                else
+                    param->s16NumOfSubBands = 8;
+
+            } else {
+                if (avctx->bit_rate < 180000 || avctx->bit_rate > 420000)
+                    param->s16ChannelMode = SBC_JOINT_STEREO;
+                else
+                    param->s16ChannelMode = SBC_STEREO;
+
+                if (sbc->max_delay <= 4000 || avctx->bit_rate > 420000)
+                    param->s16NumOfSubBands = 4;
+                else
+                    param->s16NumOfSubBands = 8;
+            }
+
+            /* sbc algorithmic delay is ((s16NumOfBlocks + 10) * s16NumOfSubBands - 2) / sample_rate */
+
+            param->s16NumOfBlocks = av_clip(((sbc->max_delay * avctx->sample_rate + 2)
+                                            / (1000000 * param->s16NumOfSubBands)) - 10, 4, 16) & ~3;
+
+            param->s16AllocationMethod = SBC_LOUDNESS;
+        }
+
+        param->u16BitRate = avctx->bit_rate / 1000;
+        param->s16NumOfChannels = avctx->ch_layout.nb_channels;
+
+        switch (avctx->sample_rate)
+        {
+            case 16000:
+                param->s16SamplingFreq = SBC_sf16000;
+                break;
+            case 32000:
+                param->s16SamplingFreq = SBC_sf32000;
+                break;
+            case 44100:
+                param->s16SamplingFreq = SBC_sf44100;
+                break;
+            default:
+                param->s16SamplingFreq = SBC_sf48000;
+                break;
+        }
+
+        avctx->frame_size = 4*((param->s16NumOfSubBands >> 3) + 1) * 4*(param->s16NumOfBlocks >> 2);
+
+        SBC_Encoder_Init(param);
     }
-
-    switch (avctx->sample_rate)
-    {
-        case 16000:
-            param->s16SamplingFreq = SBC_sf16000;
-            break;
-        case 32000:
-            param->s16SamplingFreq = SBC_sf32000;
-            break;
-        case 44100:
-            param->s16SamplingFreq = SBC_sf44100;
-            break;
-        default:
-            param->s16SamplingFreq = SBC_sf48000;
-            break;
-    }
-
-    param->s16NumOfChannels = avctx->ch_layout.nb_channels;
-    param->u16BitRate = avctx->bit_rate / 1000;
-
-    avctx->frame_size = 4*((param->s16NumOfSubBands >> 3) + 1) * 4*(param->s16NumOfBlocks >> 2);
-
-    SBC_Encoder_Init(param);
 
     /* Calculate frame_length */
 
