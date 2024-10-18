@@ -869,6 +869,12 @@ int ff_nuttx_write_data(NuttxPriv *priv, const uint8_t *data, int size)
                 return ret;
 
             priv->running = true;
+        } else if (priv->paused) {
+            ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_RESUME, 0);
+            if (ret < 0)
+                return ret;
+
+            priv->paused = false;
         }
     }
 
