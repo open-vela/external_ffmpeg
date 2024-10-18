@@ -6982,10 +6982,10 @@ enabled libopenvino       && { { check_pkg_config libopenvino openvino openvino/
                                   require libopenvino c_api/ie_c_api.h ie_c_api_version -linference_engine_c_api; } }
 enabled libopus           && {
     enabled libopus_decoder && {
-        require_pkg_config libopus opus opus_multistream.h opus_multistream_decoder_create
+        check_func_headers opus_multistream.h opus_multistream_decoder_create
     }
     enabled libopus_encoder && {
-        require_pkg_config libopus opus opus_multistream.h opus_multistream_surround_encoder_create
+        check_func_headers opus_multistream.h opus_multistream_surround_encoder_create
     }
 }
 enabled libplacebo        && require_pkg_config libplacebo "libplacebo >= 4.192.0" libplacebo/vulkan.h pl_vulkan_create
