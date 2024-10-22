@@ -26,7 +26,7 @@
 #include "libavformat/mux.h"
 #include "libavformat/network.h"
 
-#include <uikit/uikit.h>
+#include <uikit/video/uikit_vtun.h>
 
 #ifdef CONFIG_NET_RPMSG
 #include <netpacket/rpmsg.h>
