@@ -31,7 +31,9 @@
 
 #include <oi_codec_sbc.h>
 
-#define SBC_WBS_SAMPLES_PER_FRAME 128
+#define MSBC_MAX_BLOCKS 15
+#define SBC_WBS_SAMPLES_PER_FRAME (SBC_MAX_BANDS * SBC_MAX_BLOCKS)
+#define MSBC_WBS_SAMPLES_PER_FRAME (SBC_MAX_BANDS * MSBC_MAX_BLOCKS)
 
 #define DECODER_DATA_SIZE (SBC_MAX_CHANNELS * SBC_MAX_BLOCKS * SBC_MAX_BANDS * 4 \
         + SBC_CODEC_MIN_FILTER_BUFFERS * SBC_MAX_BANDS * SBC_MAX_CHANNELS * 2)
@@ -47,10 +49,26 @@ static int sbc_decode_init(AVCodecContext *avctx)
     SBCDecContext *sbc = avctx->priv_data;
     OI_STATUS status;
 
-    status = OI_CODEC_SBC_DecoderReset(&sbc->context, (uint32_t *)sbc->data,
-                                       sizeof(sbc->data), 2, avctx->ch_layout.nb_channels, false);
-    if (!OI_SUCCESS(status))
-        return AVERROR(status);
+    /*
+     *msbc sample size is fixed to 120 by the sbc parser,
+     *and we use this to determine whether it is msbc.
+     *sbc sample size is usually 128.
+     */
+    if (avctx->frame_size == MSBC_WBS_SAMPLES_PER_FRAME) {
+        status = OI_CODEC_SBC_DecoderReset(&sbc->context, (uint32_t *)sbc->data,
+                                           sizeof(sbc->data), 1, avctx->ch_layout.nb_channels, false);
+        if (!OI_SUCCESS(status))
+            return AVERROR(status);
+
+        status = OI_CODEC_SBC_DecoderConfigureMSbc(&sbc->context);
+        if (!OI_SUCCESS(status))
+            return AVERROR(status);
+    } else {
+        status = OI_CODEC_SBC_DecoderReset(&sbc->context, (uint32_t *)sbc->data,
+                                           sizeof(sbc->data), 2, avctx->ch_layout.nb_channels, false);
+        if (!OI_SUCCESS(status))
+            return AVERROR(status);
+    }
 
     avctx->sample_fmt = AV_SAMPLE_FMT_S16;
     return 0;
@@ -71,7 +89,12 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     nframes = avpkt->data[0] & 0xf;
-    frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
+    if (avpkt->data[0] == OI_SBC_MSBC_SYNCWORD)
+        frame->nb_samples = nframes * MSBC_WBS_SAMPLES_PER_FRAME;
+    else if (avpkt->data[0] == OI_SBC_SYNCWORD)
+        frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
+    else
+        return AVERROR(EINVAL);
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
@@ -112,7 +135,13 @@ static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     if (!sbc)
         return AVERROR(EIO);
 
-    frame->nb_samples = SBC_WBS_SAMPLES_PER_FRAME;
+    if (avpkt->data[0] == OI_SBC_MSBC_SYNCWORD)
+        frame->nb_samples = MSBC_WBS_SAMPLES_PER_FRAME;
+    else if (avpkt->data[0] == OI_SBC_SYNCWORD)
+        frame->nb_samples = SBC_WBS_SAMPLES_PER_FRAME;
+    else
+        return AVERROR(EINVAL);
+
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
         return ret;
 
