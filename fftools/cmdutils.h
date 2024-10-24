@@ -26,6 +26,8 @@
 
 #include "config.h"
 #include "libavcodec/avcodec.h"
+#include "libavcodec/codec_desc.h"
+#include "libavcodec/version.h"
 #include "libavfilter/avfilter.h"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
