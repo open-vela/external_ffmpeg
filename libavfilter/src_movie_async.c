@@ -939,7 +939,9 @@ static void *movie_async_thread(void *arg)
             SIMPLEQ_REMOVE_HEAD(&movie->cmd_queue, entry);
             pthread_mutex_unlock(&movie->mutex);
 
-            exit = movie_async_proc_cmd(ctx, msg);
+            /* close flag shouldnot be affected by following complete cmd. */
+            if (movie_async_proc_cmd(ctx, msg))
+                exit = true;
         } else if (movie->format_ctx && !movie->eof_reached && movie_async_dat_available(ctx)) {
             pthread_mutex_unlock(&movie->mutex);
 
