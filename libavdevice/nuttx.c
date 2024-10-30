@@ -546,6 +546,8 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         goto out;
 
     priv->playback = playback;
+    priv->volume = NAN;
+    priv->mute = false;
 
     av_strlcpy(priv->devname, device, sizeof(priv->devname));
     return 0;
