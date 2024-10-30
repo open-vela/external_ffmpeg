@@ -89,6 +89,8 @@ static int anxsink_init_dict(AVFilterContext *ctx, AVDictionary **options)
     ANxSinkPriv *sink = ctx->priv;
     NuttxPriv *priv = &sink->priv;
 
+    memset(priv, 0, sizeof(NuttxPriv));
+
     return ff_nuttx_init(priv, sink->devname, true);
 }
 
