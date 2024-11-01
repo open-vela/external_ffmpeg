@@ -173,6 +173,7 @@ extern const AVFilter ff_asrc_hilbert;
 extern const AVFilter ff_asrc_sinc;
 extern const AVFilter ff_asrc_sine;
 
+extern const AVFilter ff_asink_adevsink;
 extern const AVFilter ff_asink_anullsink;
 
 extern const AVFilter ff_vf_addroi;
