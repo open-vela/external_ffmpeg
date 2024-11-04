@@ -701,6 +701,8 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
         if (nonblock)
             break;
     }
+
+    priv->paused = false;
 }
 
 int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter)
