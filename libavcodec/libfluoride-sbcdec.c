@@ -89,9 +89,9 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     nframes = avpkt->data[0] & 0xf;
-    if (avpkt->data[0] == OI_SBC_MSBC_SYNCWORD)
+    if (avpkt->data[1] == OI_SBC_MSBC_SYNCWORD)
         frame->nb_samples = nframes * MSBC_WBS_SAMPLES_PER_FRAME;
-    else if (avpkt->data[0] == OI_SBC_SYNCWORD)
+    else if (avpkt->data[1] == OI_SBC_SYNCWORD)
         frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
     else
         return AVERROR(EINVAL);
