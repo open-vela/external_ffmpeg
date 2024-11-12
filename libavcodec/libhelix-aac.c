@@ -167,7 +167,11 @@ static int aac_latm_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     in_data = avpkt->data;
     in_size = avpkt->size;
 
-    av_assert0(in_data[0]  == LATM_SYNCWORDL && (in_data[1] & 0xf0) == LATM_SYNCWORDH);
+    if(in_data[0] != LATM_SYNCWORDL || (in_data[1] & 0xf0) != LATM_SYNCWORDH) {
+        av_log(avctx, AV_LOG_ERROR, "%s Invalid sync word! %0x %0x\n",
+               __func__, in_data[0], (in_data[1] & 0xf0));
+        return AVERROR_INVALIDDATA;
+    }
 
     AACSetFormat(aac->context, AAC_FF_LATM_MCP1);
 
