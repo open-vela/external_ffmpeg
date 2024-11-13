@@ -208,6 +208,13 @@ int av_buffersrc_add_frame_flags(AVFilterContext *buffer_src,
  */
 int av_buffersrc_close(AVFilterContext *ctx, int64_t pts, unsigned flags);
 
+
+/**
+ * Set a callback to be called when a buffersrc event occurs.
+ */
+int av_buffersrc_set_event_cb(AVFilterContext *filter,
+    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata);
+
 /**
  * @}
  */

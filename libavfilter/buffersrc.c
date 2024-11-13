@@ -66,6 +66,9 @@ typedef struct BufferSourceContext {
     int eof;
     int64_t last_pts;
     int link_delta, prev_delta;
+
+    int (*on_event_cb)(void *udata, int evt, int64_t args);
+    void *on_event_cb_udata;
 } BufferSourceContext;
 
 #define CHECK_VIDEO_PARAM_CHANGE(s, c, width, height, format, csp, range, pts)\
@@ -173,6 +176,23 @@ int attribute_align_arg av_buffersrc_write_frame(AVFilterContext *ctx, const AVF
 int attribute_align_arg av_buffersrc_add_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     return av_buffersrc_add_frame_flags(ctx, frame, 0);
+}
+
+int av_cold av_buffersrc_set_event_cb(AVFilterContext *ctx,
+    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
+{
+    BufferSourceContext *s = ctx->priv;
+    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+
+    s->on_event_cb = on_event_cb;
+    s->on_event_cb_udata = udata;
+
+    if (s->on_event_cb) {
+        li->frame_wanted_out = 1;
+        ff_filter_set_ready(ctx, 100);
+    }
+
+    return 0;
 }
 
 static int push_frame(AVFilterGraph *graph)
@@ -537,6 +557,12 @@ static int activate(AVFilterContext *ctx)
 {
     AVFilterLink *outlink = ctx->outputs[0];
     BufferSourceContext *c = ctx->priv;
+
+    if (ff_outlink_frame_wanted(outlink) && !ff_outlink_get_status(outlink)) {
+        if (c->on_event_cb)
+            c->on_event_cb(c->on_event_cb_udata, 0, 0);
+        return 0;
+    }
 
     if (!c->eof && ff_outlink_get_status(outlink)) {
         c->eof = 1;
