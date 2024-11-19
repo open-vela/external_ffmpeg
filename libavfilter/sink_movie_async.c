@@ -521,7 +521,7 @@ static int moviesink_proc_dat(AVFilterContext *ctx)
 
         /* @deprecated naive avsync. */
         ret = moviesink_init_stream(ctx, i, frame);
-        if (ret < 0) {
+        if (ret < 0 && priv->state != AVMOVIE_ASYNC_STATE_STARTED) {
             av_log(ctx, AV_LOG_ERROR, "moviesink_init_stream error %d\n.", ret);
             frame = moviesink_recv_dat(ctx, i);
             av_frame_free(&frame);
