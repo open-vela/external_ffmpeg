@@ -290,6 +290,16 @@ static int config_output(AVFilterLink *outlink)
     return 0;
 }
 
+static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, int len)
+{
+    int i;
+    int32_t accu;
+
+    for (i = 0; i < len; i++) {
+        accu = (int32_t)src[i] * mul;
+        dst[i] = av_clip_int16(dst[i] + ((accu + 0x4000) >> 15));
+    }
+}
 /**
  * Read samples from the input FIFOs, mix, and write to the output link.
  */
@@ -360,8 +370,15 @@ static int output_frame(AVFilterLink *outlink)
             plane_size = nb_samples * (s->planar ? 1 : s->nb_channels);
             plane_size = FFALIGN(plane_size, 16);
 
-            if (out_buf->format == AV_SAMPLE_FMT_FLT ||
-                out_buf->format == AV_SAMPLE_FMT_FLTP) {
+            if (out_buf->format == AV_SAMPLE_FMT_S16 ||
+                out_buf->format == AV_SAMPLE_FMT_S16P) {
+                for (p = 0; p < planes; p++) {
+                    vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
+                                        (int16_t *) in_buf->extended_data[p],
+                                        s->input_scale[i] * INT16_MAX, plane_size);
+                }
+            } else if (out_buf->format == AV_SAMPLE_FMT_FLT ||
+                       out_buf->format == AV_SAMPLE_FMT_FLTP) {
                 for (p = 0; p < planes; p++) {
                     s->fdsp->vector_fmac_scalar((float *)out_buf->extended_data[p],
                                                 (float *) in_buf->extended_data[p],
@@ -627,7 +644,8 @@ const AVFilter ff_af_amix = {
     .inputs         = NULL,
     FILTER_OUTPUTS(avfilter_af_amix_outputs),
     FILTER_SAMPLEFMTS(AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP,
-                      AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP),
+                      AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
+                      AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P),
     .process_command = process_command,
     .flags          = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
