@@ -183,6 +183,7 @@ int av_cold av_buffersrc_set_event_cb(AVFilterContext *ctx,
 {
     BufferSourceContext *s = ctx->priv;
     FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+    int ret;
 
     s->on_event_cb = on_event_cb;
     s->on_event_cb_udata = udata;
@@ -190,6 +191,18 @@ int av_cold av_buffersrc_set_event_cb(AVFilterContext *ctx,
     if (s->on_event_cb) {
         li->frame_wanted_out = 1;
         ff_filter_set_ready(ctx, 100);
+    } else {
+        AVFrame *frame = av_frame_alloc();
+        if (!frame)
+            return AVERROR(ENOMEM);
+
+        frame->format = ctx->outputs[0]->format;
+        frame->sample_rate = ctx->outputs[0]->sample_rate;
+        av_channel_layout_copy(&frame->ch_layout, &ctx->outputs[0]->ch_layout);
+        frame->nb_samples = 0;
+        ret = ff_filter_frame(ctx->outputs[0], frame);
+        if (ret < 0)
+            return ret;
     }
 
     return 0;

@@ -270,7 +270,7 @@ static int config_output(AVFilterLink *outlink)
     s->input_state = av_malloc(s->nb_inputs);
     if (!s->input_state)
         return AVERROR(ENOMEM);
-    memset(s->input_state, INPUT_ON, s->nb_inputs);
+    memset(s->input_state, INPUT_EOF, s->nb_inputs);
     s->active_inputs = s->nb_inputs;
 
     s->input_scale = av_calloc(s->nb_inputs, sizeof(*s->input_scale));
@@ -337,7 +337,7 @@ static int output_frame(AVFilterLink *outlink)
             }
         }
         if (nb_samples == INT_MAX) {
-            ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
+            //ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
             return 0;
         }
     }
@@ -463,6 +463,14 @@ static int activate(AVFilterContext *ctx)
         AVFilterLink *inlink = ctx->inputs[i];
 
         if ((ret = ff_inlink_consume_frame(ctx->inputs[i], &buf)) > 0) {
+            if (buf->nb_samples <= 0) {
+                av_log(ctx, AV_LOG_INFO, "input[%d] read EMPTY frame\n", i);
+                s->input_state[i] = INPUT_EOF;
+                goto try_out;
+            } else {
+                s->input_state[i] = INPUT_ON;
+            }
+
             if (i == 0) {
                 int64_t pts = av_rescale_q(buf->pts, inlink->time_base,
                                            outlink->time_base);
@@ -480,6 +488,8 @@ static int activate(AVFilterContext *ctx)
                 return ret;
             }
 
+            //av_log(ctx, AV_LOG_INFO, "amix input:%d samples:%d\n", i, buf->nb_samples);
+try_out:
             av_frame_free(&buf);
 
             ret = output_frame(outlink);
@@ -498,7 +508,7 @@ static int activate(AVFilterContext *ctx)
                 if (av_audio_fifo_size(s->fifos[i]) == 0) {
                     s->input_state[i] &= ~INPUT_ON;
                     if (s->nb_inputs == 1) {
-                        ff_outlink_set_status(outlink, status, pts);
+                        //ff_outlink_set_status(outlink, status, pts);
                         return 0;
                     }
                 }
@@ -507,7 +517,7 @@ static int activate(AVFilterContext *ctx)
     }
 
     if (calc_active_inputs(s)) {
-        ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
+        //ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
         return 0;
     }
 
