@@ -32,8 +32,8 @@
 #include <oi_codec_sbc.h>
 
 #define MSBC_MAX_BLOCKS 15
-#define SBC_WBS_SAMPLES_PER_FRAME (SBC_MAX_BANDS * SBC_MAX_BLOCKS)
-#define MSBC_WBS_SAMPLES_PER_FRAME (SBC_MAX_BANDS * MSBC_MAX_BLOCKS)
+#define SBC_SAMPLES_PER_FRAME (SBC_MAX_BANDS * SBC_MAX_BLOCKS)
+#define MSBC_SAMPLES_PER_FRAME (SBC_MAX_BANDS * MSBC_MAX_BLOCKS)
 
 #define DECODER_DATA_SIZE (SBC_MAX_CHANNELS * SBC_MAX_BLOCKS * SBC_MAX_BANDS * 4 \
         + SBC_CODEC_MIN_FILTER_BUFFERS * SBC_MAX_BANDS * SBC_MAX_CHANNELS * 2)
@@ -54,7 +54,7 @@ static int sbc_decode_init(AVCodecContext *avctx)
      *and we use this to determine whether it is msbc.
      *sbc sample size is usually 128.
      */
-    if (avctx->frame_size == MSBC_WBS_SAMPLES_PER_FRAME) {
+    if (avctx->frame_size == MSBC_SAMPLES_PER_FRAME) {
         status = OI_CODEC_SBC_DecoderReset(&sbc->context, (uint32_t *)sbc->data,
                                            sizeof(sbc->data), 1, avctx->ch_layout.nb_channels, false);
         if (!OI_SUCCESS(status))
@@ -90,9 +90,9 @@ static int sbc_packed_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     nframes = avpkt->data[0] & 0xf;
     if (avpkt->data[1] == OI_SBC_MSBC_SYNCWORD)
-        frame->nb_samples = nframes * MSBC_WBS_SAMPLES_PER_FRAME;
+        frame->nb_samples = nframes * MSBC_SAMPLES_PER_FRAME;
     else if (avpkt->data[1] == OI_SBC_SYNCWORD)
-        frame->nb_samples = nframes * SBC_WBS_SAMPLES_PER_FRAME;
+        frame->nb_samples = nframes * SBC_SAMPLES_PER_FRAME;
     else
         return AVERROR(EINVAL);
     if ((ret = ff_get_buffer(avctx, frame, 0)) < 0)
@@ -136,9 +136,9 @@ static int sbc_decode_frame(AVCodecContext *avctx, AVFrame *frame,
         return AVERROR(EIO);
 
     if (avpkt->data[0] == OI_SBC_MSBC_SYNCWORD)
-        frame->nb_samples = MSBC_WBS_SAMPLES_PER_FRAME;
+        frame->nb_samples = MSBC_SAMPLES_PER_FRAME;
     else if (avpkt->data[0] == OI_SBC_SYNCWORD)
-        frame->nb_samples = SBC_WBS_SAMPLES_PER_FRAME;
+        frame->nb_samples = SBC_SAMPLES_PER_FRAME;
     else
         return AVERROR(EINVAL);
 
