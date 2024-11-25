@@ -138,8 +138,10 @@ static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
         return AVERROR(ENOMEM);
 
     ret = av_new_packet(pkt, priv->period_bytes);
-    if (ret < 0)
+    if (ret < 0) {
+        av_packet_free(&pkt);
         return ret;
+    }
 
     ret = ff_nuttx_read_data(priv, pkt->data, priv->period_bytes, &samples);
     if (ret < 0)
