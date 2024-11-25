@@ -36,25 +36,17 @@
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
+#include "libavutil/frame.h"
 
 #include "nuttx.h"
 
 static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
                                         const char *key, int flags)
 {
-    struct AVDeviceCapabilitiesQuery *devcap = obj;
-    struct AVFormatContext *s1 = devcap->device_context;
+    struct AVFormatContext *s1 = obj;
 
     return ff_nuttx_capbility_query_ranges(ranges, s1->url, key, flags, true);
 }
-
-static const AVClass nuttx_cap_class = {
-    .class_name   = "NUTTX outdev capbility",
-    .item_name    = av_default_item_name,
-    .version      = LIBAVUTIL_VERSION_INT,
-    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
-    .query_ranges = nuttx_capbility_query_ranges,
-};
 
 static int nuttx_init(struct AVFormatContext *s1)
 {
@@ -175,17 +167,6 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
     AVPacket pkt = {0};
 
     switch (type) {
-        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
-            struct AVDeviceCapabilitiesQuery *caps = data;
-
-            if (!caps)
-                return AVERROR(EINVAL);
-
-            caps->av_class = &nuttx_cap_class;
-            caps->device_context = s1;
-            av_opt_set_defaults(caps);
-            return 0;
-        }
         case AV_APP_TO_DEV_SET_VOLUME:
             if (!data)
                 return AVERROR(EINVAL);
@@ -232,13 +213,13 @@ static int nuttx_control_message(struct AVFormatContext *s1, int type,
         }
         case AV_APP_TO_DEV_START: {
             priv->stopped = false;
-            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, &type, 0);
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
         }
         case AV_APP_TO_DEV_STOP: {
             priv->stopped = true;
-            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, &type, 0);
+            avdevice_dev_to_app_control_message(s1, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
 
             return 0;
         }
@@ -285,7 +266,7 @@ static int nuttx_write_frame(AVFormatContext *s1, int stream_index,
     pkt.data     = (*frame)->data[0];
     pkt.size     = (*frame)->nb_samples * priv->sample_bytes;
     pkt.dts      = (*frame)->pkt_dts;
-    pkt.duration = (*frame)->pkt_duration;
+    pkt.duration = (*frame)->duration;
     return nuttx_write_packet(s1, &pkt);
 }
 
@@ -338,34 +319,35 @@ static int nuttx_check_bitstream(struct AVFormatContext *s, struct AVStream *st,
 static const AVOption options[] = {
     { "periods",      "", OFFSET(periods),      AV_OPT_TYPE_INT, {.i64 = 4},   0, INT_MAX, FLAGS},
     { "period_bytes", "", OFFSET(period_bytes), AV_OPT_TYPE_INT, {.i64 = 0},   0, INT_MAX, FLAGS},
-    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT, {.i64 = 20},  0, INT_MAX, FLAGS},
+    { "period_time",  "", OFFSET(period_time),  AV_OPT_TYPE_INT, {.i64 = 100},  0, INT_MAX, FLAGS},
     { NULL },
 };
 
 static const AVClass nuttx_muxer_class = {
     .class_name = "NUTTX outdev",
-    .item_name  = av_default_item_name,
-    .option     = options,
-    .version    = LIBAVUTIL_VERSION_INT,
-    .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .item_name = av_default_item_name,
+    .option = options,
+    .version = LIBAVUTIL_VERSION_INT,
+    .category = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
+    .query_ranges = nuttx_capbility_query_ranges,
 };
 
-const AVOutputFormat ff_nuttx_muxer = {
-    .name                       = "nuttx",
-    .long_name                  = NULL_IF_CONFIG_SMALL("NUTTX audio output"),
-    .priv_data_size             = sizeof(NuttxPriv),
-    .audio_codec                = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
-    .video_codec                = AV_CODEC_ID_NONE,
-    .init                       = nuttx_init,
-    .deinit                     = nuttx_deinit,
-    .write_header               = nuttx_write_header,
-    .write_packet               = nuttx_write_packet,
-    .write_trailer              = nuttx_write_trailer,
-    .control_message            = nuttx_control_message,
-    .write_uncoded_frame        = nuttx_write_frame,
-    .get_output_timestamp       = nuttx_get_output_timestamp,
-    .get_device_list            = nuttx_get_device_list,
-    .check_bitstream            = nuttx_check_bitstream,
-    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
-    .priv_class                 = &nuttx_muxer_class,
+const FFOutputFormat ff_nuttx_muxer = {
+    .p.name               = "nuttx",
+    .p.long_name          = NULL_IF_CONFIG_SMALL("NUTTX audio output"),
+    .priv_data_size       = sizeof(NuttxPriv),
+    .p.audio_codec        = AV_NE(AV_CODEC_ID_PCM_S16BE, AV_CODEC_ID_PCM_S16LE),
+    .p.video_codec        = AV_CODEC_ID_NONE,
+    .init                 = nuttx_init,
+    .deinit               = nuttx_deinit,
+    .write_header         = nuttx_write_header,
+    .write_packet         = nuttx_write_packet,
+    .write_trailer        = nuttx_write_trailer,
+    .control_message      = nuttx_control_message,
+    .write_uncoded_frame  = nuttx_write_frame,
+    .get_output_timestamp = nuttx_get_output_timestamp,
+    .get_device_list      = nuttx_get_device_list,
+    .check_bitstream      = nuttx_check_bitstream,
+    .p.flags              = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
+    .p.priv_class         = &nuttx_muxer_class,
 };
