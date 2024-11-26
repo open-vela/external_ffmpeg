@@ -103,16 +103,17 @@ static int adevsrc_open(AVFilterContext *ctx)
 
     priv->fmt_ctx->audio_codec_id = link->codec;
 
-    if (avfilter_forward_command(ctx, 0, "all", "get_options", NULL,
-                                 (char*)&dict, sizeof(AVDictionary **), 0) >= 0) {
-        if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
-            avdevice_app_to_dev_control_message(priv->fmt_ctx,
-                                                AV_APP_TO_DEV_SET_PARAMETER,
-                                                param, 0);
-            av_freep(&param);
+    if (!avcodec_is_pcm_lossless(link->codec)) {
+        if (avfilter_forward_command(ctx, 0, "all", "get_options", NULL,
+                                     (char*)&dict, sizeof(AVDictionary **), 0) >= 0) {
+            if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
+                avdevice_app_to_dev_control_message(priv->fmt_ctx,
+                                                    AV_APP_TO_DEV_SET_PARAMETER,
+                                                    param, 0);
+                av_freep(&param);
+            }
+            av_dict_free(&dict);
         }
-
-        av_dict_free(&dict);
     }
 
     ret = avformat_read_header(priv->fmt_ctx);
