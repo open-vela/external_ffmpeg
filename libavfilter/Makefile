@@ -8,6 +8,7 @@ HEADERS = avfilter.h                                                    \
           version_major.h                                               \
 
 OBJS = allfilters.o                                                     \
+       aresample.o                                                      \
        audio.o                                                          \
        avfilter.o                                                       \
        avfiltergraph.o                                                  \
