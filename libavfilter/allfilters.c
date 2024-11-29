@@ -169,6 +169,7 @@ extern const AVFilter ff_asrc_afirsrc;
 extern const AVFilter ff_asrc_amixsrc;
 extern const AVFilter ff_asrc_anoisesrc;
 extern const AVFilter ff_asrc_anullsrc;
+extern const AVFilter ff_asrc_anxsrc;
 extern const AVFilter ff_asrc_flite;
 extern const AVFilter ff_asrc_hilbert;
 extern const AVFilter ff_asrc_sinc;

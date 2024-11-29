@@ -31,9 +31,11 @@
 #include <libavcodec/avcodec.h>
 
 #include "avfilter.h"
+#include "avfilter-nx.h"
+#include "avfilter_internal.h"
 #include "filters.h"
 #include "internal.h"
-#include "packet_wrapper.h"
+#include "formats.h"
 
 typedef struct ANxSrcPriv {
     const AVClass *class;
@@ -51,7 +53,7 @@ typedef struct ANxSrcPriv {
     int period_time;
 } ANxSrcPriv;
 
-static int anxsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
+static int anxsrc_init_dict(AVFilterContext *ctx)
 {
     ANxSrcPriv *sink = ctx->priv;
     NuttxPriv *priv = &sink->priv;
@@ -93,12 +95,13 @@ static int anxsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    return avfilter_graph_reconfig(ctx->graph, ctx);
+    return 0;
 }
 
 static inline void anxsrc_force_request(AVFilterContext *ctx)
 {
-    ctx->outputs[0]->frame_wanted_out = 1;
+    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+    li->frame_wanted_out = 1;
     ff_filter_set_ready(ctx, 300);
 }
 
@@ -106,7 +109,7 @@ static int anxsrc_control_message(AVFilterContext *ctx, int type,
                                   void *data, size_t data_size)
 {
     if (type == AV_DEV_TO_APP_STATE_CHANGED) {
-        avfilter_graph_reconfig(ctx->graph, ctx);
+        //avfilter_graph_reconfig(ctx->graph, ctx);
     }
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||
@@ -154,10 +157,6 @@ static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
     out->format = link->format;
     out->sample_rate = link->sample_rate;
     av_channel_layout_copy(&out->ch_layout, &link->ch_layout);
-#if FF_API_OLD_CHANNEL_LAYOUT
-    out->channel_layout = link->ch_layout.u.mask;
-    out->channels = link->ch_layout.nb_channels;
-#endif
     out->nb_samples = pkt->size / priv->sample_bytes;
     out->pkt_size = pkt->size;
 
@@ -354,27 +353,6 @@ static int anxsrc_query_formats(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    formats = NULL;
-    ret = ff_nuttx_capbility_query_ranges(&ranges, sink->devname, "codecs",
-                                          AV_OPT_MULTI_COMPONENT_RANGE, false);
-    if (ret >= 0) {
-        for (i = 0; i < ranges->nb_ranges; i++) {
-            ret = ff_add_format(&formats, ranges->range[i]->value_min);
-            if (ret < 0)
-                goto out;
-        }
-
-        av_opt_freep_ranges(&ranges);
-    } else {
-        formats = ff_all_raw_codecs(ctx->inputs[0]->type);
-    }
-
-    ret = ff_set_common_codecs(ctx, formats);
-    if (ret < 0)
-        goto out;
-
-    ret = 0;
-
 out:
     av_opt_freep_ranges(&ranges);
     return ret;
@@ -434,7 +412,7 @@ const AVFilter ff_asrc_anxsrc = {
     .description     = NULL_IF_CONFIG_SMALL("audio nuttx source(only pcm)"),
     .priv_size       = sizeof(ANxSrcPriv),
     .priv_class      = &anxsrc_class,
-    .init_dict       = anxsrc_init_dict,
+    .init            = anxsrc_init_dict,
     .uninit          = anxsrc_uninit,
     FILTER_OUTPUTS(anxsrc_outputs),
     FILTER_QUERY_FUNC(anxsrc_query_formats),
