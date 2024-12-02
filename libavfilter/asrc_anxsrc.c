@@ -263,7 +263,9 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
     }
 }
 
-static int anxsrc_query_formats(AVFilterContext *ctx)
+static int anxsrc_query_formats(const AVFilterContext *ctx,
+                                AVFilterFormatsConfig **cfg_in,
+                                AVFilterFormatsConfig **cfg_out)
 {
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
@@ -292,7 +294,7 @@ static int anxsrc_query_formats(AVFilterContext *ctx)
         }
     }
 
-    ret = ff_set_common_formats(ctx, formats);
+    ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, formats);
     if (ret < 0)
         goto out;
 
@@ -316,7 +318,7 @@ static int anxsrc_query_formats(AVFilterContext *ctx)
         }
     }
 
-    ret = ff_set_common_samplerates(ctx, formats);
+    ret = ff_set_common_samplerates2(ctx, cfg_in, cfg_out, formats);
     if (ret < 0)
         goto out;
 
@@ -349,7 +351,7 @@ static int anxsrc_query_formats(AVFilterContext *ctx)
         }
     }
 
-    ret = ff_set_common_channel_layouts(ctx, layouts);
+    ret = ff_set_common_channel_layouts2(ctx, cfg_in, cfg_out, layouts);
     if (ret < 0)
         goto out;
 
@@ -415,7 +417,7 @@ const AVFilter ff_asrc_anxsrc = {
     .init            = anxsrc_init_dict,
     .uninit          = anxsrc_uninit,
     FILTER_OUTPUTS(anxsrc_outputs),
-    FILTER_QUERY_FUNC(anxsrc_query_formats),
+    FILTER_QUERY_FUNC2(anxsrc_query_formats),
     .activate        = anxsrc_activate,
     .process_command = anxsrc_process_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
