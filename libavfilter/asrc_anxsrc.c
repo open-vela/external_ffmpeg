@@ -23,6 +23,7 @@
 
 #include <poll.h>
 
+#include <libavutil/avstring.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 #include <libavdevice/nuttx.h>
@@ -58,14 +59,28 @@ typedef struct ANxSrcPriv {
     void *on_event_cb_udata;
 } ANxSrcPriv;
 
+static int anxsrc_config_props(AVFilterLink *link);
+
 static int anxsrc_init_dict(AVFilterContext *ctx)
 {
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
+    ANxSrcPriv *src = ctx->priv;
+    NuttxPriv *priv = &src->priv;
+    int i, ret;
 
-    memset(priv, 0, sizeof(NuttxPriv));
+    for (i = 0; i < src->nb_outputs; i++) {
+        AVFilterPad pad = { 0 };
 
-    return ff_nuttx_init(priv, sink->devname, false);
+        pad.type = AVMEDIA_TYPE_AUDIO;
+        pad.name = av_asprintf("output%d", i);
+        if (!pad.name)
+            return AVERROR(ENOMEM);
+
+        pad.config_props = anxsrc_config_props;
+        if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
+            return ret;
+    }
+
+    return ff_nuttx_init(priv, src->devname, false);
 }
 
 static void anxsrc_uninit(AVFilterContext *ctx)
@@ -209,7 +224,7 @@ static int anxsrc_activate(AVFilterContext *ctx)
     FilterLinkInternal *li = ff_link_internal(link);
     ANxSrcPriv *s = ctx->priv;
     AVFrame *frame;
-    int ret;
+    int i, ret;
 
     ret = ff_outlink_get_status(link);
     if (ret < 0) {
@@ -218,7 +233,11 @@ static int anxsrc_activate(AVFilterContext *ctx)
         return ret;
     }
 
-    if (!ff_outlink_frame_wanted(link))
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (ff_outlink_frame_wanted(link))
+            break;
+    }
+    if (i == ctx->nb_outputs)
         return FFERROR_NOT_READY;
 
     ret = anxsrc_open(ctx);
@@ -235,9 +254,16 @@ static int anxsrc_activate(AVFilterContext *ctx)
         li->frame_wanted_out = 1;
     }
 
-    return ff_filter_frame(link, frame);
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        link = ctx->outputs[i];
+        ret = ff_filter_frame(link, av_frame_clone(frame));
+        if (ret < 0)
+            goto out;
+    }
 
 out:
+    av_frame_free(&frame);
+
     if (ret == AVERROR_EOF) {
         anxsrc_close(ctx);
         ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
@@ -443,6 +469,7 @@ static const AVOption anxsrc_options[] = {
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       R },
     { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                 0, INT_MAX, R },
     { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,        {.i64 = 20},                0, INT_MAX, R },
+    { "outputs",     "", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                 0, INT_MAX, R },
     { NULL },
 };
 
@@ -454,14 +481,6 @@ static const AVClass anxsrc_class = {
     .category            = AV_CLASS_CATEGORY_FILTER,
 };
 
-static const AVFilterPad anxsrc_outputs[] = {
-    {
-        .name          = "default",
-        .type          = AVMEDIA_TYPE_AUDIO,
-        .config_props  = anxsrc_config_props,
-    },
-};
-
 const AVFilter ff_asrc_anxsrc = {
     .name            = "anxsrc",
     .description     = NULL_IF_CONFIG_SMALL("audio nuttx source(only pcm)"),
@@ -469,9 +488,8 @@ const AVFilter ff_asrc_anxsrc = {
     .priv_class      = &anxsrc_class,
     .init            = anxsrc_init_dict,
     .uninit          = anxsrc_uninit,
-    FILTER_OUTPUTS(anxsrc_outputs),
     FILTER_QUERY_FUNC2(anxsrc_query_formats),
     .activate        = anxsrc_activate,
     .process_command = anxsrc_process_command,
-    .flags           = AVFILTER_FLAG_SUPPORT_POLL,
+    .flags           = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
