@@ -51,6 +51,11 @@ typedef struct ANxSrcPriv {
 
     int periods;
     int period_time;
+
+    int nb_outputs;
+
+    int (*on_event_cb)(void *udata, int evt, int64_t args);
+    void *on_event_cb_udata;
 } ANxSrcPriv;
 
 static int anxsrc_init_dict(AVFilterContext *ctx)
@@ -80,6 +85,24 @@ static void anxsrc_close(AVFilterContext *ctx)
         return;
 
     ff_nuttx_close(priv);
+}
+
+static int av_anxsrc_set_event_cb(AVFilterContext *ctx,
+    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
+{
+    ANxSrcPriv *s = ctx->priv;
+    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+    int i, ret;
+
+    s->on_event_cb = on_event_cb;
+    s->on_event_cb_udata = udata;
+
+    if (s->on_event_cb) {
+        li->frame_wanted_out = 1;
+        ff_filter_set_ready(ctx, 100);
+    }
+
+    return 0;
 }
 
 static int anxsrc_open(AVFilterContext *ctx)
@@ -123,8 +146,8 @@ static int anxsrc_control_message(AVFilterContext *ctx, int type,
 static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
 {
     AVFilterLink *link = ctx->outputs[0];
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
+    ANxSrcPriv *s = ctx->priv;
+    NuttxPriv *priv = &s->priv;
     AVFrame *out = NULL;
     uint32_t samples;
     AVPacket *pkt;
@@ -183,6 +206,8 @@ error:
 static int anxsrc_activate(AVFilterContext *ctx)
 {
     AVFilterLink *link = ctx->outputs[0];
+    FilterLinkInternal *li = ff_link_internal(link);
+    ANxSrcPriv *s = ctx->priv;
     AVFrame *frame;
     int ret;
 
@@ -204,6 +229,12 @@ static int anxsrc_activate(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    if (s->on_event_cb) {
+#define MEDIA_GRAPH_EVT_EMIT_FRAME 1
+        s->on_event_cb(s->on_event_cb_udata, MEDIA_GRAPH_EVT_EMIT_FRAME, (intptr_t)frame);
+        li->frame_wanted_out = 1;
+    }
+
     return ff_filter_frame(link, frame);
 
 out:
@@ -220,8 +251,30 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
 {
     ANxSrcPriv *sink = ctx->priv;
     NuttxPriv *priv = &sink->priv;
+    int ret;
 
-    if (!strcmp(cmd, "start")) {
+    if (!strcmp(cmd, "link")) {
+        int (*on_event_cb)(void *udata, int evt, int64_t args);
+        void *udata;
+
+        if (!args)
+            return AVERROR(EINVAL);
+        
+        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
+            return AVERROR(EINVAL);
+
+        ret = av_anxsrc_set_event_cb(ctx, on_event_cb, udata);
+        if (ret < 0)
+            return ret;
+
+        return 0;
+    } else if (!strcmp(cmd, "unlink")) {
+        ret = av_anxsrc_set_event_cb(ctx, NULL, NULL);
+        if (ret < 0)
+            return ret;
+
+        return 0;
+    } else if (!strcmp(cmd, "start")) {
         priv->stopped = false;
         anxsrc_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
         return 0;
