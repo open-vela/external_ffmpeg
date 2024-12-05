@@ -26,7 +26,6 @@
 #include "libavcodec/codec_id.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/avstring.h"
-#include "libavutil/mem.h"
 
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -702,6 +701,8 @@ void ff_nuttx_close(NuttxPriv *priv, bool nonblock)
         if (nonblock)
             break;
     }
+
+    priv->paused = false;
 }
 
 int ff_nuttx_set_parameter(NuttxPriv *priv, const char *parameter)
@@ -763,7 +764,7 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
     }
 
     new = dq_count(&priv->bufferq);
-    if (priv->periods > 1 && new == priv->periods && new > old && !priv->paused) {
+    if (priv->periods > 1 && new == priv->periods && new > old && !priv->paused && priv->running) {
         if (priv->playback) {
             /* Try to send the buffer containing the remaining data to the driver */
             ff_nuttx_drain_buffer(priv, false);
@@ -924,6 +925,12 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size, uint32_t *sampl
             ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
             if (ret < 0)
                 break;
+
+            /* For non-pcm, use apb->nsamples and return len directly */
+            if(!avcodec_is_pcm_lossless(priv->codec)) {
+                *samples = nsamples;
+                break;
+            }
         }
     }
 
