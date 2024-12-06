@@ -268,6 +268,13 @@ static int config_output(AVFilterLink *outlink)
     if (!s->fifos)
         return AVERROR(ENOMEM);
 
+    if (s->ch_layout.nb_channels == 0)
+        av_channel_layout_copy(&s->ch_layout, &outlink->ch_layout);
+    if (av_channel_layout_compare(&s->ch_layout, &outlink->ch_layout)) {
+        av_log(ctx, AV_LOG_ERROR, "Output channel layouts do not match\n");
+        return AVERROR(EINVAL);
+    }
+
     for (i = 0; i < s->nb_inputs; i++) {
         s->fifos[i] = av_audio_fifo_alloc(outlink->format, s->ch_layout.nb_channels, 1024);
         if (!s->fifos[i])
