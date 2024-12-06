@@ -26,6 +26,7 @@
 #include "libavcodec/codec_id.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/avstring.h"
+#include "libavutil/mem.h"
 
 #include <sys/ioctl.h>
 #include <fcntl.h>
@@ -925,12 +926,6 @@ int ff_nuttx_read_data(NuttxPriv *priv, uint8_t *data, int size, uint32_t *sampl
             ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &desc);
             if (ret < 0)
                 break;
-
-            /* For non-pcm, use apb->nsamples and return len directly */
-            if(!avcodec_is_pcm_lossless(priv->codec)) {
-                *samples = nsamples;
-                break;
-            }
         }
     }
 
