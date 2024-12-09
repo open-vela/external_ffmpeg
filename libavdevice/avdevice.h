@@ -196,6 +196,76 @@ enum AVAppToDevMessageType {
      */
     AV_APP_TO_DEV_GET_VOLUME = MKBETAG('G', 'V', 'O', 'L'),
     AV_APP_TO_DEV_GET_MUTE   = MKBETAG('G', 'M', 'U', 'T'),
+
+    //////////////////////////////////////////////////////////////////////////
+    // Start define new message types for NuttX
+    /**
+     * Get format request
+     *
+     * Get device fromat request info, e.g. BT device need
+     * compressed data, request specific bitrate, blocks...
+     *
+     * data: AVDictionary **: list of options.
+     */
+    AV_APP_TO_DEV_GET_FORMAT_REQUEST = MKBETAG('G', 'F', 'R', 'Q'),
+    /**
+     * Get fd for poll.
+     *
+     * Get device fd for polling.
+     *
+     * data: struct pollfd: terminated by a zeroed element.
+     */
+    AV_APP_TO_DEV_GET_POLLFD = MKBETAG('G', 'P', 'O', 'L'),
+    /**
+     * Nofity device poll available.
+     *
+     * Once poll wakeup by events, then nofity device with this cmd.
+     *
+     * data: struct pollfd: terminated by a zeroed element.
+     */
+    AV_APP_TO_DEV_POLL_AVAILABLE = MKBETAG('P', 'A', 'V', 'A'),
+    /**
+     * Get dump info
+     *
+     * data: string
+     */
+    AV_APP_TO_DEV_DUMP = MKBETAG('D', 'U', 'M', 'P'),
+    /**
+     * Direct set parameter to device.
+     *
+     * data: string of cmd and arg.
+     */
+    AV_APP_TO_DEV_SET_PARAMETER = MKBETAG('S', 'E', 'T', 'P'),
+    /**
+     * Request open/close.
+     *
+     * Application requests start/stop.
+     * trigger adevsrc, devsrc filter one frame to next.
+     * or trigger adevsink, devsink set status_in to EOF.
+     *
+     * data: NULL
+     */
+    AV_APP_TO_DEV_START = MKBETAG('S', 'T', 'R', 'T'),
+    AV_APP_TO_DEV_STOP = MKBETAG('S', 'T', 'O', 'P'),
+    /**
+     * Request flush.
+     *
+     * Application requests flush.
+     *
+     * data: NULL
+     */
+    AV_APP_TO_DEV_FLUSH = MKBETAG('F', 'L', 'S', 'H'),
+    /**
+     * Get position
+     */
+    AV_APP_TO_DEV_GET_POSITION = MKBETAG('G', 'P', 'O', 'S'),
+    /**
+     * Request drain.
+     *
+     * Application requests drain.
+     */
+    AV_APP_TO_DEV_DRAIN = MKBETAG('D', 'R', 'A', 'N'),
+    // End define new message types for NuttX
 };
 
 /**
@@ -297,6 +367,12 @@ enum AVDevToAppMessageType {
      * data: double: new volume with range of 0.0 - 1.0.
      */
     AV_DEV_TO_APP_VOLUME_LEVEL_CHANGED = MKBETAG('C','V','O','L'),
+
+    //////////////////////////////////////////////////////////////////////////
+    // Start define new message types for NuttX
+    AV_DEV_TO_APP_BUFFER_DRAINED = MKBETAG('B', 'D', 'N', ' '),
+    AV_DEV_TO_APP_STATE_CHANGED = MKBETAG('C', 'S', 'T', 'A'),
+    // End define new message types for NuttX
 };
 
 /**

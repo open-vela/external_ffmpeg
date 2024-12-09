@@ -30,6 +30,7 @@
 
 #include "filters.h"
 #include "avfilter.h"
+#include "avfilter-nx.h"
 #include "formats.h"
 #include "internal.h"
 
