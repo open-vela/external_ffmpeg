@@ -103,13 +103,19 @@ static inline void anxsrc_force_request(AVFilterContext *ctx)
 static int anxsrc_control_message(AVFilterContext *ctx, int type,
                                   void *data, size_t data_size)
 {
+    ANxSrcPriv *sink = ctx->priv;
+    NuttxPriv *priv = &sink->priv;
+
     if (type == AV_DEV_TO_APP_STATE_CHANGED) {
         avfilter_graph_reconfig(ctx->graph, ctx);
     }
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||
         type == AV_DEV_TO_APP_BUFFER_READABLE) {
-        anxsrc_force_request(ctx);
+        if (priv->running)
+            ff_filter_set_ready(ctx, 300);
+        else
+            anxsrc_force_request(ctx);
     }
 
     return 0;
