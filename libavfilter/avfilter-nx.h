@@ -44,7 +44,4 @@ int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, co
 typedef struct AVFormatContext AVFormatContext;
 int avformat_write_trailer(AVFormatContext *s);
 
-typedef struct AVFilterGraph AVFilterGraph;
-char *avfilter_graph_dump_ext(AVFilterGraph *graph, const char *options);
-
 #endif /* AVFILTER_AVFILTER_NX_H */
