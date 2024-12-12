@@ -717,7 +717,7 @@ static int movie_async_loop(AVFilterContext *ctx)
     return ret;
 }
 
-static void movie_async_completed(AVFilterContext *ctx)
+static bool movie_async_completed(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     int ret;
@@ -727,10 +727,16 @@ static void movie_async_completed(AVFilterContext *ctx)
     if (ret < 0) {
         av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
         movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
+        if (movie->pending_stop) {
+            movie->pending_stop = 0;
+            movie_async_stop(ctx);
+            return true;
+        }
     } else {
         av_log(ctx, AV_LOG_INFO, "%s loop %d.\n", ctx->name, movie->loop_count);
         movie_async_send_cmd(ctx, AVMOVIE_ASYNC_START, NULL, 0);
     }
+    return false;
 }
 
 static int movie_async_send_vsyncmode(AVFilterContext *ctx, int audio_alive)
@@ -852,20 +858,20 @@ static int movie_async_send_eos_frame(AVFilterContext *ctx, int pad_id)
     return 0;
 }
 
-static bool movie_async_proc_dat(AVFilterContext *ctx)
+static void movie_async_proc_dat(AVFilterContext *ctx)
 {
     MovieAsyncContext *movie = ctx->priv;
     int ret, i;
 
     ret = movie_async_read_frame(ctx);
     if (ret >= 0 || ret == AVERROR_EXIT)
-        return false;
+        return;
 
     movie->eof_reached = true;
     if (ret != AVERROR_EOF) {
         av_log(ctx, AV_LOG_ERROR, "Failed read frame ret,%d,%s.\n", ret, av_err2str(ret));
         movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, ret, NULL);
-        return false;
+        return;
     }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -879,11 +885,6 @@ static bool movie_async_proc_dat(AVFilterContext *ctx)
             break;
         }
     }
-
-    if (!movie->pending_stop)
-        return false;
-
-    return true;
 }
 
 static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
@@ -941,7 +942,7 @@ static bool movie_async_proc_cmd(AVFilterContext *ctx, MovieCmd *msg)
             break;
 
         case AVMOVIE_ASYNC_COMPLETED:
-            movie_async_completed(ctx);
+            exit = movie_async_completed(ctx);
             break;
 
         default:
@@ -971,7 +972,7 @@ static void *movie_async_thread(void *arg)
         } else if (movie->format_ctx && !movie->eof_reached && movie_async_dat_available(ctx)) {
             pthread_mutex_unlock(&movie->mutex);
 
-            exit = movie_async_proc_dat(ctx);
+            movie_async_proc_dat(ctx);
         } else if (exit) {
             pthread_mutex_unlock(&movie->mutex);
             movie->state = AVMOVIE_ASYNC_STATE_NOP;
