@@ -193,6 +193,10 @@ typedef struct AVFilterFormatsConfig {
  * (internally or generically).
  */
 #define AVFILTER_FLAG_SUPPORT_TIMELINE (AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC | AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL)
+/**
+ * Support cmds get_pollfd & poll_available
+ */
+#define AVFILTER_FLAG_SUPPORT_POLL          (1 << 18)
 
 /**
  * Filter definition. This defines the pads a filter contains, and all the

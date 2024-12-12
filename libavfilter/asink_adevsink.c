@@ -32,7 +32,7 @@
 
 #include "filters.h"
 #include "avfilter.h"
-#include "avfilter-nx.h"
+#include "avfilter_internal.h"
 #include "formats.h"
 #include "internal.h"
 
@@ -53,6 +53,7 @@ typedef struct ADevSinkPriv {
     AVPacket        *last_pkt;
 } ADevSinkPriv;
 
+typedef struct AVOptionRanges AVOptionRanges;
 
 //libavformat mux.h externs
 int write_packets_from_bsfs(AVFormatContext *s, AVStream *st, AVPacket *pkt, int interleaved);
@@ -71,6 +72,31 @@ static int adevsink_control_message(struct AVFormatContext *s, int type,
     }
 
     return 0;
+}
+
+/*
+ * Get a list of allowed ranges for the given option.
+ *
+ * The result must be freed with av_opt_free_ranges.
+ *
+ * @return number of compontents returned on success, a negative errro code otherwise
+ */
+static int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, const char *key, int flags)
+{
+    int ret;
+    const AVClass *c = *(AVClass **)obj;
+    int (*callback)(AVOptionRanges **, void *obj, const char *key, int flags) = c->query_ranges;
+
+    if (!callback)
+        callback = av_opt_query_ranges_default;
+
+    ret = callback(ranges_arg, udata, key, flags);
+    if (ret >= 0) {
+        if (!(flags & AV_OPT_MULTI_COMPONENT_RANGE))
+            ret = 1;
+        (*ranges_arg)->nb_components = ret;
+    }
+    return ret;
 }
 
 static int adevsink_open_encoder(AVFilterContext *ctx)
