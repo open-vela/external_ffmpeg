@@ -20,19 +20,11 @@
  */
 #include "avfilter-nx.h"
 #include <libavutil/opt.h>
-#include <libavformat/avformat.h>
-#include <libavformat/avformat_internal.h>
-#include <libavformat/mux.h>
 
 #include "avfilter.h"
 #include "avfilter_internal.h"
 #include "filters.h"
 #include "formats.h"
-
-//libavformat mux.h externs
-int write_packets_from_bsfs(AVFormatContext *s, AVStream *st, AVPacket *pkt, int interleaved);
-int interleaved_write_packet(AVFormatContext *s, AVPacket *pkt,
-                                    int flush, int has_packet);
 
 int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, const char *key, int flags)
 {
@@ -49,38 +41,5 @@ int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, co
             ret = 1;
         (*ranges_arg)->nb_components = ret;
     }
-    return ret;
-}
-
-
-int avformat_write_trailer(AVFormatContext *s)
-{
-    FFFormatContext *const si = ffformatcontext(s);
-    AVPacket *const pkt = si->parse_pkt;
-    int ret1, ret = 0;
-
-    for (unsigned i = 0; i < s->nb_streams; i++) {
-        AVStream *const st = s->streams[i];
-        FFStream *const sti = ffstream(st);
-        if (sti->bsfc) {
-            ret1 = write_packets_from_bsfs(s, st, pkt, 1 /*interleaved*/);
-            if (ret1 < 0)
-                av_packet_unref(pkt);
-            if (ret >= 0)
-                ret = ret1;
-        }
-    }
-    ret1 = interleaved_write_packet(s, pkt, 1, 0);
-    if (ret >= 0)
-        ret = ret1;
-
-    if (ffofmt(s->oformat)->write_trailer) {
-        if (!(s->oformat->flags & AVFMT_NOFILE) && s->pb)
-            avio_write_marker(s->pb, AV_NOPTS_VALUE, AVIO_DATA_MARKER_TRAILER);
-        ret1 = ffofmt(s->oformat)->write_trailer(s);
-        if (ret >= 0)
-            ret = ret1;
-    }
-
     return ret;
 }

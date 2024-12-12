@@ -41,7 +41,4 @@ typedef struct AVOptionRanges AVOptionRanges;
  */
 int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, const char *key, int flags);
 
-typedef struct AVFormatContext AVFormatContext;
-int avformat_write_trailer(AVFormatContext *s);
-
 #endif /* AVFILTER_AVFILTER_NX_H */

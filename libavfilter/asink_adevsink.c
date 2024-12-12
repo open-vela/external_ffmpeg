@@ -26,7 +26,9 @@
 #include <libavutil/samplefmt.h>
 #include <libavdevice/avdevice.h>
 #include <libavformat/avformat.h>
+#include <libavformat/avformat_internal.h>
 #include <libavcodec/avcodec.h>
+#include <libavformat/mux.h>
 
 #include "filters.h"
 #include "avfilter.h"
@@ -50,6 +52,12 @@ typedef struct ADevSinkPriv {
 
     AVPacket        *last_pkt;
 } ADevSinkPriv;
+
+
+//libavformat mux.h externs
+int write_packets_from_bsfs(AVFormatContext *s, AVStream *st, AVPacket *pkt, int interleaved);
+int interleaved_write_packet(AVFormatContext *s, AVPacket *pkt,
+                                    int flush, int has_packet);
 
 static int adevsink_control_message(struct AVFormatContext *s, int type,
                                     void *data, size_t data_size)
@@ -121,6 +129,38 @@ static void adevsink_close_encoder(AVFilterContext *ctx)
         return;
 
     avcodec_free_context(&priv->enc_ctx);
+}
+
+static int avformat_write_trailer(AVFormatContext *s)
+{
+    FFFormatContext *const si = ffformatcontext(s);
+    AVPacket *const pkt = si->parse_pkt;
+    int ret1, ret = 0;
+
+    for (unsigned i = 0; i < s->nb_streams; i++) {
+        AVStream *const st = s->streams[i];
+        FFStream *const sti = ffstream(st);
+        if (sti->bsfc) {
+            ret1 = write_packets_from_bsfs(s, st, pkt, 1 /*interleaved*/);
+            if (ret1 < 0)
+                av_packet_unref(pkt);
+            if (ret >= 0)
+                ret = ret1;
+        }
+    }
+    ret1 = interleaved_write_packet(s, pkt, 1, 0);
+    if (ret >= 0)
+        ret = ret1;
+
+    if (ffofmt(s->oformat)->write_trailer) {
+        if (!(s->oformat->flags & AVFMT_NOFILE) && s->pb)
+            avio_write_marker(s->pb, AV_NOPTS_VALUE, AVIO_DATA_MARKER_TRAILER);
+        ret1 = ffofmt(s->oformat)->write_trailer(s);
+        if (ret >= 0)
+            ret = ret1;
+    }
+
+    return ret;
 }
 
 static int adevsink_start(AVFilterContext *ctx)
