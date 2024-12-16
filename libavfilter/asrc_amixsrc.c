@@ -128,8 +128,7 @@ static const AVOption amix_options[] = {
 
 AVFILTER_DEFINE_CLASS(amix);
 
-int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx, int sample_fmt,
-    int sample_rate, AVChannelLayout *ch_layout,
+static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
     int (*on_event_cb)(void *udata, int evt, int64_t args),
     void *on_event_cb_udata)
 {
@@ -176,7 +175,7 @@ int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx, int sample_fmt,
     return 0;
 }
 
-int amix_buffersrc_close(MixInput **pin)
+static int amix_buffersrc_close(MixInput **pin)
 {
     MixContext *s;
     MixInput *in;
@@ -540,6 +539,44 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 {
     MixContext *s = ctx->priv;
     int ret;
+
+    if (!cmd)
+        return AVERROR(EINVAL);
+
+    if (!strcmp(cmd, "link")) {
+        MixInput *in;
+        int (*on_event_cb)(void *udata, int evt, int64_t args);
+        void *udata;
+
+        if (!args || !res)
+            return AVERROR(EINVAL);
+
+        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
+            return AVERROR(EINVAL);
+
+        ret = amix_buffersrc_open(&in, ctx, on_event_cb, udata);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "amixsrc: error opening input: %s\n", av_err2str(ret));
+            return ret;
+        }
+
+        *(MixInput **)res = in;
+
+        return 0;
+    } else if (!strcmp(cmd, "unlink")) {
+        MixInput *in = (MixInput *)args;
+
+        if (!in)
+            return AVERROR(EINVAL);
+
+        ret = amix_buffersrc_close(&in);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "amixsrc: error closing input: %s\n", av_err2str(ret));
+            return ret;
+        }
+
+        return 0;
+    }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     if (ret < 0)
