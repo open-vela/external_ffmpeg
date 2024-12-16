@@ -162,6 +162,7 @@ extern const AVFilter ff_af_virtualbass;
 extern const AVFilter ff_af_volume;
 extern const AVFilter ff_af_volumedetect;
 
+extern const AVFilter ff_asrc_abufsrc;
 extern const AVFilter ff_asrc_aevalsrc;
 extern const AVFilter ff_asrc_afdelaysrc;
 extern const AVFilter ff_asrc_afireqsrc;
