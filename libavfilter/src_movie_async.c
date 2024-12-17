@@ -727,7 +727,7 @@ static bool movie_async_completed(AVFilterContext *ctx)
     if (ret < 0) {
         av_log(ctx, AV_LOG_INFO, "%s rcv completed.\n", ctx->name);
         movie_async_send_event(ctx, AVMOVIE_ASYNC_EVENT_COMPLETED, 0, NULL);
-        if (movie->pending_stop) {
+        if (movie->pending_stop && ctx->filter->name[0] == 'a') {
             movie->pending_stop = 0;
             movie_async_stop(ctx);
             return true;
