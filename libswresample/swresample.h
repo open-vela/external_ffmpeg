@@ -168,6 +168,7 @@ enum SwrEngine {
     SWR_ENGINE_SOXR,            /**< SoX Resampler */
     SWR_ENGINE_HIFI4,           /**< HIFI4 Resampler */
     SWR_ENGINE_SRC,             /**< SRC Resampler */
+    SWR_ENGINE_SPEEXDSP,        /**< SPEEXDSP Resampler */
     SWR_ENGINE_NB,              ///< not part of API/ABI
 };
 

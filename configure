@@ -1882,6 +1882,7 @@ EXTERNAL_LIBRARY_LIST="
     libsnappy
     libsoxr
     libspeex
+    libspeexdsp
     libsrt
     libssh
     libsvtav1
@@ -7481,7 +7482,7 @@ for lib in $AUTODETECT_LIBS; do
     requested $lib && ! enabled $lib && die "ERROR: $lib requested but not found";
 done
 
-if enabled hifi4src || enabled libsoxr || enabled libsamplerate; then
+if enabled hifi4src || enabled libsoxr || enabled libsamplerate || enabled libspeexdsp; then
     disable swr_resampler
     echo "Disable swr resampler"
 else
