@@ -95,6 +95,8 @@ extern struct Resampler const swri_soxr_resampler;
 extern struct Resampler const swri_hifi4_resampler;
 #elif CONFIG_LIBSAMPLERATE
 extern struct Resampler const swri_src_resampler;
+#elif CONFIG_LIBSPEEXDSP
+extern struct Resampler const swri_speex_resampler;
 #endif
 
 struct SwrContext {

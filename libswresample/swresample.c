@@ -284,6 +284,8 @@ av_cold int swr_init(struct SwrContext *s){
         s->engine = SWR_ENGINE_HIFI4;
         #elif CONFIG_LIBSAMPLERATE
         s->engine = SWR_ENGINE_SRC;
+        #elif CONFIG_LIBSPEEXDSP
+        s->engine = SWR_ENGINE_SPEEXDSP;
         #endif
     }
 
@@ -306,6 +308,11 @@ av_cold int swr_init(struct SwrContext *s){
         #if CONFIG_LIBSAMPLERATE
         case SWR_ENGINE_SRC:
             s->resampler = &swri_src_resampler;
+            break;
+        #endif
+        #if CONFIG_LIBSPEEXDSP
+        case SWR_ENGINE_SPEEXDSP:
+            s->resampler = &swri_speex_resampler;
             break;
         #endif
         default:
