@@ -401,6 +401,8 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     int ret = AVERROR(ENOSYS);
 
     if (!strcmp(cmd, "volume")) {
+        if (!args)
+            return AVERROR(EINVAL);
         if ((ret = set_expr(&vol->volume_pexpr, args, ctx)) < 0)
             return ret;
         if (vol->eval_mode == EVAL_MODE_ONCE) {
