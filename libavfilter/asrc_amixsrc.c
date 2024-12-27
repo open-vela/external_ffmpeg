@@ -129,8 +129,8 @@ static const AVOption amix_options[] = {
 AVFILTER_DEFINE_CLASS(amix);
 
 static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
-    int (*on_event_cb)(void *udata, int evt, int64_t args),
-    void *on_event_cb_udata)
+                               int (*on_event_cb)(void *udata, int evt, int64_t args),
+                               void *on_event_cb_udata)
 {
     MixContext *s = ctx->priv;
     MixInput *in;
