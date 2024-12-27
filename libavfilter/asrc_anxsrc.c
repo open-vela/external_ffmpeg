@@ -32,7 +32,6 @@
 #include <libavcodec/avcodec.h>
 
 #include "avfilter.h"
-#include "avfilter-nx.h"
 #include "avfilter_internal.h"
 #include "filters.h"
 #include "internal.h"
