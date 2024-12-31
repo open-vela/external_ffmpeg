@@ -58,7 +58,23 @@ typedef struct ANxSrcPriv {
     void *on_event_cb_udata;
 } ANxSrcPriv;
 
-static int anxsrc_config_props(AVFilterLink *link);
+static int anxsrc_config_props(AVFilterLink *link)
+{
+    AVFilterContext *ctx = link->src;
+    ANxSrcPriv *sink = ctx->priv;
+    NuttxPriv *priv = &sink->priv;
+
+    priv->periods = sink->periods;
+    priv->period_time = sink->period_time;
+
+    priv->nonblock = true;
+    priv->codec = av_get_pcm_codec(link->format, -1);
+    priv->sample_rate = link->sample_rate;
+    priv->format = link->format;
+    priv->ch_layout.nb_channels = link->ch_layout.nb_channels;
+
+    return 0;
+}
 
 static int anxsrc_init_dict(AVFilterContext *ctx)
 {
@@ -284,7 +300,7 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
 
         if (!args)
             return AVERROR(EINVAL);
-        
+
         if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
             return AVERROR(EINVAL);
 
@@ -436,24 +452,6 @@ static int anxsrc_query_formats(const AVFilterContext *ctx,
 out:
     av_opt_freep_ranges(&ranges);
     return ret;
-}
-
-static int anxsrc_config_props(AVFilterLink *link)
-{
-    AVFilterContext *ctx = link->src;
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
-
-    priv->periods = sink->periods;
-    priv->period_time = sink->period_time;
-
-    priv->nonblock = true;
-    priv->codec = av_get_pcm_codec(link->format, -1);
-    priv->sample_rate = link->sample_rate;
-    priv->format = link->format;
-    priv->ch_layout.nb_channels = link->ch_layout.nb_channels;
-
-    return 0;
 }
 
 #define OFFSET(x) offsetof(ANxSrcPriv, x)
