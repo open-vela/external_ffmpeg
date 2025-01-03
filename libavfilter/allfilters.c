@@ -44,6 +44,7 @@ extern const AVFilter ff_af_aemphasis;
 extern const AVFilter ff_af_aeval;
 extern const AVFilter ff_af_aexciter;
 extern const AVFilter ff_af_afade;
+extern const AVFilter ff_af_afadext;
 extern const AVFilter ff_af_afftdn;
 extern const AVFilter ff_af_afftfilt;
 extern const AVFilter ff_af_afir;
