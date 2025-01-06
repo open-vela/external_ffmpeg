@@ -44,11 +44,6 @@ typedef struct AudioFadeContext {
     int crossfade_is_over;
     int64_t pts;
 
-#ifdef CONFIG_AFADEXT_FILTER
-    int fq_max_nb;
-    FFFrameQueue fq;
-#endif
-
     void (*fade_samples)(uint8_t **dst, uint8_t * const *src,
                          int nb_samples, int channels, int direction,
                          int64_t start, int64_t range, int curve);
@@ -60,13 +55,9 @@ typedef struct AudioFadeContext {
 
 enum CurveType { NONE = -1, TRI, QSIN, ESIN, HSIN, LOG, IPAR, QUA, CUB, SQU, CBR, PAR, EXP, IQSIN, IHSIN, DESE, DESI, LOSI, SINC, ISINC, NB_CURVES };
 
-#define AFADE_TIME_BEGIN -1
-#define AFADE_TIME_DOING -2
-#define AFADE_TIME_DONE  -3
-
-#define AFADE_DIR_NONE -1
-#define AFADE_DIR_IN 0
-#define AFADE_DIR_OUT 1
+#define AFADE_BEGIN -1
+#define AFADE_DOING -2
+#define AFADE_DONE  -3
 
 #define OFFSET(x) offsetof(AudioFadeContext, x)
 #define FLAGS AV_OPT_FLAG_AUDIO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
@@ -297,10 +288,6 @@ static av_cold int init(AVFilterContext *ctx)
     if (INT64_MAX - s->nb_samples < s->start_sample)
         return AVERROR(EINVAL);
 
-#ifdef CONFIG_AFADEXT_FILTER
-    ff_framequeue_init(&s->fq, NULL);
-#endif
-
     return 0;
 }
 
@@ -312,14 +299,14 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
     AVFrame *out_buf;
     int64_t cur_sample = av_rescale_q(buf->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
 
-    if (s->start_time == AFADE_TIME_BEGIN) {
+    if (s->start_time == AFADE_BEGIN) {
         s->start_sample = cur_sample;
-        s->start_time   = AFADE_TIME_DOING;
+        s->start_time   = AFADE_DOING;
     }
 
     if (!s->nb_samples ||
-       (!s->type && (s->start_time == AFADE_TIME_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
-        (s->type && (s->start_time != AFADE_TIME_DONE && cur_sample + nb_samples < s->start_sample)))
+       (!s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample)) ||
+        (s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)))
         return ff_filter_frame(outlink, buf);
 
     if (av_frame_is_writable(buf)) {
@@ -331,8 +318,8 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
         av_frame_copy_props(out_buf, buf);
     }
 
-    if ((!s->type && (s->start_time != AFADE_TIME_DONE && cur_sample + nb_samples < s->start_sample)) ||
-        (s->type && (s->start_time == AFADE_TIME_DONE || s->start_sample + s->nb_samples < cur_sample))) {
+    if ((!s->type && (s->start_time != AFADE_DONE && cur_sample + nb_samples < s->start_sample)) ||
+        (s->type && (s->start_time == AFADE_DONE || s->start_sample + s->nb_samples < cur_sample))) {
         av_samples_set_silence(out_buf->extended_data, 0, nb_samples,
                                out_buf->ch_layout.nb_channels, out_buf->format);
     } else {
@@ -348,9 +335,9 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *buf)
                         s->type ? -1 : 1, start,
                         s->nb_samples, s->curve);
 
-        if (s->start_time == AFADE_TIME_DOING &&
+        if (s->start_time == AFADE_DOING &&
             (cur_sample + nb_samples >= s->start_sample + s->nb_samples)) {
-            s->start_time = AFADE_TIME_DONE;
+            s->start_time = AFADE_DONE;
             s->nb_samples = 0;
         }
     }
@@ -391,232 +378,6 @@ const AVFilter ff_af_afade = {
 };
 
 #endif /* CONFIG_AFADE_FILTER */
-
-#ifdef CONFIG_AFADEXT_FILTER
-
-static const AVOption afadext_options[] = {
-    { "type",      "set the fade direction",   OFFSET(type),      AV_OPT_TYPE_INT, {.i64 = AFADE_DIR_NONE}, AFADE_DIR_NONE, 1,             TFLAGS, "type" },
-    { "fq_max_nb", "set fade fifo max number", OFFSET(fq_max_nb), AV_OPT_TYPE_INT, {.i64 = 2             }, 1,              INT64_MAX,     FLAGS },
-    { "curve",     "set fade curve type",      OFFSET(curve),     AV_OPT_TYPE_INT, {.i64 = TRI           }, NONE,           NB_CURVES - 1, FLAGS, "curve" },
-    { NULL }
-};
-
-AVFILTER_DEFINE_CLASS(afadext);
-
-static av_cold void uninit(AVFilterContext *ctx)
-{
-    AudioFadeContext *priv = ctx->priv;
-
-    ff_framequeue_free(&priv->fq);
-}
-
-static void afadext_clear_queue(AVFilterContext *ctx, int drain)
-{
-    AVFilterLink *outlink = ctx->outputs[0];
-    AudioFadeContext *priv = ctx->priv;
-
-    while (ff_framequeue_queued_frames(&priv->fq)) {
-        AVFrame *frame = ff_framequeue_take(&priv->fq);
-        if (drain)
-            ff_filter_frame(outlink, frame);
-        else
-            av_frame_free(&frame);
-    }
-}
-
-static int afadext_fade_samples(AVFilterContext *ctx, int drain)
-{
-    AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterLink *inlink = ctx->inputs[0];
-    AudioFadeContext *priv = ctx->priv;
-    AVFrame *out_frame;
-    AVFrame *in_frame;
-    int64_t cur_sample;
-    int64_t start;
-    int ret;
-
-    if (!inlink->time_base.num || !inlink->time_base.den || !inlink->sample_rate) {
-        av_log(ctx, AV_LOG_INFO, "not do fade processing, just return.");
-        return 0;
-    }
-
-    priv->nb_samples = ff_framequeue_queued_samples(&priv->fq) / (drain ? 1 : priv->fq_max_nb);
-    av_log(ctx, AV_LOG_INFO, "afadext fq_nb:%d type %d drain %d.\n", ff_framequeue_queued_frames(&priv->fq), priv->type, drain);
-
-    do {
-        in_frame = ff_framequeue_take(&priv->fq);
-        cur_sample = av_rescale_q(in_frame->pts, inlink->time_base, (AVRational){1, inlink->sample_rate});
-
-        if (!priv->start_sample)
-            priv->start_sample = cur_sample;
-
-        if (av_frame_is_writable(in_frame))
-            out_frame = in_frame;
-        else {
-            out_frame = ff_get_audio_buffer(outlink, in_frame->nb_samples);
-            if (!out_frame)
-                return AVERROR(ENOMEM);
-
-            av_frame_copy_props(out_frame, in_frame);
-        }
-
-        if (priv->type == AFADE_DIR_IN)
-            start = cur_sample - priv->start_sample;
-        else
-            start = priv->start_sample + priv->nb_samples - cur_sample;
-
-        /* apply the fade in/out effect to the obtained frame */
-        priv->fade_samples(out_frame->extended_data, in_frame->extended_data,
-                           in_frame->nb_samples, in_frame->ch_layout.nb_channels,
-                           priv->type ? -1 : 1, start, priv->nb_samples, priv->curve);
-
-        if (priv->start_sample &&
-            (cur_sample + in_frame->nb_samples >= priv->start_sample + priv->nb_samples)) {
-            priv->start_sample = 0;
-            priv->nb_samples = 0;
-        }
-
-        if (in_frame != out_frame)
-            av_frame_free(&in_frame);
-
-        ret = ff_filter_frame(outlink, out_frame);
-        if (ret < 0)
-            break;
-
-    } while(drain && ff_framequeue_queued_frames(&priv->fq));
-
-    return ret;
-}
-
-static int afadext_activate(AVFilterContext *ctx)
-{
-    AVFilterLink *outlink = ctx->outputs[0];
-    AVFilterLink *inlink = ctx->inputs[0];
-    AudioFadeContext *priv = ctx->priv;
-    int ret = 0, status;
-    AVFrame *frame;
-    int64_t pts;
-
-    FF_FILTER_FORWARD_STATUS_BACK_ALL(outlink, ctx);
-
-    ff_inlink_acknowledge_status(inlink, &status, &pts);
-    if (status == AVERROR_EOF) {
-        av_log(ctx, AV_LOG_INFO, "afadext find inlink EOF fq_nb:%d type %d.\n",
-               ff_framequeue_queued_frames(&priv->fq), priv->type);
-
-        /* when EOF is received during the stop/reset/close operation.
-           the fade in/out has been triggered by src. we should
-           clear frame in fq. */
-        afadext_clear_queue(ctx, 0);
-
-        priv->type = AFADE_DIR_NONE;
-        ff_outlink_set_status(outlink, status, pts);
-        goto out;
-    }
-
-    if (ff_inlink_check_available_frame(inlink)) {
-        ret = ff_inlink_consume_frame(inlink, &frame);
-        if (ret < 0)
-            goto out;
-
-        ret = ff_framequeue_add(&priv->fq, frame);
-        if (ret < 0) {
-            av_frame_free(&frame);
-            goto out;
-        }
-    }
-
-    if (ff_framequeue_queued_frames(&priv->fq) <= priv->fq_max_nb) {
-        ff_inlink_request_frame(inlink);
-        goto out;
-    }
-
-    if (priv->type == AFADE_DIR_IN) {
-        ret = afadext_fade_samples(ctx, 1);
-        priv->type = AFADE_DIR_NONE;
-    } else {
-        frame = ff_framequeue_take(&priv->fq);
-        if (priv->type == AFADE_DIR_OUT) {
-            av_log(ctx, AV_LOG_INFO, "afadext mute frame.\n");
-            av_samples_set_silence(frame->extended_data, 0, frame->nb_samples,
-                                   frame->ch_layout.nb_channels, frame->format);
-        }
-
-        ret = ff_filter_frame(outlink, frame);
-        if (ret < 0)
-            goto out;
-    }
-
-    if (ff_outlink_frame_wanted(outlink))
-        ff_inlink_request_frame(inlink);
-
-out:
-    return ret;
-}
-
-static int afadext_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
-                                   char *res, int res_len, int flags)
-{
-    AudioFadeContext *priv = ctx->priv;
-    int ret = AVERROR(ENOSYS);
-
-    if (!strcmp(cmd, "dump"))
-        ret = snprintf(res, res_len, "fq_nb:%d", ff_framequeue_queued_frames(&priv->fq));
-    else if (!strcmp(cmd, "fade")) {
-        int drain;
-        ret = sscanf(args, "%d,%d", &priv->type, &drain);
-        if (ret != 2) {
-            av_log(ctx, AV_LOG_ERROR, "afadext command args %s Invalid.\n", args);
-            return -EINVAL;
-        }
-
-        if (ff_framequeue_queued_frames(&priv->fq)) {
-            if (priv->type == AFADE_DIR_NONE)
-                afadext_clear_queue(ctx, 1);
-            else {
-                ret = afadext_fade_samples(ctx, drain);
-                if (priv->type == AFADE_DIR_IN)
-                    priv->type = AFADE_DIR_NONE;
-            }
-        }
-    } else
-        ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-
-    return ret;
-}
-
-static int afadext_forward_command(AVFilterContext *ctx,
-                                   int pad_idx, const char *target, const char *cmd,
-                                   const char *args, char *res, int res_len, int flags)
-{
-    AudioFadeContext *priv = ctx->priv;
-
-    if (!strcmp(cmd, "flush")) {
-        afadext_clear_queue(ctx, 0);
-
-        if (args && !strcmp(args, "seek"))
-            priv->type = AFADE_DIR_IN;
-    }
-
-    return avfilter_forward_command(ctx, pad_idx, target, cmd, args, res, res_len, flags);
-}
-
-const AVFilter ff_af_afadext = {
-    .name            = "afadext",
-    .description     = NULL_IF_CONFIG_SMALL("fade in/out with data queue."),
-    .priv_size       = sizeof(AudioFadeContext),
-    .init            = init,
-    .uninit          = uninit,
-    FILTER_INPUTS(avfilter_af_afade_inputs),
-    FILTER_OUTPUTS(avfilter_af_afade_outputs),
-    .activate        = afadext_activate,
-    .process_command = afadext_process_command,
-    .forward_command = afadext_forward_command,
-    .priv_class      = &afadext_class,
-    .flags           = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
-};
-
-#endif /* CONFIG_AFADEXT_FILTER */
 
 #if CONFIG_ACROSSFADE_FILTER
 
