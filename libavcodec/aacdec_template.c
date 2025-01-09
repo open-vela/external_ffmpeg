@@ -103,17 +103,6 @@ static int output_configure(AACContext *ac,
 
 #define overread_err "Input buffer exhausted before END element found\n"
 
-static int get_sample_rate_index(int sample_rate)
-{
-    int i;
-    for (i = 0; i < FF_ARRAY_ELEMS(ff_mpeg4audio_sample_rates); i++) {
-        if (sample_rate == ff_mpeg4audio_sample_rates[i])
-            return i;
-    }
-
-    return -1;
-}
-
 static int count_channels(uint8_t (*layout)[3], int tags)
 {
     int i, sum = 0;
@@ -869,7 +858,6 @@ static int decode_pce(AVCodecContext *avctx, MPEG4AudioConfig *m4ac,
                       uint8_t (*layout_map)[3],
                       GetBitContext *gb, int byte_align_ref)
 {
-    AACContext *ac = avctx->priv_data;
     int num_front, num_side, num_back, num_lfe, num_assoc_data, num_cc;
     int sampling_index;
     int comment_len;
@@ -899,8 +887,7 @@ static int decode_pce(AVCodecContext *avctx, MPEG4AudioConfig *m4ac,
         skip_bits(gb, 3); // mixdown_coeff_index and pseudo_surround
 
     if (get_bits_left(gb) < 5 * (num_front + num_side + num_back + num_cc) + 4 *(num_lfe + num_assoc_data + num_cc)) {
-        if (!ac->is_raw_data)
-            av_log(avctx, AV_LOG_ERROR, "decode_pce: " overread_err);
+        av_log(avctx, AV_LOG_ERROR, "decode_pce: " overread_err);
         return -1;
     }
     decode_channel_map(layout_map       , AAC_CHANNEL_FRONT, gb, num_front);
@@ -922,8 +909,7 @@ static int decode_pce(AVCodecContext *avctx, MPEG4AudioConfig *m4ac,
     /* comment field, first byte is length */
     comment_len = get_bits(gb, 8) * 8;
     if (get_bits_left(gb) < comment_len) {
-        if (!ac->is_raw_data)
-            av_log(avctx, AV_LOG_ERROR, "decode_pce: " overread_err);
+        av_log(avctx, AV_LOG_ERROR, "decode_pce: " overread_err);
         return AVERROR_INVALIDDATA;
     }
     skip_bits_long(gb, comment_len);
@@ -1586,8 +1572,7 @@ static int decode_band_types(AACContext *ac, enum BandType band_type[120],
                 sect_len_incr = get_bits(gb, bits);
                 sect_end += sect_len_incr;
                 if (get_bits_left(gb) < 0) {
-                    if (!ac->is_raw_data)
-                        av_log(ac->avctx, AV_LOG_ERROR, "decode_band_types: "overread_err);
+                    av_log(ac->avctx, AV_LOG_ERROR, "decode_band_types: "overread_err);
                     return AVERROR_INVALIDDATA;
                 }
                 if (sect_end > ics->max_sfb) {
@@ -3185,47 +3170,6 @@ static int parse_adts_frame_header(AACContext *ac, GetBitContext *gb)
     return size;
 }
 
-static int update_codec_info(AACContext *ac)
-{
-    AVCodecContext *avctx = ac->avctx;
-    uint8_t layout_map[MAX_ELEM_ID*4][3];
-    int layout_map_tags, ret;
-
-    push_output_configuration(ac);
-
-    ac->oc[1].m4ac.chan_config = avctx->ch_layout.nb_channels;
-    if (ac->oc[1].m4ac.chan_config) {
-        if ((ret = set_default_channel_config(ac, ac->avctx,
-                                              layout_map, &layout_map_tags,
-                                              ac->oc[1].m4ac.chan_config)) < 0)
-            return ret;
-        if ((ret = output_configure(ac, layout_map, layout_map_tags,
-                                    FFMAX(ac->oc[1].status, OC_TRIAL_FRAME), 0)) < 0)
-            return ret;
-    }
-
-    if ((ret = get_sample_rate_index(avctx->sample_rate)) < 0)
-        return AVERROR(EINVAL);
-    ac->oc[1].m4ac.sampling_index = ret;
-    ac->oc[1].m4ac.sample_rate = avctx->sample_rate;
-
-    /**
-     * aac profile type, use in AudioObjectType.
-     * default set AAC LC profile.
-     */
-    ac->oc[1].m4ac.object_type = 2;
-    ac->oc[1].m4ac.frame_length_short = 0;
-
-    if (ac->oc[0].status != OC_LOCKED ||
-        ac->oc[0].m4ac.chan_config != ac->oc[1].m4ac.chan_config ||
-        ac->oc[0].m4ac.sample_rate != ac->oc[1].m4ac.sample_rate) {
-        ac->oc[1].m4ac.sbr = -1;
-        ac->oc[1].m4ac.ps  = -1;
-    }
-
-    return 0;
-}
-
 static int aac_decode_er_frame(AVCodecContext *avctx, void *data,
                                int *got_frame_ptr, GetBitContext *gb)
 {
@@ -3313,7 +3257,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, AVFrame *frame,
 
     ac->frame = frame;
 
-    if (!ac->is_raw_data && show_bits(gb, 12) == 0xfff) {
+    if (show_bits(gb, 12) == 0xfff) {
         if ((err = parse_adts_frame_header(ac, gb)) < 0) {
             av_log(avctx, AV_LOG_ERROR, "Error decoding AAC frame header.\n");
             goto fail;
@@ -3323,10 +3267,6 @@ static int aac_decode_frame_int(AVCodecContext *avctx, AVFrame *frame,
             err = AVERROR_INVALIDDATA;
             goto fail;
         }
-    } else {
-        if ((err = update_codec_info(ac)) < 0)
-            return err;
-        ac->is_raw_data = 1;
     }
 
     if ((err = frame_configure_elements(avctx)) < 0)
@@ -3460,8 +3400,7 @@ static int aac_decode_frame_int(AVCodecContext *avctx, AVFrame *frame,
             goto fail;
 
         if (get_bits_left(gb) < 3) {
-            if (!ac->is_raw_data)
-                av_log(avctx, AV_LOG_ERROR, overread_err);
+            av_log(avctx, AV_LOG_ERROR, overread_err);
             err = AVERROR_INVALIDDATA;
             goto fail;
         }
@@ -3516,72 +3455,22 @@ fail:
     return err;
 }
 
-static int get_last_packet(AVCodecContext *avctx, AVPacket **avpkt)
-{
-    AACContext *ac = avctx->priv_data;
-    int ret = 0;
-
-    if (ac->last_packet != NULL && ac->last_packet->size > 0) {
-        int last_packet_size = ac->last_packet->size;
-        ret = av_grow_packet(ac->last_packet, (*avpkt)->size);
-        if (ret < 0)
-            return -ENOMEM;
-
-        memcpy(ac->last_packet->data + last_packet_size, (*avpkt)->data, (*avpkt)->size);
-
-        av_packet_unref(*avpkt);
-        av_packet_move_ref(*avpkt, ac->last_packet);
-        av_packet_free(&ac->last_packet);
-    }
-
-    return 0;
-}
-
-static int save_last_packet(AVCodecContext *avctx, AVPacket *avpkt)
-{
-    AACContext *ac = avctx->priv_data;
-    if (ac->last_packet) {
-        av_log(NULL, AV_LOG_WARNING," last packet is not null.");
-        av_packet_free(&ac->last_packet);
-    }
-
-    ac->last_packet = av_packet_clone(avpkt);
-    if(!ac->last_packet) {
-        av_log(NULL, AV_LOG_ERROR,"av_packet_clone failed to clone AVPacket\n");
-        return AVERROR(ENOMEM);
-    }
-
-    return 0;
-}
-
 static int aac_decode_frame(AVCodecContext *avctx, AVFrame *frame,
                             int *got_frame_ptr, AVPacket *avpkt)
 {
     AACContext *ac = avctx->priv_data;
-    size_t new_extradata_size;
-    size_t jp_dualmono_size;
-    const uint8_t *new_extradata;
-    const uint8_t* jp_dualmono;
-    const uint8_t* buf;
+    const uint8_t *buf = avpkt->data;
+    int buf_size = avpkt->size;
     GetBitContext gb;
     int buf_consumed;
     int buf_offset;
-    int buf_size;
     int err;
-
-    if (ac->is_raw_data && (err = get_last_packet(avctx, &avpkt) < 0)) {
-        av_log(ac->avctx, AV_LOG_ERROR, "get last packet err (%d).\n", err);
-        return err;
-    }
-
-    buf = avpkt->data;
-    buf_size = avpkt->size;
-
-    new_extradata = av_packet_get_side_data(avpkt,
+    size_t new_extradata_size;
+    const uint8_t *new_extradata = av_packet_get_side_data(avpkt,
                                        AV_PKT_DATA_NEW_EXTRADATA,
                                        &new_extradata_size);
-
-    jp_dualmono   = av_packet_get_side_data(avpkt,
+    size_t jp_dualmono_size;
+    const uint8_t *jp_dualmono   = av_packet_get_side_data(avpkt,
                                        AV_PKT_DATA_JP_DUALMONO,
                                        &jp_dualmono_size);
 
@@ -3618,12 +3507,8 @@ static int aac_decode_frame(AVCodecContext *avctx, AVFrame *frame,
     default:
         err = aac_decode_frame_int(avctx, frame, got_frame_ptr, &gb, avpkt);
     }
-    if (err < 0) {
-        if (!ac->is_raw_data)
-            return err;
-        else
-            save_last_packet(avctx, avpkt);
-    }
+    if (err < 0)
+        return err;
 
     buf_consumed = (get_bits_count(&gb) + 7) >> 3;
     for (buf_offset = buf_consumed; buf_offset < buf_size; buf_offset++)
@@ -3656,9 +3541,6 @@ static av_cold int aac_decode_close(AVCodecContext *avctx)
     ff_mdct15_uninit(&ac->mdct960);
 #endif
     av_freep(&ac->fdsp);
-    if (ac->last_packet)
-        av_packet_free(&ac->last_packet);
-
     return 0;
 }
 
@@ -3669,7 +3551,6 @@ static void aacdec_init(AACContext *c)
     c->apply_tns                                = apply_tns;
     c->windowing_and_mdct_ltp                   = windowing_and_mdct_ltp;
     c->update_ltp                               = update_ltp;
-    c->is_raw_data                              = 0;
 #if USE_FIXED
     c->vector_pow43                             = vector_pow43;
     c->subband_scale                            = subband_scale;
