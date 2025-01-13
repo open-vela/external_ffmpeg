@@ -33,6 +33,7 @@ typedef struct StreamSelectContext {
     int *map;
     int nb_map;
     int is_audio;
+    int prevent_eof;
 } StreamSelectContext;
 
 #define OFFSET(x) offsetof(StreamSelectContext, x)
@@ -41,6 +42,7 @@ typedef struct StreamSelectContext {
 static const AVOption streamselect_options[] = {
     { "inputs",  "number of input streams",           OFFSET(nb_inputs),  AV_OPT_TYPE_INT,    {.i64=1},    1, INT_MAX,  .flags=FLAGS },
     { "map",     "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},              .flags=TFLAGS },
+    { "prevent_eof",  "prevent the reverse transmission of EOF", OFFSET(prevent_eof),  AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX, .flags=FLAGS },
     { NULL }
 };
 
@@ -67,8 +69,11 @@ static int activate(AVFilterContext *ctx)
         }
 
         for (j = 0; j < s->nb_map; j++) {
-            if (ff_outlink_get_status(ctx->outputs[j]))
+            if (ff_outlink_get_status(ctx->outputs[j])) {
+                if (s->map[j] >= 0 && s->prevent_eof)
+                    eof = false;
                 continue;
+            }
 
             if (s->map[j] < 0)
                 ff_outlink_set_status(ctx->outputs[j], AVERROR_EOF, AV_NOPTS_VALUE);
@@ -471,7 +476,8 @@ static int sanitize_formats(AVFilterContext *ctx)
         bool used = false;
 
         for (j = 0; j < s->nb_map; j++) {
-            if (s->map[j] == i && ctx->outputs[j]->incfg.formats) {
+            if (s->map[j] == i && (ctx->outputs[j]->incfg.formats ||
+               (ctx->inputs[i]->outcfg.formats && s->prevent_eof))) {
                 used = true;
                 break;
             }
