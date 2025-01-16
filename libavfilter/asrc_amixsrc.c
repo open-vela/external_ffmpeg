@@ -101,6 +101,7 @@ typedef struct MixContext {
     int period_ms;              /**< period time in ms for each input */
 
     pthread_mutex_t mutex;     /**< mutex for thread safety */
+    int *map;                  /**< map from input to output */
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -386,6 +387,9 @@ static int activate(AVFilterContext *ctx)
             in->on_event_cb(in->on_event_cb_udata, 0, (intptr_t)src);
 
         for (j = 0; j < s->nb_outputs; j++) {
+            if (s->map && s->map[i] < 0)
+                continue;
+
             if (!in->fifos[j]) {
                 in->fifos[j] = av_audio_fifo_alloc(ctx->outputs[j]->format, ctx->outputs[j]->ch_layout.nb_channels, 1024);
                 if (!in->fifos[j]) {
@@ -416,6 +420,9 @@ static int activate(AVFilterContext *ctx)
     calculate_scales(s, 0);
 
     for (i = 0; i < s->nb_outputs; i++) {
+        if (s->map && s->map[i] < 0)
+            continue;
+
         int nb_samples = 4096;
 
         for (j = 0; j < s->nb_inputs; j++) {
@@ -462,6 +469,9 @@ static int activate(AVFilterContext *ctx)
 
     if (is_eof) {
         for (i = 0; i < s->nb_outputs; i++) {
+            if (s->map && s->map[i] < 0)
+                continue;
+
             AVFrame *frame = av_frame_alloc();
             if (!frame)
                 return AVERROR(ENOMEM);
@@ -532,6 +542,7 @@ static av_cold void uninit(AVFilterContext *ctx)
 
     av_freep(&s->inputs);
     av_freep(&s->fdsp);
+    av_freep(&s->map);
     pthread_mutex_destroy(&s->mutex);
 }
 
@@ -577,6 +588,13 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         }
 
         return 0;
+    } else if (!av_strcasecmp(cmd, "map")) {
+        ret = avfilter_parse_mapping(args, &s->map, s->nb_outputs);
+        if (ret < 0)
+            return ret;
+
+        ff_filter_set_ready(ctx, 100);
+        return ret;
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);

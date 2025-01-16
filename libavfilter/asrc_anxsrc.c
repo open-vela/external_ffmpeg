@@ -30,6 +30,7 @@
 #include <libavformat/internal.h>
 #include <libavformat/demux.h>
 #include <libavcodec/avcodec.h>
+#include "libavutil/mem.h"
 
 #include "avfilter.h"
 #include "avfilter_internal.h"
@@ -56,6 +57,8 @@ typedef struct ANxSrcPriv {
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
+
+    int *map;
 } ANxSrcPriv;
 
 static int anxsrc_config_props(AVFilterLink *link)
@@ -104,6 +107,7 @@ static void anxsrc_uninit(AVFilterContext *ctx)
     NuttxPriv *priv = &sink->priv;
 
     ff_nuttx_deinit(priv);
+    av_freep(&sink->map);
 }
 
 static void anxsrc_close(AVFilterContext *ctx)
@@ -269,6 +273,9 @@ static int anxsrc_activate(AVFilterContext *ctx)
     }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        if (s->map && s->map[i] < 0)
+            continue;
+
         link = ctx->outputs[i];
         ret = ff_filter_frame(link, av_frame_clone(frame));
         if (ret < 0)
@@ -351,6 +358,13 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
                  priv->draining, priv->period_bytes, priv->periods,
                  dq_count(&priv->bufferq), priv->mq);
         return 0;
+    } else if (!av_strcasecmp(cmd, "map")) {
+        ret = avfilter_parse_mapping(args, &sink->map, sink->nb_outputs);
+        if (ret < 0)
+            return ret;
+
+        ff_filter_set_ready(ctx, 100);
+        return ret;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
