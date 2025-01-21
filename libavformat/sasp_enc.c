@@ -52,6 +52,9 @@ static const AVCodecTag *const sasp_codec_tags_list[] = { codec_sasp_tags, NULL 
 static int sasp_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     SASPFrameHeader header = {0};
+    char buf[64] = {0};
+    int ret;
+
     header.magic = MKBETAG('s', 'a', 's', 'p');
     header.timestamp = pkt->pts * av_q2d(s->streams[pkt->stream_index]->time_base) * 1000;
     header.body_len = pkt->size;
@@ -63,15 +66,18 @@ static int sasp_write_packet(AVFormatContext *s, AVPacket *pkt)
         header.info.audio.channel = s->streams[pkt->stream_index]->codecpar->channels;
         header.info.audio.sample_rate = s->streams[pkt->stream_index]->codecpar->sample_rate;
     } else {
-        if (pkt->flags & AV_PKT_FLAG_KEY) {
-            header.type = MKBETAG('I', 'f', 'r', 'm');
-        } else {
-            header.type = MKBETAG('P', 'f', 'r', 'm');
-        }
+        header.type = MKBETAG('v', 'i', 'd', 'e');
         header.info.video.width = s->streams[pkt->stream_index]->codecpar->width;
         header.info.video.height = s->streams[pkt->stream_index]->codecpar->height;
+        header.info.video.fps = s->streams[pkt->stream_index]->avg_frame_rate.den / s->streams[pkt->stream_index]->avg_frame_rate.num;
     }
-    avio_write(s->pb, (unsigned char*)&header, header.header_len);
+    ret = ff_sasp_write_frame_header(buf, &header);
+    if (ret < 0) {
+        av_log(s, AV_LOG_ERROR, "Failed to write frame header ret:%d:%s\n", ret, av_err2str(ret));
+        return ret;
+    }
+
+    avio_write(s->pb, buf, ret);
     avio_write(s->pb, pkt->data, pkt->size);
     return 0;
 }
