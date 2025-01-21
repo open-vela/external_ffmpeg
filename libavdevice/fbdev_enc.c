@@ -23,6 +23,7 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include "libavutil/file_open.h"
+#include "libavutil/frame.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
@@ -83,6 +84,12 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
         ret = AVERROR(EINVAL);
         av_log(h, AV_LOG_ERROR, "Framebuffer pixel format not supported.\n");
         goto fail;
+    } else if (pix_fmt != h->streams[0]->codecpar->format) {
+        ret = AVERROR(EINVAL);
+        av_log(h, AV_LOG_ERROR, "Pixel format %s is not supported, use %s\n",
+               av_get_pix_fmt_name(h->streams[0]->codecpar->format),
+               av_get_pix_fmt_name(pix_fmt));
+        goto fail;
     }
 
     fbdev->data = mmap(NULL, fbdev->fixinfo.smem_len, PROT_WRITE, MAP_SHARED, fbdev->fd, 0);
@@ -98,38 +105,23 @@ static av_cold int fbdev_write_header(AVFormatContext *h)
     return ret;
 }
 
-static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
+static int fbdev_write_frame(AVFormatContext *h, uint8_t *data, int src_line_size)
 {
     FBDevContext *fbdev = h->priv_data;
     const uint8_t *pin;
     uint8_t *pout;
-    enum AVPixelFormat fb_pix_fmt;
     int disp_height;
     int bytes_to_copy;
     AVCodecParameters *par = h->streams[0]->codecpar;
-    enum AVPixelFormat video_pix_fmt = par->format;
     int video_width = par->width;
     int video_height = par->height;
     int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
-    int src_line_size = video_width * bytes_per_pixel;
     int i;
-
-    if (ioctl(fbdev->fd, FBIOGET_VSCREENINFO, &fbdev->varinfo) < 0)
-        av_log(h, AV_LOG_WARNING,
-               "Error refreshing variable info: %s\n", av_err2str(AVERROR(errno)));
-
-    fb_pix_fmt = ff_get_pixfmt_from_fb_varinfo(&fbdev->varinfo);
-
-    if (fb_pix_fmt != video_pix_fmt) {
-        av_log(h, AV_LOG_ERROR, "Pixel format %s is not supported, use %s\n",
-               av_get_pix_fmt_name(video_pix_fmt), av_get_pix_fmt_name(fb_pix_fmt));
-        return AVERROR(EINVAL);
-    }
 
     disp_height = FFMIN(fbdev->varinfo.yres, video_height);
     bytes_to_copy = FFMIN(fbdev->varinfo.xres, video_width) * bytes_per_pixel;
 
-    pin  = pkt->data;
+    pin  = data;
     pout = fbdev->data +
            bytes_per_pixel * fbdev->varinfo.xoffset +
            fbdev->varinfo.yoffset * fbdev->fixinfo.line_length;
@@ -177,6 +169,24 @@ static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
     return 0;
 }
 
+static int fbdev_write_packet(AVFormatContext *h, AVPacket *pkt)
+{
+    AVCodecParameters *par = h->streams[0]->codecpar;
+    int video_width = par->width;
+    int bytes_per_pixel = ((par->bits_per_coded_sample + 7) >> 3);
+
+    return fbdev_write_frame(h, pkt->data, video_width * bytes_per_pixel);
+}
+
+static int fbdev_write_uncoded_frame(AVFormatContext *h, int stream_index,
+                                     AVFrame **frame, unsigned flags)
+{
+    if (flags & AV_WRITE_UNCODED_FRAME_QUERY)
+        return 0;
+
+    return fbdev_write_frame(h, (*frame)->data[0], (*frame)->linesize[0]);
+}
+
 static av_cold int fbdev_write_trailer(AVFormatContext *h)
 {
     FBDevContext *fbdev = h->priv_data;
@@ -216,6 +226,7 @@ const FFOutputFormat ff_fbdev_muxer = {
     .write_packet   = fbdev_write_packet,
     .write_trailer  = fbdev_write_trailer,
     .get_device_list = fbdev_get_device_list,
+    .write_uncoded_frame = fbdev_write_uncoded_frame,
     .p.flags        = AVFMT_NOFILE | AVFMT_VARIABLE_FPS | AVFMT_NOTIMESTAMPS,
     .p.priv_class   = &fbdev_class,
 };
