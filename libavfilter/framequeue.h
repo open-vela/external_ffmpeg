@@ -135,6 +135,12 @@ int ff_framequeue_add(FFFrameQueue *fq, AVFrame *frame);
 AVFrame *ff_framequeue_take(FFFrameQueue *fq);
 
 /**
+ * Take a frame at a given index.
+ * The first frame is numbered 0; the designated frame must exist.
+ */
+AVFrame *ff_framequeue_take_index(FFFrameQueue *fq, size_t idx);
+
+/**
  * Access a frame in the queue, without removing it.
  * The first frame is numbered 0; the designated frame must exist.
  */

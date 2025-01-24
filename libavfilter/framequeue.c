@@ -113,6 +113,22 @@ AVFrame *ff_framequeue_take(FFFrameQueue *fq)
     return b->frame;
 }
 
+AVFrame *ff_framequeue_take_index(FFFrameQueue *fq, size_t idx)
+{
+    FFFrameBucket *b0, *b1, tmp;
+    int i;
+
+    for (i = idx; i > 0; i--) {
+        b0 = bucket(fq, i);
+        b1 = bucket(fq, i - 1);
+        tmp = *b0;
+        *b0 = *b1;
+        *b1 = tmp;
+    }
+
+    return ff_framequeue_take(fq);
+}
+
 AVFrame *ff_framequeue_peek(FFFrameQueue *fq, size_t idx)
 {
     FFFrameBucket *b;
