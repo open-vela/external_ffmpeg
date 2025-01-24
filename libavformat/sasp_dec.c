@@ -78,10 +78,7 @@ static void sasp_add_video(AVFormatContext *ic, SASPStreamHeader *stream_header)
 
     avpriv_set_pts_info(st, 64, 1, AV_TIME_BASE);
 
-    /* force h264/h265 parsing, in case there are
-     * network problems and the pkts maybe lossed
-     */
-    sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+    sti->need_parsing = AVSTREAM_PARSE_NONE;
 }
 
 static void sasp_add_audio(AVFormatContext *ic, SASPStreamHeader *stream_header)
@@ -103,7 +100,7 @@ static void sasp_add_audio(AVFormatContext *ic, SASPStreamHeader *stream_header)
     av_channel_layout_default(&st->codecpar->ch_layout, stream_header->channel);
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
 
-    sti->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+    sti->need_parsing = AVSTREAM_PARSE_NONE;
 }
 
 static int sasp_read_header(AVFormatContext *ic)
