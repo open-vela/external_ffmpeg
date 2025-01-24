@@ -278,20 +278,47 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
     if (flags & AV_WRITE_UNCODED_FRAME_QUERY)
         return 0;
 
-    if (ff_framequeue_queued_frames(&priv->queue) >= priv->frame_count) {
-        dequeue_frame = ff_framequeue_take(&priv->queue);
-        av_frame_free(&dequeue_frame);
-        priv->drop_count++;
-    }
+    new_frame = av_frame_clone(*frame);
+    if (!new_frame)
+        return AVERROR(ENOMEM);
 
-    if ((new_frame = av_frame_clone(*frame)) == NULL) {
-        av_log(priv, AV_LOG_WARNING, "%s: unable to reference the frame, drop it\n", __func__);
+    ret = ff_framequeue_add(&priv->queue, new_frame);
+    if (ret < 0) {
+        av_log(priv, AV_LOG_WARNING, "%s: frame enqueue failed\n", __func__);
         return ret;
     }
 
-    if ((ret = ff_framequeue_add(&priv->queue, new_frame)) < 0) {
-        av_log(priv, AV_LOG_WARNING, "%s: frame enqueue failed\n", __func__);
-        av_frame_free(&new_frame);
+    if (ff_framequeue_queued_frames(&priv->queue) > priv->frame_count) {
+        int selected = -1;
+        int i, count;
+        int64_t min_duration = INT64_MAX;
+
+        count = ff_framequeue_queued_frames(&priv->queue);
+        for (i = 1; i < count; i++) {
+            AVFrame *f0 = ff_framequeue_peek(&priv->queue, i - 1);
+            AVFrame *f1 = ff_framequeue_peek(&priv->queue, i);
+            int64_t duration = f1->pts - f0->pts;
+            if (duration < min_duration) {
+                min_duration = duration;
+                selected = i;
+            }
+        }
+
+        if (selected < 0) {
+            av_log(priv, AV_LOG_WARNING, "No frame selected\n");
+            return AVERROR(EINVAL);
+        }
+
+        dequeue_frame = ff_framequeue_take_index(&priv->queue, selected);
+        if (!dequeue_frame) {
+            av_log(priv, AV_LOG_WARNING, "No frame dequeued\n");
+            return AVERROR(EINVAL);
+        }
+
+        av_log(priv, AV_LOG_INFO, "vtun drop frame pts:%lld selected=%d\n", dequeue_frame->pts, selected);
+
+        av_frame_free(&dequeue_frame);
+        priv->drop_count++;
     }
 
     return ret;
