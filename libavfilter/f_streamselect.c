@@ -181,70 +181,13 @@ static int parse_definition(AVFilterContext *ctx, int nb_pads, int is_input, int
     return 0;
 }
 
-static int parse_mapping(AVFilterContext *ctx, const char *map)
-{
-    StreamSelectContext *s = ctx->priv;
-    int *new_map;
-    int new_nb_map = 0;
-
-    if (!map) {
-        av_log(ctx, AV_LOG_ERROR, "mapping definition is not set\n");
-        return AVERROR(EINVAL);
-    }
-
-    new_map = av_calloc(s->nb_inputs, sizeof(*new_map));
-    if (!new_map)
-        return AVERROR(ENOMEM);
-
-    while (1) {
-        char *p;
-        const int n = strtol(map, &p, 0);
-
-        av_log(ctx, AV_LOG_DEBUG, "n=%d map=%p p=%p\n", n, map, p);
-
-        if (map == p)
-            break;
-        map = p;
-
-        if (new_nb_map >= s->nb_inputs) {
-            av_log(ctx, AV_LOG_ERROR, "Unable to map more than the %d "
-                   "input pads available\n", s->nb_inputs);
-            av_free(new_map);
-            return AVERROR(EINVAL);
-        }
-
-        if (n < 0 || n >= ctx->nb_inputs) {
-            av_log(ctx, AV_LOG_ERROR, "Input stream index %d doesn't exist "
-                   "(there is only %d input streams defined)\n",
-                   n, s->nb_inputs);
-            av_free(new_map);
-            return AVERROR(EINVAL);
-        }
-
-        av_log(ctx, AV_LOG_VERBOSE, "Map input stream %d to output stream %d\n", n, new_nb_map);
-        new_map[new_nb_map++] = n;
-    }
-
-    if (!new_nb_map) {
-        av_log(ctx, AV_LOG_ERROR, "invalid mapping\n");
-        av_free(new_map);
-        return AVERROR(EINVAL);
-    }
-
-    av_freep(&s->map);
-    s->map = new_map;
-    s->nb_map = new_nb_map;
-
-    av_log(ctx, AV_LOG_VERBOSE, "%d map set\n", s->nb_map);
-
-    return 0;
-}
-
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                            char *res, int res_len, int flags)
 {
+    StreamSelectContext *s = ctx->priv;
+
     if (!strcmp(cmd, "map")) {
-        int ret = parse_mapping(ctx, args);
+        int ret = avfilter_parse_mapping(args, &s->map, s->nb_inputs);
 
         if (ret < 0)
             return ret;
@@ -283,7 +226,7 @@ static av_cold int init(AVFilterContext *ctx)
     av_log(ctx, AV_LOG_DEBUG, "Configured with %d inpad and %d outpad\n",
            ctx->nb_inputs, ctx->nb_outputs);
 
-    return parse_mapping(ctx, s->map_str);
+    return avfilter_parse_mapping(s->map_str, &s->map, s->nb_inputs);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)

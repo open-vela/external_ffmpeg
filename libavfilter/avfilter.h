@@ -1404,6 +1404,18 @@ char *avfilter_graph_dump(AVFilterGraph *graph, const char *options);
 int avfilter_graph_request_oldest(AVFilterGraph *graph);
 
 /**
+ * Parse the mapping definition.
+ *
+ * @param map_str      The mapping definition string.
+ * @param map          Pointer to an array that will hold the parsed mapping relationships.
+ *                     The array will be allocated by this function and should be freed
+ *                     by the caller using av_freep().
+ * @param nb_map       The number of mappings expected in the map array.
+ * @return             0 on success, a negative AVERROR code on error.
+ */
+int avfilter_parse_mapping(const char *map_str, int **map, int nb_map);
+
+/**
  * @}
  */
 
