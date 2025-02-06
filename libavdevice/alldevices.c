@@ -57,6 +57,7 @@ extern const FFOutputFormat ff_sndio_muxer;
 extern const FFInputFormat  ff_v4l2_demuxer;
 extern const FFOutputFormat ff_v4l2_muxer;
 extern const FFInputFormat  ff_vfwcap_demuxer;
+extern const FFOutputFormat ff_vtun_muxer;
 extern const FFInputFormat  ff_xcbgrab_demuxer;
 extern const FFOutputFormat ff_xv_muxer;
 

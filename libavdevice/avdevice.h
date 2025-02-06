@@ -208,6 +208,8 @@ enum AVAppToDevMessageType {
      * data: AVDictionary **: list of options.
      */
     AV_APP_TO_DEV_GET_FORMAT_REQUEST = MKBETAG('G', 'F', 'R', 'Q'),
+    AV_APP_TO_DEV_GET_CAPS_REQUEST   = MKBETAG('G','C','P','Q'),
+
     /**
      * Get fd for poll.
      *
@@ -402,6 +404,28 @@ int avdevice_app_to_dev_control_message(struct AVFormatContext *s,
 int avdevice_dev_to_app_control_message(struct AVFormatContext *s,
                                         enum AVDevToAppMessageType type,
                                         void *data, size_t data_size);
+
+/**
+ * Structure describes device capabilities.
+ *
+ * It is used by devices in conjunction with av_device_capabilities AVOption table
+ * to implement capabilities probing API based on AVOption API. Should not be used directly.
+ */
+typedef struct AVDeviceCapabilitiesQuery {
+    const AVClass *av_class;
+    AVFormatContext *device_context;
+    enum AVCodecID codec;
+    enum AVSampleFormat sample_format;
+    enum AVPixelFormat pixel_format;
+    int sample_rate;
+    int channels;
+    int64_t channel_layout;
+    int window_width;
+    int window_height;
+    int frame_width;
+    int frame_height;
+    AVRational fps;
+} AVDeviceCapabilitiesQuery;
 
 /**
  * Structure describes basic parameters of the device.
