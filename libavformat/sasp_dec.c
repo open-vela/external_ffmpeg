@@ -41,6 +41,7 @@ typedef struct SASPDecContext {
     uint64_t audio_pos;
     uint64_t video_pos;
     int noheader;
+    int onestream;
 } SASPDecContext;
 
 static int sasp_probe(const AVProbeData *probe)
@@ -78,6 +79,9 @@ static void sasp_add_video(AVFormatContext *ic, SASPStreamHeader *stream_header)
 
     avpriv_set_pts_info(st, 64, 1, AV_TIME_BASE);
 
+    if (s->onestream)
+        ic->ctx_flags &= ~AVFMTCTX_NOHEADER;
+
     sti->need_parsing = AVSTREAM_PARSE_NONE;
 }
 
@@ -99,6 +103,9 @@ static void sasp_add_audio(AVFormatContext *ic, SASPStreamHeader *stream_header)
 
     av_channel_layout_default(&st->codecpar->ch_layout, stream_header->channel);
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
+
+    if (s->onestream)
+        ic->ctx_flags &= ~AVFMTCTX_NOHEADER;
 
     sti->need_parsing = AVSTREAM_PARSE_NONE;
 }
@@ -199,6 +206,7 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
     st = ic->streams[pkt->stream_index];
 
     pkt->pts = av_rescale(frame_header.timestamp, st->time_base.den, 1000);
+    pkt->dts = pkt->pts;
 
     av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"ms, seqnum %"PRIu32"\n",
            frame_header.codec_id == s->video_codec_id ? "video" : "audio",
@@ -211,6 +219,7 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
 #define DEC AV_OPT_FLAG_DECODING_PARAM
 static const AVOption sasp_options[] = {
     { "noheader", "set no stream header mode for sasp_demuxer", OFFSET(noheader), AV_OPT_TYPE_INT, {.i64 = 1}, 0, 1, DEC},
+    { "onestream", "set one stream mode for sasp_demuxer", OFFSET(onestream), AV_OPT_TYPE_INT, {.i64 = 0}, 0, 1, DEC},
     { NULL },
 };
 
