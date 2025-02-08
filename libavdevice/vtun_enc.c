@@ -449,7 +449,7 @@ static int vtun_control_message(struct AVFormatContext *h, int type,
 #define OFFSET(x) offsetof(VtunCtx, x)
 #define ENC AV_OPT_FLAG_ENCODING_PARAM
 static const AVOption options[] = {
-    { "frame_count", "Set frame count", OFFSET(frame_count), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 4, ENC },
+    { "frame_count", "Set frame count", OFFSET(frame_count), AV_OPT_TYPE_INT, {.i64 = 1}, 1, 8, ENC },
     { "server_path", "Set server path", OFFSET(server_path), AV_OPT_TYPE_STRING, { .str = NULL }, 0, 0, ENC },
     { "stop", "set stop flag init value", OFFSET(stop), AV_OPT_TYPE_BOOL, {.i64 = 0}, 0, 1, ENC },
     { NULL }
