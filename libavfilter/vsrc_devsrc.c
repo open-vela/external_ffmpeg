@@ -354,7 +354,7 @@ static int devsrc_query_formats(AVFilterContext *ctx)
                 }
             }
             av_opt_freep_ranges(&ranges);
-        } else if (ret == AVERROR(ENODEV)) {
+        } else if (ret == AVERROR(ENODEV) || ret == AVERROR(EINVAL)) {
             /* By default, no camera(/dev/videoX) in system, so system
              * load graph failed after the graph updated with camera function.
              * Add this segment for system can boot normally even if no camera */
