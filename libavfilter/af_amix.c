@@ -158,6 +158,8 @@ static int frame_list_add_frame(FrameList *frame_list, int nb_samples, int64_t p
 typedef struct MixContext {
     const AVClass *class;       /**< class for AVOptions */
     AVFloatDSPContext *fdsp;
+    float *volumes;               /**< custom volume from inputs which ranges in 0-1.0 */
+    float *volumes_last;          /**< diff volume last set from inputs */
 
     int nb_inputs;              /**< number of inputs */
     int active_inputs;          /**< number of input currently active */
@@ -314,6 +316,21 @@ static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, 
         dst[i] = av_clip_int16(dst[i] + ((accu + 0x4000) >> 15));
     }
 }
+
+static inline void fade_samples_s16_small(int16_t *dst, const int16_t *src,
+          int nb_samples, int chs, int16_t dst_volume, int16_t src_volume)
+{
+    int i, j, k = 0;
+    int32_t step;
+
+    step = ((dst_volume - src_volume) << 15) / nb_samples;
+    for (i = 0; i < nb_samples; i++) {
+        for (j = 0; j < chs; j++, k++) {
+            dst[k] = av_clip_int16((src[k] * (src_volume + (step * i >> 15)) + 0x4000) >> 15);
+        }
+    }
+}
+
 /**
  * Read samples from the input FIFOs, mix, and write to the output link.
  */
@@ -387,22 +404,34 @@ static int output_frame(AVFilterLink *outlink)
             if (out_buf->format == AV_SAMPLE_FMT_S16 ||
                 out_buf->format == AV_SAMPLE_FMT_S16P) {
                 for (p = 0; p < planes; p++) {
-                    vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
-                                        (int16_t *) in_buf->extended_data[p],
-                                        s->input_scale[i] * INT16_MAX, plane_size);
+                    int16_t volume_isrc = s->input_scale[i] * INT16_MAX * s->volumes_last[i];
+                    int16_t volume_idst = s->input_scale[i] * INT16_MAX * s->volumes[i];
+                    if (volume_idst!= volume_isrc) {
+                        fade_samples_s16_small((int16_t *)out_buf->extended_data[p],
+                                               (int16_t *)in_buf->extended_data[p],
+                                               nb_samples, s->planar ? 1 : in_buf->ch_layout.nb_channels,
+                                               volume_idst, volume_isrc);
+                    } else {
+                        vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
+                                             (int16_t *) in_buf->extended_data[p],
+                                             volume_idst, plane_size);
+                    }
+                    s->volumes_last[i] = s->volumes[i];
                 }
             } else if (out_buf->format == AV_SAMPLE_FMT_FLT ||
                        out_buf->format == AV_SAMPLE_FMT_FLTP) {
                 for (p = 0; p < planes; p++) {
                     s->fdsp->vector_fmac_scalar((float *)out_buf->extended_data[p],
                                                 (float *) in_buf->extended_data[p],
-                                                s->input_scale[i], plane_size);
+                                                s->input_scale[i] * s->volumes[i],
+                                                plane_size);
                 }
             } else {
                 for (p = 0; p < planes; p++) {
                     s->fdsp->vector_dmac_scalar((double *)out_buf->extended_data[p],
                                                 (double *) in_buf->extended_data[p],
-                                                s->input_scale[i], plane_size);
+                                                s->input_scale[i] * s->volumes[i],
+                                                plane_size);
                 }
             }
         }
@@ -502,9 +531,22 @@ static int activate(AVFilterContext *ctx)
                 return ret;
             }
 
+            if (buf->metadata) {
+                AVDictionaryEntry *en = av_dict_get(buf->metadata, "volume", NULL, 0);
+                if (en)
+                    s->volumes[i] = av_strtod(en->value, NULL);
+            }
+
+
             //av_log(ctx, AV_LOG_INFO, "amix input:%d samples:%d\n", i, buf->nb_samples);
 try_out:
             av_frame_free(&buf);
+
+            /* Fade is not allowed at the first frame, because there is no src volume to fade. */
+            if ((s->input_state[i] & INPUT_ON) && s->volumes_last[i] < 0)
+                s->volumes_last[i] = s->volumes[i];
+            else if (!(s->input_state[i] & INPUT_ON))
+                s->volumes_last[i] = -1.0f;
 
             ret = output_frame(outlink);
             if (ret < 0)
@@ -601,15 +643,35 @@ static av_cold int init(AVFilterContext *ctx)
 
     s->fdsp = avpriv_float_dsp_alloc(0);
     if (!s->fdsp)
-        return AVERROR(ENOMEM);
+        goto err;
 
     s->weights = av_calloc(s->nb_inputs, sizeof(*s->weights));
     if (!s->weights)
-        return AVERROR(ENOMEM);
+        goto err;
+
+    s->volumes = av_calloc(s->nb_inputs, sizeof(*s->volumes));
+    if (!s->volumes)
+        goto err;
+
+    s->volumes_last = av_malloc(s->nb_inputs * sizeof(*s->volumes_last));
+    if (!s->volumes_last)
+        goto err;
+
+    for (i = 0; i < s->nb_inputs; i++) {
+        s->volumes[i] = 1.0f;    /*If volume is not set from frame, keep full volume. */
+        s->volumes_last[i] = -1.0f;
+    }
 
     parse_weights(ctx);
 
     return 0;
+
+err:
+    av_freep(&s->fdsp);
+    av_freep(&s->weights);
+    av_freep(&s->volumes);
+
+    return AVERROR(ENOMEM);
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -628,6 +690,8 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->input_scale);
     av_freep(&s->scale_norm);
     av_freep(&s->weights);
+    av_freep(&s->volumes);
+    av_freep(&s->volumes_last);
     av_freep(&s->fdsp);
 }
 
