@@ -1383,6 +1383,9 @@ static int movie_async_dump(AVFilterContext *ctx, char *res, int res_len)
     AVCodecParameters *param;
     int pos = 0, ret, i, idx;
 
+    if (!res || !res_len)
+        return AVERROR(EINVAL);
+
     ret = snprintf(res, res_len, "st: %d", movie->state);
     pos += ret;
 
