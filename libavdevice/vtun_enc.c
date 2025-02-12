@@ -285,6 +285,7 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
     ret = ff_framequeue_add(&priv->queue, new_frame);
     if (ret < 0) {
         av_log(priv, AV_LOG_WARNING, "%s: frame enqueue failed\n", __func__);
+        av_frame_free(&new_frame);
         return ret;
     }
 
@@ -315,7 +316,7 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
             return AVERROR(EINVAL);
         }
 
-        av_log(priv, AV_LOG_INFO, "vtun drop frame pts:%lld selected=%d\n", dequeue_frame->pts, selected);
+        av_log(priv, AV_LOG_DEBUG, "vtun drop frame pts:%lld selected=%d\n", dequeue_frame->pts, selected);
 
         av_frame_free(&dequeue_frame);
         priv->drop_count++;
