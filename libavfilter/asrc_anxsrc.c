@@ -264,8 +264,7 @@ static int anxsrc_activate(AVFilterContext *ctx)
         goto out;
 
     if (s->on_event_cb) {
-#define MEDIA_GRAPH_EVT_EMIT_FRAME 1
-        s->on_event_cb(s->on_event_cb_udata, MEDIA_GRAPH_EVT_EMIT_FRAME, (intptr_t)frame);
+        s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
         li->frame_wanted_out = 1;
     }
 
