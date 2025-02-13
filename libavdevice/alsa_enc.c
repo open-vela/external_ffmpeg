@@ -126,7 +126,7 @@ static int audio_write_lastpacket(AVFormatContext *s1)
     int ret;
 
     ret = snd_pcm_writei(priv->h, priv->lastpkt->data, priv->lastpkt->size / priv->frame_size);
-    av_log(s1, AV_LOG_DEBUG, "audio_write_lastpacket->snd_pcm_writei(%p, %p, %d %d)\n", priv->h, priv->lastpkt->data, priv->lastpkt->size / priv->frame_size, ret);
+    av_log(s1, AV_LOG_TRACE, "audio_write_lastpacket->snd_pcm_writei(%p, %p, %d %d)\n", priv->h, priv->lastpkt->data, priv->lastpkt->size / priv->frame_size, ret);
     if (ret < 0) {
         if (ff_alsa_xrun_recover(s1, ret) < 0)
             return AVERROR(EIO);
@@ -180,8 +180,7 @@ static int audio_write_packet(AVFormatContext *s1, AVPacket *pkt)
         return audio_write_lastpacket(s1);
 
     res = snd_pcm_writei(priv->h, buf, size);
-    av_log(s1, AV_LOG_DEBUG, "audio_write_packet->snd_pcm_writei(%p, %p, %d %d)\n", priv->h, buf, size, res);
-
+    av_log(s1, AV_LOG_TRACE, "audio_write_packet->snd_pcm_writei(%p, %p, %d %d)\n", priv->h, buf, size, res);
     if (res < 0) {
         if (ff_alsa_xrun_recover(s1, res) < 0)
             return AVERROR(EIO);
