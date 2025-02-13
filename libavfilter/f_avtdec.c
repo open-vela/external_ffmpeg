@@ -113,6 +113,7 @@ static void avtdec_close(AVFilterContext *ctx, AVCodecContext **codec_ctx)
     pthread_mutex_lock(&priv->mutex);
     ff_framequeue_free(&priv->in_queue);
     ff_framequeue_free(&priv->out_queue);
+    priv->avtdec_id = -1;
     pthread_mutex_unlock(&priv->mutex);
 
     if (*codec_ctx) {
@@ -507,9 +508,11 @@ static int avtdec_activate(AVFilterContext* ctx)
         return ret;
     }
 
+    pthread_mutex_lock(&priv->mutex);
     if (priv->avtdec_id < 0) {
         if (ff_inlink_consume_frame(inlink, &in) <= 0) {
             ff_inlink_request_frame(inlink);
+            pthread_mutex_unlock(&priv->mutex);
             return AVERROR(EAGAIN);
         }
 
@@ -520,20 +523,20 @@ static int avtdec_activate(AVFilterContext* ctx)
         ff_framequeue_add(&priv->in_queue, in);
 
         ret = avtdec_thread_create(ctx);
-        if (ret < 0)
+        if (ret < 0) {
+            pthread_mutex_unlock(&priv->mutex);
             return ret;
+        }
 
         /* Wait for the decoder to initialize. */
-        pthread_mutex_lock(&priv->mutex);
         while (priv->thread_exit)
             pthread_cond_wait(&priv->cond, &priv->mutex);
-        pthread_mutex_unlock(&priv->mutex);
 
         outlink->frame_wanted_out = 1;
+        pthread_mutex_unlock(&priv->mutex);
         return 0;
     }
 
-    pthread_mutex_lock(&priv->mutex);
     if (!ff_outlink_frame_wanted(outlink) && ff_framequeue_queued_frames(&priv->out_queue) >= priv->ocnt) {
         /* The downstream does not require frame,
          * but the outqueue has stored ocnt frames,
