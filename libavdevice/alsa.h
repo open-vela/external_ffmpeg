@@ -30,10 +30,10 @@
 #ifndef AVDEVICE_ALSA_H
 #define AVDEVICE_ALSA_H
 
+#include <alsa/asoundlib.h>
 #include <nuttx/config.h>
 #include <nuttx/audio/audio.h>
 
-#include <asoundlib.h>
 #include "config.h"
 #include "libavutil/log.h"
 #include "timefilter.h"

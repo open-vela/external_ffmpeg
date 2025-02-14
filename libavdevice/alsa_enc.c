@@ -37,9 +37,7 @@
  * which gives a low latency suitable for real-time playback.
  */
 
-#include "libavutil/frame.h"
-
-#include <asoundlib.h>
+#include <alsa/asoundlib.h>
 #include <poll.h>
 
 #include "alsa.h"
@@ -47,6 +45,7 @@
 #include "libavcodec/bsf.h"
 #include "libavformat/internal.h"
 #include "libavformat/mux.h"
+#include "libavutil/frame.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
