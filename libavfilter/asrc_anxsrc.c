@@ -55,9 +55,6 @@ typedef struct ANxSrcPriv {
 
     int nb_outputs;
 
-    int (*on_event_cb)(void *udata, int evt, int64_t args);
-    void *on_event_cb_udata;
-
     int *map;
 } ANxSrcPriv;
 
@@ -110,43 +107,22 @@ static void anxsrc_uninit(AVFilterContext *ctx)
     av_freep(&sink->map);
 }
 
-static void anxsrc_close(AVFilterContext *ctx)
-{
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
-
-    if (!priv->running)
-        return;
-
-    ff_nuttx_close(priv);
-}
-
-static int av_anxsrc_set_event_cb(AVFilterContext *ctx,
-    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
-{
-    ANxSrcPriv *s = ctx->priv;
-    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
-    int i, ret;
-
-    s->on_event_cb = on_event_cb;
-    s->on_event_cb_udata = udata;
-
-    if (s->on_event_cb) {
-        li->frame_wanted_out = 1;
-        ff_filter_set_ready(ctx, 100);
-    }
-
-    return 0;
-}
-
 static int anxsrc_open(AVFilterContext *ctx)
 {
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
+    ANxSrcPriv *src = ctx->priv;
+    NuttxPriv *priv = &src->priv;
     int ret;
+    int i;
 
     if (priv->running)
         return 0;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (src->map && src->map[i] < 0)
+            continue;
+
+        anxsrc_config_props(ctx->outputs[i]);
+    }
 
     ret = ff_nuttx_open(priv);
     if (ret < 0)
@@ -239,24 +215,13 @@ error:
 
 static int anxsrc_activate(AVFilterContext *ctx)
 {
-    AVFilterLink *link = ctx->outputs[0];
-    FilterLinkInternal *li = ff_link_internal(link);
     ANxSrcPriv *s = ctx->priv;
-    AVFrame *frame;
+    NuttxPriv *priv = &s->priv;
+    AVFrame *frame = NULL;
+    AVFilterLink *link;
     int i, ret;
 
-    ret = ff_outlink_get_status(link);
-    if (ret < 0) {
-        if (ret == AVERROR_EOF)
-            anxsrc_close(ctx);
-        return ret;
-    }
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (ff_outlink_frame_wanted(link))
-            break;
-    }
-    if (i == ctx->nb_outputs)
+    if (priv->stopped)
         return FFERROR_NOT_READY;
 
     ret = anxsrc_open(ctx);
@@ -266,11 +231,6 @@ static int anxsrc_activate(AVFilterContext *ctx)
     ret = anxsrc_wrap_frame(ctx, &frame);
     if (ret < 0)
         goto out;
-
-    if (s->on_event_cb) {
-        s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
-        li->frame_wanted_out = 1;
-    }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (s->map && s->map[i] < 0)
@@ -284,12 +244,6 @@ static int anxsrc_activate(AVFilterContext *ctx)
 
 out:
     av_frame_free(&frame);
-
-    if (ret == AVERROR_EOF) {
-        anxsrc_close(ctx);
-        ff_avfilter_link_set_in_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-    }
-
     return ret;
 }
 
@@ -301,34 +255,45 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
     int ret;
 
     if (!strcmp(cmd, "link")) {
-        int (*on_event_cb)(void *udata, int evt, int64_t args);
-        void *udata;
-
-        if (!args)
-            return AVERROR(EINVAL);
-
-        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
-            return AVERROR(EINVAL);
-
-        ret = av_anxsrc_set_event_cb(ctx, on_event_cb, udata);
-        if (ret < 0)
-            return ret;
-
-        return 0;
-    } else if (!strcmp(cmd, "unlink")) {
-        ret = av_anxsrc_set_event_cb(ctx, NULL, NULL);
-        if (ret < 0)
-            return ret;
-
-        return 0;
-    } else if (!strcmp(cmd, "start")) {
         priv->stopped = false;
         anxsrc_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
         return 0;
-    } else if (!strcmp(cmd, "stop")) {
-        priv->stopped = true;
+    } else if (!strcmp(cmd, "unlink")) {
+        int active_outputs = 0;
+        AVFilterLink* link;
+        AVFrame *frame;
+        int i;
+
+        link = (AVFilterLink*)args;
+        if (!link)
+            return AVERROR(EINVAL);
+
+        frame = av_frame_alloc();
+        if (!frame)
+            return AVERROR(ENOMEM);
+
+        frame->nb_samples = 0;
+        frame->format = link->format;
+        frame->sample_rate = link->sample_rate;
+        av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
+
+        ret =  ff_filter_frame(link, frame);
+        if (ret < 0)
+            av_log(ctx, AV_LOG_ERROR, "send empty frame failed:%d\n", ret);
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            link = ctx->outputs[i];
+            if (link && avfilter_link_is_active(link))
+                active_outputs++;
+        }
+
+        if (active_outputs == 0 && priv->running) {
+            ff_nuttx_close(priv);
+            priv->stopped = true;
+        }
+
         anxsrc_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
-        return 0;
+        return ret;
     } else if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
 
