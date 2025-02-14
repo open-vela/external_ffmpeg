@@ -187,9 +187,10 @@ static int amix_buffersrc_close(MixInput **pin)
     in = *pin;
     s = in->ctx->priv;
 
+    pthread_mutex_lock(&s->mutex);
+
     in->state = INPUT_EOF;
 
-    pthread_mutex_lock(&s->mutex);
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->inputs[i] == in)
             break;
