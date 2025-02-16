@@ -4028,7 +4028,9 @@ if test -f configure; then
 elif test -f src/configure; then
     source_path=src
 else
-    source_path=$(cd $(dirname "$0"); pwd)
+    if [ -z "$source_path" ]; then
+        source_path=$(cd $(dirname "$0"); pwd)
+    fi
     case "$source_path" in
         *[[:blank:]]*) die "Out of tree builds are impossible with whitespace in source path." ;;
     esac
@@ -4055,14 +4057,16 @@ find_filters_extern(){
     file=$source_path/$1
     sed -n 's/^extern const AVFilter ff_[avfsinkrc]\{2,5\}_\([[:alnum:]_]\{1,\}\);/\1_filter/p' $file
 }
+if [ -z "$FILTER_LIST" ]; then
+    FILTER_LIST=$(find_filters_extern libavfilter/allfilters.c)
+    ENCODER_LIST=$(find_things_extern encoder FFCodec libavcodec/allcodecs.c)
+    DECODER_LIST=$(find_things_extern decoder FFCodec libavcodec/allcodecs.c)
+fi
+    OUTDEV_LIST=$(find_things_extern muxer AVOutputFormat libavdevice/alldevices.c outdev)
+    INDEV_LIST=$(find_things_extern demuxer AVInputFormat libavdevice/alldevices.c indev)
+    MUXER_LIST=$(find_things_extern muxer AVOutputFormat libavformat/allformats.c)
+    DEMUXER_LIST=$(find_things_extern demuxer AVInputFormat libavformat/allformats.c)
 
-FILTER_LIST=$(find_filters_extern libavfilter/allfilters.c)
-OUTDEV_LIST=$(find_things_extern muxer AVOutputFormat libavdevice/alldevices.c outdev)
-INDEV_LIST=$(find_things_extern demuxer AVInputFormat libavdevice/alldevices.c indev)
-MUXER_LIST=$(find_things_extern muxer AVOutputFormat libavformat/allformats.c)
-DEMUXER_LIST=$(find_things_extern demuxer AVInputFormat libavformat/allformats.c)
-ENCODER_LIST=$(find_things_extern encoder FFCodec libavcodec/allcodecs.c)
-DECODER_LIST=$(find_things_extern decoder FFCodec libavcodec/allcodecs.c)
 CODEC_LIST="
     $ENCODER_LIST
     $DECODER_LIST
