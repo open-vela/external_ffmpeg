@@ -262,6 +262,9 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         ff_filter_set_ready(ctx, 100);
 
         return ret;
+    } else if(!strcmp(cmd, "prevent_eof")) {
+        s->prevent_eof=1;
+        return 0;
     } else if (!strcmp(cmd, "dump")) {
         if (s->map) {
             ret = snprintf(res, res_len, "map:");
