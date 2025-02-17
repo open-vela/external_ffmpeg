@@ -521,7 +521,8 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
                                                     AV_TIME_BASE_Q, stream->time_base);
         movie->streams[i].completed  = false;
     }
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%" PRId64 ".\n", name, movie->format_ctx->start_time);
+
+    av_dump_format(movie->format_ctx, ret, name, 0);
 
     if (movie->format_ctx->duration == AV_NOPTS_VALUE)
         movie->duration_ms = 0;
