@@ -798,9 +798,11 @@ static void movie_async_proc_event(AVFilterContext *ctx)
 
         switch (event->event) {
             case AVMOVIE_ASYNC_EVENT_STARTED:
-                for (i = 0; i < ctx->nb_outputs; i++)
-                    avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
-
+                for (i = 0; i < ctx->nb_outputs; i++){
+                  avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
+                  avfilter_forward_command(ctx, i, "all", "prevent_eof", NULL, NULL, 0, 0);
+                }
+                    
                 movie_async_send_vsyncmode(ctx, movie->streams[0].type == AVMEDIA_TYPE_AUDIO &&
                                            movie->streams[0].index >= 0);
                 movie->need_reconfig = true;
