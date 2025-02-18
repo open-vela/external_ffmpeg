@@ -363,9 +363,6 @@ static bool movie_async_dat_available(AVFilterContext *ctx)
     if (movie->state >= AVMOVIE_ASYNC_STATE_STOPPED)
         return false;
 
-    if (movie->live_stream)
-        return true;
-
     /* As long as one data queue less than movie->dat_max, continue read */
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (movie->streams[i].index < 0)
