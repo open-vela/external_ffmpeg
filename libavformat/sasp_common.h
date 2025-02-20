@@ -29,9 +29,9 @@
 #include "avformat.h"
 
 typedef struct SASPStreamHeader {
+    uint32_t magic;
     uint16_t version;
     uint16_t header_len;
-    uint32_t magic;
     uint32_t video_codec_id;
     uint32_t audio_codec_id;
 
@@ -39,6 +39,9 @@ typedef struct SASPStreamHeader {
     uint32_t width;
     uint32_t height;
     uint32_t fps;
+    int pix_fmt;              // for version 2.
+    int64_t first_pts;        // for version 2.
+    int64_t first_dts;        // for version 2.
 
     /* audio specific info */
     uint32_t sample_rate;
@@ -63,7 +66,9 @@ typedef struct SASPFrameHeader {
     uint32_t body_len;
     uint32_t codec_id;
     uint32_t sequence;
-    uint64_t timestamp;       ///< frame timestamp: ms
+    uint64_t pts;             ///< frame pts: us. for version 2.
+    uint64_t dts;             ///< frame dts: us. for version 2.
+    uint64_t timestamp;       ///< frame timestamp: ms. for version 0.
     uint32_t type;            ///< frame type: video/audio
     union {
         SASPVideoInfo video;

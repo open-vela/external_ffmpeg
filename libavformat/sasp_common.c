@@ -60,6 +60,17 @@ int ff_sasp_read_stream_header(AVFormatContext *ic, SASPStreamHeader *header)
     header->fps = avio_rb32(ic->pb);
     length += sizeof(header->fps);
 
+    if (header->version == 2) {
+        header->pix_fmt = avio_rb32(ic->pb);
+        length += sizeof(header->pix_fmt);
+
+        header->first_pts = avio_rb64(ic->pb);
+        length += sizeof(header->first_pts);
+
+        header->first_dts = avio_rb64(ic->pb);
+        length += sizeof(header->first_dts);
+    }
+
     header->sample_rate = avio_rb32(ic->pb);
     length += sizeof(header->sample_rate);
 
@@ -103,6 +114,17 @@ int ff_sasp_write_stream_header(char *header_buf, const SASPStreamHeader *header
     AV_WB32(header_buf + length, header->fps);
     length += sizeof(header->fps);
 
+    if (header->version == 2) {
+        AV_WB32(header_buf + length, header->pix_fmt);
+        length += sizeof(header->pix_fmt);
+
+        AV_WB64(header_buf + length, header->first_pts);
+        length += sizeof(header->first_pts);
+
+        AV_WB64(header_buf + length, header->first_dts);
+        length += sizeof(header->first_dts);
+    }
+
     AV_WB32(header_buf + length, header->sample_rate);
     length += sizeof(header->sample_rate);
 
@@ -137,8 +159,16 @@ int ff_sasp_read_frame_header(AVFormatContext *ic, SASPFrameHeader *header)
     header->sequence = avio_rb32(ic->pb);
     length += sizeof(header->sequence);
 
-    header->timestamp = avio_rb64(ic->pb);
-    length += sizeof(header->timestamp);
+    if (header->version == 2) {
+        header->pts = avio_rb64(ic->pb);
+        length += sizeof(header->pts);
+
+        header->dts = avio_rb64(ic->pb);
+        length += sizeof(header->dts);
+    } else {
+        header->timestamp = avio_rb64(ic->pb);
+        length += sizeof(header->timestamp);
+    }
 
     header->type = avio_rb32(ic->pb);
     length += sizeof(header->type);
@@ -192,8 +222,16 @@ int ff_sasp_write_frame_header(char *frame_buf, const SASPFrameHeader *header)
     AV_WB32(frame_buf + length, header->sequence);
     length += sizeof(header->sequence);
 
-    AV_WB64(frame_buf + length, header->timestamp);
-    length += sizeof(header->timestamp);
+    if (header->version == 2) {
+        AV_WB64(frame_buf + length, header->pts);
+        length += sizeof(header->pts);
+
+        AV_WB64(frame_buf + length, header->dts);
+        length += sizeof(header->dts);
+    } else {
+        AV_WB64(frame_buf + length, header->timestamp);
+        length += sizeof(header->timestamp);
+    }
 
     AV_WB32(frame_buf + length, header->type);
     length += sizeof(header->type);

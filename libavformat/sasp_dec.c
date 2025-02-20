@@ -76,6 +76,10 @@ static void sasp_add_video(AVFormatContext *ic, SASPStreamHeader *stream_header)
     st->avg_frame_rate   = st->r_frame_rate;
     st->codecpar->width  = stream_header->width;
     st->codecpar->height = stream_header->height;
+    if (stream_header->version == 2) {
+        st->codecpar->format = stream_header->pix_fmt;
+        st->start_time       = stream_header->first_pts;
+    }
 
     avpriv_set_pts_info(st, 64, 1, AV_TIME_BASE);
 
@@ -83,6 +87,9 @@ static void sasp_add_video(AVFormatContext *ic, SASPStreamHeader *stream_header)
         ic->ctx_flags &= ~AVFMTCTX_NOHEADER;
 
     sti->need_parsing = AVSTREAM_PARSE_NONE;
+    if (stream_header->version == 2) {
+        sti->first_dts    = stream_header->first_dts;
+    }
 }
 
 static void sasp_add_audio(AVFormatContext *ic, SASPStreamHeader *stream_header)
@@ -149,7 +156,6 @@ static int sasp_read_header(AVFormatContext *ic)
 
 static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
 {
-    SASPStreamHeader stream_header = { 0 };
     SASPFrameHeader frame_header = { 0 };
     SASPDecContext *s = ic->priv_data;
     AVStream *st;
@@ -160,11 +166,16 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
         return ret;
 
     if (s->noheader) {
+        SASPStreamHeader stream_header = { 0 };
+        stream_header.version = frame_header.version;
+        stream_header.first_pts = AV_NOPTS_VALUE;
+        stream_header.first_dts = AV_NOPTS_VALUE;
         if (frame_header.type == MKBETAG('v', 'i', 'd', 'e')) {
             stream_header.video_codec_id = frame_header.codec_id;
             stream_header.width = frame_header.info.video.width;
             stream_header.height = frame_header.info.video.height;
             stream_header.fps = frame_header.info.video.fps;
+            stream_header.pix_fmt = AV_PIX_FMT_NONE;
 
             if (s->video_codec_id == AV_CODEC_ID_NONE) {
                 sasp_add_video(ic, &stream_header);
@@ -205,12 +216,21 @@ static int sasp_read_packet(AVFormatContext *ic, AVPacket *pkt)
 
     st = ic->streams[pkt->stream_index];
 
-    pkt->pts = av_rescale(frame_header.timestamp, st->time_base.den, 1000);
-    pkt->dts = pkt->pts;
+    if (frame_header.version == 2) {
+        pkt->pts = av_rescale(frame_header.pts, st->time_base.den, 1);
+        pkt->dts = av_rescale(frame_header.dts, st->time_base.den, 1);
 
-    av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"ms, seqnum %"PRIu32"\n",
-           frame_header.codec_id == s->video_codec_id ? "video" : "audio",
-           frame_header.body_len, frame_header.timestamp, frame_header.sequence);
+        av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"ms, seqnum %"PRIu32"\n",
+            frame_header.codec_id == s->video_codec_id ? "video" : "audio",
+            frame_header.body_len, frame_header.pts, frame_header.sequence);
+    } else {
+        pkt->pts = av_rescale(frame_header.timestamp, st->time_base.den, 1000);
+        pkt->dts = pkt->pts;
+
+        av_log(ic, AV_LOG_TRACE, "Sasp stream %s pkt: len %"PRIu32", pts %"PRIu64"ms, seqnum %"PRIu32"\n",
+            frame_header.codec_id == s->video_codec_id ? "video" : "audio",
+            frame_header.body_len, frame_header.timestamp, frame_header.sequence);
+    }
 
     return ret;
 }
