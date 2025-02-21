@@ -86,6 +86,8 @@ typedef struct MixContext {
     int duration_mode;          /**< mode for determining duration */
     float dropout_transition;   /**< transition time when an input drops out */
     int normalize;              /**< if inputs are scaled */
+    float volume;                 /**< custom volume which has been magnified 256 */
+    float volume_last;            /**< last custom volume */
 
     int sample_rate;            /**< sample rate */
     AVChannelLayout ch_layout;  /**< channel layout */
@@ -356,6 +358,13 @@ static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
                                      outlink->time_base);
     s->outputs[index].next_pts += nb_samples;
 
+    if (s->volume != s->volume_last) {
+        char tmp[32];
+        snprintf(tmp, sizeof(tmp), "%f", s->volume);
+        av_dict_set(&out_buf->metadata, "volume", tmp, 0);
+        s->volume_last = s->volume;
+    }
+
     return ff_filter_frame(outlink, out_buf);
 }
 
@@ -597,6 +606,23 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 
         ff_filter_set_ready(ctx, 100);
         return ret;
+    } else if(!strcmp(cmd, "volume")) {
+        double value;
+
+        if (!args)
+            return AVERROR(EINVAL);
+
+        ret = av_expr_parse_and_eval(&value, args, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR,
+                "Error when parsing %s volume expression '%s'\n", ctx->name, args);
+            return ret;
+        }
+
+        s->volume = value;
+        av_log(ctx, AV_LOG_INFO, "set volume:%f volume_dB:%f\n", s->volume, 20.0*log10(s->volume));
+
+        return 0;
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
