@@ -1416,6 +1416,16 @@ int avfilter_graph_request_oldest(AVFilterGraph *graph);
 int avfilter_parse_mapping(const char *map_str, int **map, int nb_map);
 
 /**
+ * Check if the given link is active.
+ *
+ * This function checks the internal state of the link to determine if it is active.
+ *
+ * @param link The link to check.
+ * @return 1 if the link is active (data flow is present), 0 if the link is inactive (no data flow).
+ */
+int avfilter_link_is_active(AVFilterLink *link);
+
+/**
  * @}
  */
 

@@ -1099,6 +1099,7 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
     li->frame_blocked_in = li->frame_wanted_out = 0;
     li->l.frame_count_in++;
     li->l.sample_count_in += frame->nb_samples;
+    li->is_active = frame->data[0] ? 1 : 0;
     filter_unblock(link->dst);
     ret = ff_framequeue_add(&li->fifo, frame);
     if (ret < 0) {
@@ -1706,4 +1707,10 @@ int avfilter_parse_mapping(const char *map_str, int **map, int nb_map)
 
     *map = new_map;
     return 0;
+}
+
+int avfilter_link_is_active(AVFilterLink *link)
+{
+    FilterLinkInternal * const li = ff_link_internal(link);
+    return li->is_active;
 }
