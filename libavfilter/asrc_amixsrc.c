@@ -188,6 +188,8 @@ static int amix_buffersrc_close(MixInput **pin)
     in = *pin;
     s = in->ctx->priv;
 
+    ff_resample_uninit(&in->resample);
+
     pthread_mutex_lock(&s->mutex);
 
     in->state = INPUT_EOF;
