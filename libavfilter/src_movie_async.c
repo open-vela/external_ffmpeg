@@ -95,7 +95,8 @@ typedef struct MovieAsyncContext {
     MovieStream               *streams;       /**< array of all streams, one per output */
     AVFormatContext           *format_ctx;
     AVDictionary              *format_opt;
-    AVDictionary              *global_opts;
+    AVDictionary              *graph_opts;
+    AVDictionary              *get_opts;
 
     pthread_mutex_t           mutex;
     pthread_cond_t            cond;
@@ -386,17 +387,7 @@ static void movie_async_close_demuxer(AVFilterContext *ctx)
     if (movie->format_ctx)
         avformat_close_input(&movie->format_ctx);
 
-    if (movie->format_opt) {
-        AVDictionaryEntry *entry;
-        while ((entry = av_dict_get(movie->format_opt, "", entry, AV_DICT_IGNORE_SUFFIX))) {
-            AVDictionaryEntry *tmp_entry = av_dict_get(movie->global_opts, entry->key, NULL, 0);
-            if (tmp_entry && strcmp(tmp_entry->value, entry->value) == 0) {
-                av_dict_set(&movie->global_opts, entry->key, NULL, 0);
-            }
-        }
-
-        av_dict_free(&movie->format_opt);
-    }
+    av_dict_free(&movie->format_opt);
 
     movie->current_ms = 0;
     movie->lastseek_ms = 0;
@@ -461,9 +452,12 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     const AVInputFormat *iformat = NULL;
     char name[MAX_URL_SIZE];
     unsigned seek_point = 0;
+    AVDictionary *opts = NULL;
     AVDictionaryEntry *tag;
     AVStream *stream;
     int ret, i;
+
+    av_opt_set_defaults(movie);
 
     if ((tag = av_dict_get(movie->format_opt, "format", NULL, 0))) {
         iformat = av_find_input_format(tag->value);
@@ -481,13 +475,12 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     movie->format_ctx->interrupt_callback.opaque = ctx;
     movie->format_ctx->flags |= AVFMT_FLAG_FAST_SEEK;
 
-    if (movie->global_opts)
-        av_dict_copy(&movie->format_opt, movie->global_opts, 0);
+    av_dict_merge(&opts, 0, 2, movie->graph_opts, movie->format_opt);
 
     movie_async_map_protocol(ctx, filename, name, sizeof(name));
 
     av_log(ctx, AV_LOG_INFO, "DEBUG: url %s start open input.\n", name);
-    ret = avformat_open_input(&movie->format_ctx, name, iformat, &movie->format_opt);
+    ret = avformat_open_input(&movie->format_ctx, name, iformat, &opts);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR,
                "Failed to avformat_open_input ret %d, %s.\n", ret, av_err2str(ret));
@@ -537,12 +530,17 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
                                         1000, AV_TIME_BASE);
 
     /* do seek if requested */
-    if ((tag = av_dict_get(movie->format_opt, "seek_point", NULL, 0))) {
+    if ((tag = av_dict_get(opts, "seek_point", NULL, 0))) {
         seek_point = strtoul(tag->value, NULL, 0);
     }
 
     if (seek_point > 0)
         movie_async_seek(ctx, seek_point, false);
+
+    av_opt_set_dict(movie, &opts);
+    av_dict_free(&opts);
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%lld live_stream:%d datqmax:%d datqcnt:%d\n",
+           name, movie->streams[0].start_time, movie->live_stream, movie->dat_max, movie->dat_cnt);
 
     return 0;
 
@@ -632,10 +630,11 @@ static int movie_async_send_frame(AVFilterContext *ctx, AVPacket *pkt, int pad_i
         if (ret < 0)
             goto out;
 
-        dict = movie->format_opt;
+        av_dict_merge(&dict, 0, 2, movie->graph_opts, movie->format_opt);
     }
 
     frame = wrap_frame(pkt, dst, dict);
+    av_dict_free(&dict);
     if (!frame)
         goto out;
 
@@ -1065,8 +1064,8 @@ static av_cold void movie_async_uninit(AVFilterContext *ctx)
         av_freep(&ctx->output_pads[i].name);
     }
 
-    if (movie->global_opts)
-        av_dict_free(&movie->global_opts);
+    av_dict_free(&movie->graph_opts);
+    av_dict_free(&movie->get_opts);
 
     av_freep(&movie->streams);
     pthread_mutex_destroy(&movie->mutex);
@@ -1121,7 +1120,7 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
     }
 
     if (options && *options) {
-        av_dict_copy(&movie->global_opts, *options, 0);
+        av_dict_copy(&movie->graph_opts, *options, 0);
         av_dict_free(options);
     }
 
@@ -1448,11 +1447,14 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
 
         return 0;
     } else if (!strcmp(cmd, "set_options")) {
-        av_dict_parse_string(&movie->global_opts, args, "=", ":", 0);
+        av_dict_copy(&movie->get_opts, movie->graph_opts, 0);
+        av_dict_parse_string(&movie->get_opts, args, "=", ":", 0);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SET_OPTIONS, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "set_loop")) {
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_SET_LOOP, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "prepare")) {
+        if (!movie->get_opts)
+            av_dict_copy(&movie->get_opts, movie->graph_opts, 0);
         av_log(ctx, AV_LOG_INFO, "%s filter %s prepare %s.\n", __func__, ctx->name, args);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_PREPARE, args, strlen(args) + 1);
     }  else if (!strcmp(cmd, "start")) {
@@ -1474,12 +1476,14 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
             movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
 
         av_log(ctx, AV_LOG_INFO, "%s filter %s stop.\n", __func__, ctx->name);
+        av_dict_free(&movie->get_opts);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_STOP, NULL, 0);
     } else if (!strcmp(cmd, "reset")) {
         if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
             movie_async_do_fade(ctx, AVMOVIE_ASYNC_FADE_OUT, 1);
 
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
+        av_dict_free(&movie->get_opts);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_RESET, NULL, 0);
     } else if (!strcmp(cmd, "close")) {
         if (movie->state == AVMOVIE_ASYNC_STATE_STARTED)
@@ -1487,6 +1491,7 @@ static int movie_async_process_command(AVFilterContext *ctx, const char *cmd, co
 
         movie_async_clear_queue(ctx, AVMOVIE_ASYNC_CMD_QUEUE_IDX);
         av_log(ctx, AV_LOG_INFO, "%s filter %s close.\n", __func__, ctx->name);
+        av_dict_free(&movie->get_opts);
         return movie_async_send_cmd(ctx, AVMOVIE_ASYNC_CLOSE, args, strlen(args) + 1);
     } else if (!strcmp(cmd, "get_state")) {
         av_log(ctx, AV_LOG_INFO, "%s get_state %d.\n", ctx->name, movie->state);
@@ -1563,7 +1568,7 @@ static int movie_async_forward_command(AVFilterContext *ctx, int pad_idx, const 
         return 0;
     } else if (!strcmp(cmd, "get_options")) {
         AVDictionary **dst = (AVDictionary **)res;
-        return av_dict_copy(dst, movie->global_opts, 0);
+        return av_dict_copy(dst, movie->get_opts, 0);
     } else {
         av_log(ctx, AV_LOG_ERROR, "src:%s unsupported command:%s.\n", ctx->name, cmd);
         return AVERROR(ENOSYS);

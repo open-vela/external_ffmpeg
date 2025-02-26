@@ -227,6 +227,23 @@ int av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags)
     return 0;
 }
 
+int av_dict_merge(AVDictionary **dst, int flags, int count, ...)
+{
+    int ret = 0;
+    va_list vl;
+
+    va_start(vl, count);
+    for (int i = 0; i < count; i++) {
+        const AVDictionary* dict = va_arg(vl, const AVDictionary*);
+        ret = av_dict_copy(dst, dict, flags);
+        if (ret != 0)
+            return ret;
+    }
+    va_end(vl);
+
+    return 0;
+}
+
 int av_dict_get_string(const AVDictionary *m, char **buffer,
                        const char key_val_sep, const char pairs_sep)
 {

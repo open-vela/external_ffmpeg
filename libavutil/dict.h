@@ -168,6 +168,18 @@ int av_dict_parse_string(AVDictionary **pm, const char *str,
 int av_dict_copy(AVDictionary **dst, const AVDictionary *src, int flags);
 
 /**
+ * Merge AVDictionary.
+ * @param dst pointer to a pointer to a AVDictionary struct. If *dst is NULL,
+ *            this function will allocate a struct for you and put it in *dst
+ * @param flags flags to use when setting entries in *dst
+ * @param count number of dictionaries to merge
+ * @note metadata is read using the AV_DICT_IGNORE_SUFFIX flag
+ * @return 0 on success, negative AVERROR code on failure. If dst was allocated
+ *           by this function, callers should free the associated memory.
+ */
+int av_dict_merge(AVDictionary **dst, int flags, int count, ...);
+
+/**
  * Free all the memory allocated for an AVDictionary struct
  * and all keys and values.
  */
