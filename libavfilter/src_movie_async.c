@@ -124,13 +124,13 @@ typedef struct MovieAsyncContext {
 #define FLAGS AV_OPT_FLAG_FILTERING_PARAM | AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_VIDEO_PARAM
 
 static const AVOption movie_async_options[]= {
-    { "datqmax",      "maximum number of dat queue",        OFFSET(dat_max),      AV_OPT_TYPE_INT,    {.i64 = 4 },     1, INT_MAX, FLAGS },
-    { "datqcnt",      "prebuff frame count before playing", OFFSET(dat_cnt),      AV_OPT_TYPE_INT,    {.i64 = 1 },     0, INT_MAX, FLAGS },
-    { "cmdqmax",      "maximum number of cmd queue",        OFFSET(cmd_max),      AV_OPT_TYPE_INT,    {.i64 = 16 },    8, 32,      FLAGS },
-    { "stack_size",   "stack size of work thread",          OFFSET(stack_size),   AV_OPT_TYPE_INT,    {.i64 = 61440 }, 0, INT_MAX, FLAGS },
-    { "priority",     "priority of work thread",            OFFSET(priority),     AV_OPT_TYPE_INT,    {.i64 = 244 },   0, INT_MAX, FLAGS },
-    { "protocol_map", "mapping of protocol",                OFFSET(protocol_map), AV_OPT_TYPE_STRING, {.str = NULL},   0, 0,       FLAGS },
-    { "live_stream",  "realtime stream mode",               OFFSET(live_stream),  AV_OPT_TYPE_BOOL,   {.i64 = 0},      0, 1,       FLAGS },
+    { "datqmax",      "maximum number of dat queue",        OFFSET(dat_max),      AV_OPT_TYPE_INT,    {.i64 = 4 },      1, INT_MAX, FLAGS },
+    { "datqcnt",      "prebuff frame count before playing", OFFSET(dat_cnt),      AV_OPT_TYPE_INT,    {.i64 = 1 },      0, INT_MAX, FLAGS },
+    { "cmdqmax",      "maximum number of cmd queue",        OFFSET(cmd_max),      AV_OPT_TYPE_INT,    {.i64 = 16 },     8, 32,      FLAGS },
+    { "stack_size",   "stack size of work thread",          OFFSET(stack_size),   AV_OPT_TYPE_INT,    {.i64 = 61440 },  0, INT_MAX, FLAGS },
+    { "priority",     "priority of work thread",            OFFSET(priority),     AV_OPT_TYPE_INT,    {.i64 = 244 },    0, INT_MAX, FLAGS },
+    { "protocol_map", "mapping of protocol",                OFFSET(protocol_map), AV_OPT_TYPE_STRING, {.str = NULL},    0, 0,       FLAGS },
+    { "live_stream",  "realtime stream mode",               OFFSET(live_stream),  AV_OPT_TYPE_BOOL,   {.i64 = 0},       0, 1,       FLAGS },
     { NULL },
 };
 
