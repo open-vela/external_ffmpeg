@@ -27,6 +27,7 @@
 
 FF_VISIBILITY_PUSH_HIDDEN
 /* devices */
+extern const FFOutputFormat ff_bluelet_muxer;
 extern const FFInputFormat  ff_alsa_demuxer;
 extern const FFOutputFormat ff_alsa_muxer;
 extern const FFInputFormat  ff_android_camera_demuxer;

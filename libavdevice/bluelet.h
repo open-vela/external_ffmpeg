@@ -27,6 +27,7 @@
 #define AVDEVICE_BLUELET_H
 
 #include "avdevice.h"
+#include "avcodec.h"
 #include <stdbool.h>
 
 /****************************************************************************

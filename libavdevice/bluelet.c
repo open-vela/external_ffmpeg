@@ -42,6 +42,7 @@
 
 #include "bluelet.h"
 #include "libavutil/time.h"
+#include "libavutil/mem.h"
 #include "libavcodec/avcodec.h"
 
 /****************************************************************************

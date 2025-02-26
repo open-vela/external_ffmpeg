@@ -164,7 +164,7 @@ static int bluelet_write_frame(AVFormatContext *s1, int stream_index, AVFrame **
     pkt.data = (*frame)->data[0];
     pkt.size = (*frame)->nb_samples * av_get_bytes_per_sample(s1->streams[stream_index]->codecpar->format);
     pkt.dts = (*frame)->pkt_dts;
-    pkt.duration = (*frame)->pkt_duration;
+    pkt.duration = (*frame)->duration;
     return bluelet_write_packet(s1, &pkt);
 }
 
@@ -340,12 +340,13 @@ static const AVClass bluelet_muxer_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,
 };
 
-const AVOutputFormat ff_bluelet_muxer = {
-    .name                       = "bluelet",
-    .long_name                  = NULL_IF_CONFIG_SMALL("BLUELET audio output"),
+
+const FFOutputFormat ff_bluelet_muxer = {
+    .p.name                     = "bluelet",
+    .p.long_name                = NULL_IF_CONFIG_SMALL("BLUELET audio output"),
     .priv_data_size             = sizeof(BlueletPriv),
-    .audio_codec                = AV_CODEC_ID_NONE,
-    .video_codec                = AV_CODEC_ID_NONE,
+    .p.audio_codec              = AV_CODEC_ID_NONE,
+    .p.video_codec              = AV_CODEC_ID_NONE,
     .init                       = bluelet_enc_init,
     .deinit                     = bluelet_enc_deinit,
     .write_header               = bluelet_write_header,
@@ -354,6 +355,6 @@ const AVOutputFormat ff_bluelet_muxer = {
     .control_message            = bluelet_enc_control_message,
     .write_uncoded_frame        = bluelet_write_frame,
     .check_bitstream            = bluelet_enc_check_bitstream,
-    .flags                      = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
-    .priv_class                 = &bluelet_muxer_class,
+    .p.flags                    = AVFMT_NOFILE | AVFMT_TS_NONSTRICT | AVFMT_NOTIMESTAMPS,
+    .p.priv_class               = &bluelet_muxer_class,
 };
