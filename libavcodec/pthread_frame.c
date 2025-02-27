@@ -185,7 +185,7 @@ static void thread_set_name(PerThreadContext *p)
 {
     AVCodecContext *avctx = p->avctx;
     int idx = p - p->parent->threads;
-    char name[16];
+    char name[32];
 
     snprintf(name, sizeof(name), "av:%.7s:df%d", avctx->codec->name, idx);
 
