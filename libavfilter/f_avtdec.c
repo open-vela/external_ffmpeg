@@ -110,12 +110,6 @@ static void avtdec_close(AVFilterContext *ctx, AVCodecContext **codec_ctx)
     AVFrame frame;
     int ret;
 
-    pthread_mutex_lock(&priv->mutex);
-    ff_framequeue_free(&priv->in_queue);
-    ff_framequeue_free(&priv->out_queue);
-    priv->avtdec_id = -1;
-    pthread_mutex_unlock(&priv->mutex);
-
     if (*codec_ctx) {
         ret = avcodec_send_packet(*codec_ctx, NULL);
 
@@ -129,6 +123,15 @@ static void avtdec_close(AVFilterContext *ctx, AVCodecContext **codec_ctx)
         avcodec_close(*codec_ctx);
         avcodec_free_context(codec_ctx);
     }
+
+    pthread_mutex_lock(&priv->mutex);
+    ff_framequeue_free(&priv->in_queue);
+    ff_framequeue_free(&priv->out_queue);
+    priv->avtdec_id = -1;
+    priv->thread_exit = true;
+    pthread_mutex_unlock(&priv->mutex);
+
+    av_log(ctx, AV_LOG_INFO, "vtdec thread exited.\n");
 }
 
 static int avtdec_send(AVCodecContext *codec_ctx, AVFrame *frame)
