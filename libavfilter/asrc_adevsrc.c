@@ -27,12 +27,15 @@
 #include <libavformat/internal.h>
 #include <libavformat/demux.h>
 #include <libavcodec/avcodec.h>
+#include <libavcodec/codec_desc.h>
+
 #include "libavcodec/bytestream.h"
 
 #include "avfilter.h"
+#include "avfilter_internal.h"
+#include "formats.h"
 #include "filters.h"
 #include "internal.h"
-#include "packet_wrapper.h"
 
 #define ASRC_ADEVSRC_OPENED  1
 #define ASRC_ADEVSRC_STARTED 2
@@ -47,12 +50,27 @@ typedef struct ADevSrcPriv {
     char            *devname;
 
     int             sample_fmt;
-    char           *codec_name;
     uint32_t        sample_rate;
     AVChannelLayout ch_layout;
 
     int             state;
 } ADevSrcPriv;
+
+static int avformat_read_header(AVFormatContext *s)
+{
+    int ret;
+
+    if (!s || !s->iformat)
+        return AVERROR(EINVAL);
+
+    if (ffifmt(s->iformat)->read_header) {
+        ret = ffifmt(s->iformat)->read_header(s);
+        if (ret < 0)
+            return ret;
+    }
+
+    return 0;
+}
 
 static AVFilterChannelLayouts *adevsrc_get_channel_layouts(double ch_min,
                                                            double ch_max)
@@ -83,7 +101,7 @@ static void adevsrc_close(AVFilterContext *ctx)
     if (!priv->state)
         return;
 
-    avformat_read_close(priv->fmt_ctx);
+    avformat_close_input(&priv->fmt_ctx);
     avcodec_free_context(&priv->dec_ctx);
     priv->state = 0;
 }
@@ -101,28 +119,9 @@ static int adevsrc_open(AVFilterContext *ctx)
     if (priv->state)
         return 0;
 
-    priv->fmt_ctx->audio_codec_id = link->codec;
-
-    if (!avcodec_is_pcm_lossless(link->codec)) {
-        if (avfilter_forward_command(ctx, 0, "all", "get_options", NULL,
-                                     (char*)&dict, sizeof(AVDictionary **), 0) >= 0) {
-            if (av_dict_get_string(dict, &param, '=', ',') >= 0) {
-                avdevice_app_to_dev_control_message(priv->fmt_ctx,
-                                                    AV_APP_TO_DEV_SET_PARAMETER,
-                                                    param, 0);
-                av_freep(&param);
-            }
-            av_dict_free(&dict);
-        }
-    }
-
     ret = avformat_read_header(priv->fmt_ctx);
     if (ret < 0)
         return ret;
-
-    /* offload capture, skip create decoder */
-    if (!avcodec_is_pcm_lossless(link->codec))
-       goto reconfig;
 
     st = priv->fmt_ctx->streams[0];
     if (!st)
@@ -152,9 +151,6 @@ static int adevsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-reconfig:
-    priv->state = ASRC_ADEVSRC_OPENED;
-    return avfilter_graph_reconfig(ctx->graph, ctx);
 out:
     adevsrc_close(ctx);
     return ret;
@@ -162,7 +158,8 @@ out:
 
 static inline void adevsrc_force_request(AVFilterContext *ctx)
 {
-    ctx->outputs[0]->frame_wanted_out = 1;
+    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+    li->frame_wanted_out = 1;
     ff_filter_set_ready(ctx, 300);
 }
 
@@ -174,7 +171,6 @@ static int adevsrc_control_message(struct AVFormatContext *s, int type,
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED) {
         avcodec_free_context(&priv->dec_ctx);
-        avfilter_graph_reconfig(ctx->graph, ctx);
     }
 
     if (type == AV_DEV_TO_APP_STATE_CHANGED ||
@@ -205,7 +201,7 @@ static int adevsrc_init_dict(AVFilterContext *ctx, AVDictionary **options)
 
     priv->fmt_ctx->opaque             = ctx;
     priv->fmt_ctx->control_message_cb = adevsrc_control_message;
-    priv->fmt_ctx->flags             |= AVFMT_FLAG_NONBLOCK | AVFMT_FLAG_PRIV_OPT;
+    priv->fmt_ctx->flags             |= AVFMT_FLAG_NONBLOCK;
 
     ret = avformat_open_input(&priv->fmt_ctx, priv->devname, fmt, options);
     if (ret < 0) {
@@ -264,45 +260,6 @@ error:
     return ret;
 }
 
-static int adevsrc_alloc_codecparams(AVFilterContext *ctx, AVCodecParameters **dst)
-{
-    AVFilterLink *link = ctx->outputs[0];
-    AVCodecParameters *params = NULL;
-    uint8_t *p;
-
-    params = avcodec_parameters_alloc();
-    if(!params)
-        return AVERROR(ENOMEM);
-
-    params->codec_type  = link->type;
-    params->format      = link->format;
-    params->sample_rate = link->sample_rate;
-    params->codec_id    = link->codec;
-    av_channel_layout_copy(&params->ch_layout, &link->ch_layout);
-
-    if (params->codec_id == AV_CODEC_ID_OPUS) {
-        /* Write extradata. Reference opusenc.c & libopusenc.c */
-        params->extradata_size = 19; /* Opus header information fixed length */
-        params->extradata = av_malloc(params->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
-        if (!params->extradata) {
-            avcodec_parameters_free(&params);
-            return  AVERROR(ENOMEM);
-        }
-
-        p = params->extradata;
-        bytestream_put_buffer(&p, "OpusHead", 8); /* Opus tag */
-        bytestream_put_byte(&p, 1); /* Opus version */
-        bytestream_put_byte(&p, params->ch_layout.nb_channels); /* Opus channels */
-        bytestream_put_le16(&p, 120); /* Frames to be skipped */
-        bytestream_put_le32(&p, params->sample_rate); /* Opus sample rate */
-        bytestream_put_le16(&p, 0); /* Gain of 0dB is recommended. */
-        bytestream_put_byte(&p, 0); /* Channel mapping. channels <=2,it should be 0 */
-    }
-
-    *dst = params;
-    return 0;
-}
-
 static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
 {
     AVFilterLink *link = ctx->outputs[0];
@@ -320,15 +277,7 @@ static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
     if (ret < 0)
         goto error;
 
-    if (!(priv->state & ASRC_ADEVSRC_STARTED)) {
-        ret = adevsrc_alloc_codecparams(ctx, &dst);
-        if (ret < 0)
-            goto error;
-
-        priv->state = ASRC_ADEVSRC_STARTED;
-    }
-
-    out = wrap_frame(pkt, dst, NULL);
+    out = av_frame_alloc();
     if (!out) {
         ret = AVERROR(ENOMEM);
         goto error;
@@ -337,6 +286,19 @@ static int adevsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
     out->format = link->format;
     out->sample_rate = link->sample_rate;
     av_channel_layout_copy(&out->ch_layout, &link->ch_layout);
+    out->pkt_size = pkt->size;
+
+    out->buf[0] = pkt->buf;
+    out->data[0] = out->buf[0]->data;
+    out->linesize[0] = pkt->size;
+    out->extended_data = out->data;
+    out->pts = pkt->pts;
+
+    pkt->buf = NULL;
+    pkt->data = NULL;
+    pkt->size = 0;
+    av_packet_free(&pkt);
+
     *frame = out;
     return 0;
 
@@ -519,41 +481,6 @@ static int adevsrc_query_formats(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    formats = NULL;
-    if (priv->codec_name != NULL) {
-        const AVCodecDescriptor *desc;
-        const AVCodec *codec = avcodec_find_encoder_by_name(priv->codec_name);
-        if (!codec && (desc = avcodec_descriptor_get_by_name(priv->codec_name)))
-            codec = avcodec_find_encoder(desc->id);
-
-        if (codec && codec->type == AVMEDIA_TYPE_AUDIO) {
-            ret = ff_add_format(&formats, codec->id);
-            if (ret < 0)
-                goto out;
-        } else {
-            av_log(ctx, AV_LOG_ERROR, "No codec with name %s found\n", priv->codec_name);
-            ret = AVERROR(EINVAL);
-            goto out;
-        }
-    } else {
-        ret = av_opt_query_ranges(&ranges, &caps, "codecs", AV_OPT_MULTI_COMPONENT_RANGE);
-        if (ret >= 0) {
-            for (i = 0; i < ranges->nb_ranges; i++) {
-                ret = ff_add_format(&formats, ranges->range[i]->value_min);
-                if (ret < 0)
-                    goto out;
-            }
-
-            av_opt_freep_ranges(&ranges);
-        } else {
-            formats = ff_all_raw_codecs(ctx->inputs[0]->type);
-        }
-    }
-
-    ret = ff_set_common_codecs(ctx, formats);
-    if (ret < 0)
-        goto out;
-
     ret = 0;
 
 out:
@@ -617,7 +544,6 @@ static const AVOption adevsrc_options[] = {
     { "sample_fmt",  "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
     { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                 0, INT_MAX, R },
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       R },
-    { "codec_name",  "", OFFSET(codec_name),  AV_OPT_TYPE_STRING,     {.str = NULL},              0, 0,       R },
     { NULL },
 };
 
@@ -644,7 +570,7 @@ const AVFilter ff_asrc_adevsrc = {
     .description     = NULL_IF_CONFIG_SMALL("audio device source"),
     .priv_size       = sizeof(ADevSrcPriv),
     .priv_class      = &adevsrc_class,
-    .init_dict       = adevsrc_init_dict,
+    .init            = adevsrc_init_dict,
     .uninit          = adevsrc_uninit,
     FILTER_OUTPUTS(adevsrc_outputs),
     FILTER_QUERY_FUNC(adevsrc_query_formats),
