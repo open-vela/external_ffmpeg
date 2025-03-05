@@ -65,6 +65,7 @@ typedef struct MixInput {
     float scale;         /**< mixing scale factor for each input */
     float weight;             /**< custom weight for every input */
     float scale_norm;          /**< normalization factor for every input */
+    float volume;             /**< custom volume for each input */
     AVFilterContext *ctx;    /**< filter context for each input */
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
@@ -86,8 +87,8 @@ typedef struct MixContext {
     int duration_mode;          /**< mode for determining duration */
     float dropout_transition;   /**< transition time when an input drops out */
     int normalize;              /**< if inputs are scaled */
-    float volume;                 /**< custom volume which has been magnified 256 */
-    float volume_last;            /**< last custom volume */
+    float volume;                 /**< custom stream volume, eg: Music, Ring. */
+    float volume_last;            /**< last custom stream volume */
 
     int sample_rate;            /**< sample rate */
     AVChannelLayout ch_layout;  /**< channel layout */
@@ -156,6 +157,7 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
     in->ctx = ctx;
     in->on_event_cb = on_event_cb;
     in->on_event_cb_udata = on_event_cb_udata;
+    in->volume = 1.0f;
     ff_resample_init(&in->resample);
 
     pthread_mutex_lock(&s->mutex);
@@ -212,6 +214,25 @@ static int amix_buffersrc_close(MixInput **pin)
     return 0;
 }
 
+static int set_parameter(MixInput *in, const char *key, const char *value) {
+    if (!in || !key || !value)
+        return AVERROR(EINVAL);
+
+    if (!strcmp(key, "volume")) {
+        float volume;
+
+        volume = strtof(value, NULL);
+        in->volume = volume;
+
+        av_log(in->ctx, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, volume);
+
+        return 0;
+    }
+
+    av_log(in->ctx, AV_LOG_ERROR, "parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
 /**
  * Update the scaling factors to apply to each input during mixing.
  *
@@ -229,9 +250,11 @@ static void calculate_scales(MixContext *s, int nb_samples)
     for (i = 0; i < s->nb_inputs; i++)
         s->weight_sum += FFABS(s->inputs[i]->weight);
 
-    for (i = 0; i < s->nb_inputs; i++)
+    for (i = 0; i < s->nb_inputs; i++) {
+        s->inputs[i]->scale_norm = s->weight_sum / FFABS(s->inputs[i]->weight);
         if (s->inputs[i]->state & INPUT_ON)
             weight_sum += FFABS(s->inputs[i]->weight);
+    }
 
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->inputs[i]->state & INPUT_ON) {
@@ -330,20 +353,20 @@ static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
                 for (p = 0; p < planes; p++) {
                     vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
                                          (int16_t *) in_buf->extended_data[p],
-                                         in->scale * INT16_MAX, plane_size);
+                                         in->scale * INT16_MAX * in->volume, plane_size);
                 }
             } else if (out_buf->format == AV_SAMPLE_FMT_FLT ||
                        out_buf->format == AV_SAMPLE_FMT_FLTP) {
                 for (p = 0; p < planes; p++) {
                     s->fdsp->vector_fmac_scalar((float *)out_buf->extended_data[p],
                                                 (float *) in_buf->extended_data[p],
-                                                in->scale, plane_size);
+                                                in->scale * in->volume, plane_size);
                 }
             } else {
                 for (p = 0; p < planes; p++) {
                     s->fdsp->vector_dmac_scalar((double *)out_buf->extended_data[p],
                                                 (double *) in_buf->extended_data[p],
-                                                in->scale, plane_size);
+                                                in->scale * in->volume, plane_size);
                 }
             }
         }
@@ -623,6 +646,18 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         av_log(ctx, AV_LOG_INFO, "set volume:%f volume_dB:%f\n", s->volume, 20.0*log10(s->volume));
 
         return 0;
+    } else if (!strcmp(cmd, "set_parameter")){
+        MixInput *in;
+        char key[32], value[32];
+
+        if (sscanf(args, "%p %31s %31s", &in, key, value) != 3)
+            return AVERROR(EINVAL);
+
+        ret = set_parameter(in, key, value);
+        if (ret < 0)
+            av_log(ctx, AV_LOG_ERROR, "amixsrc: error setting parameter: %s\n", args);
+
+        return ret;
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
