@@ -216,22 +216,35 @@ static int amix_buffersrc_close(MixInput **pin)
     return 0;
 }
 
-static int set_parameter(MixInput *in, const char *key, const char *value) {
+static int set_parameter(MixInput *in, const char *key, const char *value)
+{
     if (!in || !key || !value)
         return AVERROR(EINVAL);
 
     if (!strcmp(key, "volume")) {
-        float volume;
+        in->volume = strtof(value, NULL);
 
-        volume = strtof(value, NULL);
-        in->volume = volume;
-
-        av_log(in->ctx, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, volume);
-
+        av_log(in->ctx, AV_LOG_DEBUG, "set_parameter: %s = %.2f\n", key, in->volume);
         return 0;
     }
 
-    av_log(in->ctx, AV_LOG_ERROR, "parameter [%s] not found.\n", key);
+    av_log(in->ctx, AV_LOG_ERROR, "set_parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
+static int get_parameter(MixInput *in, const char *key, char *value, int len)
+{
+    if (!in || !key || len <= 0)
+        return AVERROR(EINVAL);
+
+    if (!strcmp(key, "volume")) {
+        snprintf(value, len, "vol:%f", in->volume);
+
+        av_log(in->ctx, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, in->volume);
+        return 0;
+    }
+
+    av_log(in->ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
     return AVERROR(EINVAL);
 }
 
@@ -661,11 +674,15 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         if (sscanf(args, "%p %31s %31s", &in, key, value) != 3)
             return AVERROR(EINVAL);
 
-        ret = set_parameter(in, key, value);
-        if (ret < 0)
-            av_log(ctx, AV_LOG_ERROR, "amixsrc: error setting parameter: %s\n", args);
+        return set_parameter(in, key, value);
+    } else if (!strcmp(cmd, "get_parameter")){
+        MixInput *in;
+        char key[32];
 
-        return ret;
+        if (sscanf(args, "%p %31s", &in, key) != 2)
+            return AVERROR(EINVAL);
+
+        return get_parameter(in, key, res, res_len);
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
