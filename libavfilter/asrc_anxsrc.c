@@ -55,6 +55,7 @@ typedef struct ANxSrcPriv {
 
     int nb_outputs;
 
+    char *map_str;
     int *map;
 } ANxSrcPriv;
 
@@ -92,6 +93,12 @@ static int anxsrc_init_dict(AVFilterContext *ctx)
 
         pad.config_props = anxsrc_config_props;
         if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
+            return ret;
+    }
+
+    if (src->map_str) {
+        ret = avfilter_parse_mapping(src->map_str, &src->map, src->nb_outputs);
+        if (ret < 0)
             return ret;
     }
 
@@ -407,6 +414,7 @@ static const AVOption anxsrc_options[] = {
     { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                 0, INT_MAX, R },
     { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,        {.i64 = 20},                0, INT_MAX, R },
     { "outputs",     "", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                 0, INT_MAX, R },
+    { "map",         "", OFFSET(map_str),     AV_OPT_TYPE_STRING,     {.str = NULL},                   .flags=R },
     { NULL },
 };
 
