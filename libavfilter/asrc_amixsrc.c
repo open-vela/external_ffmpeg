@@ -421,7 +421,7 @@ static int activate(AVFilterContext *ctx)
             in->on_event_cb(in->on_event_cb_udata, 0, (intptr_t)src);
 
         for (j = 0; j < s->nb_outputs; j++) {
-            if (s->map && s->map[i] < 0)
+            if (s->map && s->map[j] < 0)
                 continue;
 
             if (!in->fifos[j]) {
