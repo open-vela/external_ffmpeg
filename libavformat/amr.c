@@ -250,7 +250,7 @@ const FFInputFormat ff_amrwb_demuxer = {
 };
 #endif
 
-#if (CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER)
+#if (CONFIG_AMR_MUXER || CONFIG_AMRWB_MUXER)
 static int amr_write_header(AVFormatContext *s)
 {
     AVIOContext    *pb  = s->pb;
@@ -265,13 +265,13 @@ static int amr_write_header(AVFormatContext *s)
     }
     return 0;
 }
-#endif /* CONFIG_AMRNB_MUXER || CONFIG_AMRWB_MUXER*/
+#endif /* CONFIG_AMR_MUXER || CONFIG_AMRWB_MUXER*/
 
-#if CONFIG_AMRNB_MUXER
-const FFOutputFormat ff_amrnb_muxer = {
-    .p.name            = "amrnb",
+#if CONFIG_AMR_MUXER
+const FFOutputFormat ff_amr_muxer = {
+    .p.name            = "amr",
     .p.long_name       = NULL_IF_CONFIG_SMALL("3GPP AMR"),
-    .p.mime_type       = "audio/amrnb",
+    .p.mime_type       = "audio/amr",
     .p.extensions      = "amr",
     .p.audio_codec     = AV_CODEC_ID_AMR_NB,
     .p.video_codec     = AV_CODEC_ID_NONE,
