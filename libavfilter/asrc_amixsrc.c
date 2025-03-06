@@ -105,6 +105,7 @@ typedef struct MixContext {
 
     pthread_mutex_t mutex;     /**< mutex for thread safety */
     int *map;                  /**< map from input to output */
+    char *map_str;
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -126,6 +127,7 @@ static const AVOption amix_options[] = {
             OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, A|F|T },
     { "period_ms", "Set period time in ms for each input.",
             OFFSET(period_ms), AV_OPT_TYPE_INT, {.i64=20}, 0, INT_MAX, A|F },
+    { "map", "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},    .flags = A|F },
 
     { NULL }
 };
@@ -549,6 +551,12 @@ static av_cold int init(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
 
     pthread_mutex_init(&s->mutex, NULL);
+
+    if (s->map_str) {
+        ret = avfilter_parse_mapping(s->map_str, &s->map, s->nb_outputs);
+        if (ret < 0)
+            return ret;
+    }
 
     return 0;
 }
