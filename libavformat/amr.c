@@ -284,15 +284,17 @@ const FFOutputFormat ff_amrnb_muxer = {
 #endif
 
 #if CONFIG_AMRWB_MUXER
-const AVOutputFormat ff_amrwb_muxer = {
-    .name              = "amrwb",
-    .long_name         = NULL_IF_CONFIG_SMALL("3GPP AMR"),
-    .mime_type         = "audio/amrwb",
-    .extensions        = "amr",
-    .audio_codec       = AV_CODEC_ID_AMR_WB,
-    .video_codec       = AV_CODEC_ID_NONE,
-    .write_header      = amr_write_header,
-    .write_packet      = ff_raw_write_packet,
-    .flags             = AVFMT_NOTIMESTAMPS,
+const FFOutputFormat ff_amrwb_muxer = {
+    .p.name              = "amrwb",
+    .p.long_name         = NULL_IF_CONFIG_SMALL("3GPP AMR"),
+    .p.mime_type         = "audio/amrwb",
+    .p.extensions        = "amr",
+    .p.audio_codec       = AV_CODEC_ID_AMR_WB,
+    .p.video_codec       = AV_CODEC_ID_NONE,
+    .p.subtitle_codec    = AV_CODEC_ID_NONE,
+    .p.flags             = AVFMT_NOTIMESTAMPS,
+    .flags_internal      = FF_OFMT_FLAG_MAX_ONE_OF_EACH,
+    .write_header        = amr_write_header,
+    .write_packet        = ff_raw_write_packet,
 };
 #endif
