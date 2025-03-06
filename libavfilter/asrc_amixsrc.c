@@ -679,22 +679,25 @@ static int query_formats(const AVFilterContext *ctx,
                          AVFilterFormatsConfig **cfg_in,
                          AVFilterFormatsConfig **cfg_out)
 {
-    const enum AVSampleFormat sample_fmts[] = {
-        AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP,
-        AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
-        AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P,
-        AV_SAMPLE_FMT_NONE
-    };
-    MixContext *s = ctx->priv;
-    int ret;
+    int ret, i;
 
-    if ((ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_format_list(sample_fmts))) < 0)
-        return ret;
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        ff_formats_unref(&cfg_out[i]->formats);
+        ret = ff_formats_ref(ff_all_formats(AVMEDIA_TYPE_AUDIO), &cfg_out[i]->formats);
+        if (ret < 0)
+            goto out;
 
-    if ((ret = ff_set_common_samplerates2(ctx, cfg_in, cfg_out, ff_all_samplerates())) < 0)
-        return ret;
+        ff_formats_unref(&cfg_out[i]->samplerates);
+        ret = ff_formats_ref(ff_all_samplerates(), &cfg_out[i]->samplerates);
+        if (ret < 0)
+            goto out;
 
-    return ff_set_common_channel_layouts2(ctx, cfg_in, cfg_out, ff_all_channel_counts());
+        ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(ff_all_channel_counts(), &cfg_out[i]->channel_layouts);
+    }
+
+out:
+    return ret;
 }
 
 const AVFilter ff_asrc_amixsrc = {
