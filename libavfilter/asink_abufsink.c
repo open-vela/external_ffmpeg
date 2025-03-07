@@ -68,7 +68,8 @@ static int abufsink_activate(AVFilterContext *ctx)
         goto out;
     }
 
-    ff_inlink_request_frame(link);
+    if (s->on_event_cb)
+        ff_inlink_request_frame(link);
 out:
     av_frame_free(&frame);
 
