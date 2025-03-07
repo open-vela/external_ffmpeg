@@ -1124,6 +1124,17 @@ static av_cold int movie_async_init_dict(AVFilterContext *ctx, AVDictionary **op
         av_dict_free(options);
     }
 
+    for (const AVOption *opt = movie_async_options; opt->name != NULL; ++opt) {
+        uint8_t *out_val = NULL;
+        ret = av_opt_get(movie, opt->name, 0, &out_val);
+        if (ret < 0)
+            goto error;
+        ret = av_dict_set(&movie->graph_opts, opt->name, out_val, 0);
+        av_freep(&out_val);
+        if (ret < 0)
+            goto error;
+    }
+
     if (movie->dat_cnt > movie->dat_max)
         movie->dat_cnt = movie->dat_max;
 
