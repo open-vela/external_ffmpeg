@@ -237,11 +237,11 @@ int av_dict_merge(AVDictionary **dst, int flags, int count, ...)
         const AVDictionary* dict = va_arg(vl, const AVDictionary*);
         ret = av_dict_copy(dst, dict, flags);
         if (ret != 0)
-            return ret;
+            break;
     }
     va_end(vl);
 
-    return 0;
+    return ret;
 }
 
 int av_dict_get_string(const AVDictionary *m, char **buffer,
