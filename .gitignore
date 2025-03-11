@@ -40,6 +40,7 @@
 /lcov/
 /src
 /mapfile
+/private
 /tools/python/__pycache__/
 .built
 .depend
