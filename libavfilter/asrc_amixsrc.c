@@ -99,13 +99,13 @@ typedef struct MixContext {
     int nb_inputs;              /**< number of inputs */
     int nb_allocated_inputs;    /**< number of allocated inputs */
 
+    char *map_str;
+    int *map;                  /**< map from input to output */
     int nb_outputs;             /**< number of outputs */
     MixOutput *outputs;         /**< per-output data */
     int period_ms;              /**< period time in ms for each input */
 
     pthread_mutex_t mutex;     /**< mutex for thread safety */
-    int *map;                  /**< map from input to output */
-    char *map_str;
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -128,6 +128,7 @@ static const AVOption amix_options[] = {
     { "period_ms", "Set period time in ms for each input.",
             OFFSET(period_ms), AV_OPT_TYPE_INT, {.i64=20}, 0, INT_MAX, A|F },
     { "map", "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},    .flags = A|F },
+    { "map_array", "get map list", OFFSET(map),    AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX,    .flags = A|F },
 
     { NULL }
 };
