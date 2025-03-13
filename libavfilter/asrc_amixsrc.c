@@ -104,8 +104,6 @@ typedef struct MixContext {
     int nb_outputs;             /**< number of outputs */
     MixOutput *outputs;         /**< per-output data */
     int period_ms;              /**< period time in ms for each input */
-
-    pthread_mutex_t mutex;     /**< mutex for thread safety */
 } MixContext;
 
 #define OFFSET(x) offsetof(MixContext, x)
@@ -163,15 +161,11 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
     in->volume = 1.0f;
     ff_resample_init(&in->resample);
 
-    pthread_mutex_lock(&s->mutex);
     s->inputs[s->nb_inputs] = in;
     s->nb_inputs++;
     in->fifos = av_mallocz(s->nb_outputs * sizeof(*in->fifos));
-    if (!in->fifos) {
-        pthread_mutex_unlock(&s->mutex);
+    if (!in->fifos)
         return AVERROR(ENOMEM);
-    }
-    pthread_mutex_unlock(&s->mutex);
 
     for (i = 0; i < s->nb_outputs; i++) {
         FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
@@ -197,8 +191,6 @@ static int amix_buffersrc_close(MixInput **pin)
 
     ff_resample_uninit(&in->resample);
 
-    pthread_mutex_lock(&s->mutex);
-
     in->state = INPUT_EOF;
 
     for (i = 0; i < s->nb_inputs; i++) {
@@ -207,10 +199,8 @@ static int amix_buffersrc_close(MixInput **pin)
     }
     if (i == s->nb_inputs) {
         av_log(in->ctx, AV_LOG_ERROR, "input not found\n");
-        pthread_mutex_unlock(&s->mutex);
         return AVERROR(EINVAL);
     }
-    pthread_mutex_unlock(&s->mutex);
 
     *pin = NULL;
 
@@ -419,7 +409,6 @@ static int activate(AVFilterContext *ctx)
         }
     }
 
-    pthread_mutex_lock(&s->mutex);
     for (i = 0; i < s->nb_inputs; i++) {
         MixInput *in = s->inputs[i];
         AVFrame *src, *dst;
@@ -428,10 +417,8 @@ static int activate(AVFilterContext *ctx)
             continue;
 
         src = av_frame_alloc();
-        if (!src) {
-            pthread_mutex_unlock(&s->mutex);
+        if (!src)
             return AVERROR(ENOMEM);
-        }
 
         if (in->on_event_cb)
             in->on_event_cb(in->on_event_cb_udata, 0, (intptr_t)src);
@@ -442,10 +429,8 @@ static int activate(AVFilterContext *ctx)
 
             if (!in->fifos[j]) {
                 in->fifos[j] = av_audio_fifo_alloc(ctx->outputs[j]->format, ctx->outputs[j]->ch_layout.nb_channels, 1024);
-                if (!in->fifos[j]) {
-                    pthread_mutex_unlock(&s->mutex);
+                if (!in->fifos[j])
                     return AVERROR(ENOMEM);
-                }
             }
 
             ret = ff_resample_frame(&in->resample, ctx->outputs[j], src, &dst);
@@ -453,15 +438,13 @@ static int activate(AVFilterContext *ctx)
                 dst = av_frame_clone(src);
                 if (!dst) {
                     av_frame_free(&src);
-                    pthread_mutex_unlock(&s->mutex);
                     return AVERROR(ENOMEM);
                 }
             }
             ret = av_audio_fifo_write(in->fifos[j], (void **)dst->extended_data, dst->nb_samples);
-            if (ret < 0) {
-                pthread_mutex_unlock(&s->mutex);
+            if (ret < 0)
                 return ret;
-            }
+
             av_frame_free(&dst);
         }
         av_frame_free(&src);
@@ -486,7 +469,6 @@ static int activate(AVFilterContext *ctx)
         ret = output_frame(ctx, i, nb_samples);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "outputlink[%d] out_frame failed ret:%d:%s\n", i, ret, av_err2str(ret));
-            pthread_mutex_unlock(&s->mutex);
             return ret;
         }
     }
@@ -515,7 +497,6 @@ static int activate(AVFilterContext *ctx)
     }
 
     is_eof = !s->nb_inputs;
-    pthread_mutex_unlock(&s->mutex);
 
     if (is_eof) {
         for (i = 0; i < s->nb_outputs; i++) {
@@ -564,8 +545,6 @@ static av_cold int init(AVFilterContext *ctx)
     if (!s->fdsp)
         return AVERROR(ENOMEM);
 
-    pthread_mutex_init(&s->mutex, NULL);
-
     if (s->map_str) {
         ret = avfilter_parse_mapping(s->map_str, &s->map, s->nb_outputs);
         if (ret < 0)
@@ -599,7 +578,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->inputs);
     av_freep(&s->fdsp);
     av_freep(&s->map);
-    pthread_mutex_destroy(&s->mutex);
 }
 
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
