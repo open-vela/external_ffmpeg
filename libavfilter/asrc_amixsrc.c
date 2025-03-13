@@ -100,6 +100,7 @@ typedef struct MixContext {
     char *map_str;
     int *map;                        /**< map from input to output */
     int nb_outputs;                  /**< number of outputs */
+    int64_t output_duration;         /**< last output frame duration to determin to take a new frame from input or not. */
     MixOutput *outputs;              /**< per-output data */
 } MixContext;
 
@@ -141,13 +142,11 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
 
     in = av_mallocz(sizeof(*in));
     if (!in)
-        return AVERROR(ENOMEM);
+        goto err;
 
     in->fifos = av_mallocz(s->nb_outputs * sizeof(*in->fifos));
-    if (!in->fifos) {
-        av_freep(&in);
-        return AVERROR(ENOMEM);
-    }
+    if (!in->fifos)
+        goto err;
 
     in->on_event_cb_udata = on_event_cb_udata;
     in->on_event_cb = on_event_cb;
@@ -169,6 +168,11 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
 
     *input = in;
     return 0;
+
+err:
+    av_freep(&in->fifos);
+    av_freep(&in);
+    return AVERROR(ENOMEM);
 }
 
 static int amix_buffersrc_close(MixInput **pin)
@@ -307,6 +311,25 @@ static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, 
     }
 }
 
+static int frame_wanted(AVFilterContext *ctx, MixInput *in)
+{
+    MixContext *s = ctx->priv;
+    int j;
+
+    /* If all outputs fifo size are bigger than last output size, then skip current read frame. */
+    for (j = 0; j < s->nb_outputs; j++) {
+        if (s->map[j] < 0 ||
+            (in->fifos[j] &&
+             av_rescale_q(av_audio_fifo_size(in->fifos[j]),
+                          av_make_q(1, ctx->outputs[j]->sample_rate),
+                          AV_TIME_BASE_Q) > s->output_duration))
+            continue;
+        break;
+    }
+
+    return j != s->nb_outputs;
+}
+
 /**
  * Clear closed inputs, and rearrange inputs array.
  */
@@ -414,10 +437,10 @@ static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
     if (s->outputs[index].next_pts == AV_NOPTS_VALUE)
         s->outputs[index].next_pts = 0;
 
+    s->output_duration = av_rescale_q(out_buf->nb_samples, av_make_q(1, outlink->sample_rate),
+                                      AV_TIME_BASE_Q);
     out_buf->pts = s->outputs[index].next_pts;
-    out_buf->duration = av_rescale_q(out_buf->nb_samples, av_make_q(1, outlink->sample_rate),
-                                     outlink->time_base);
-    s->outputs[index].next_pts += nb_samples;
+    out_buf->duration = s->output_duration;
 
     if (s->volume != s->volume_last) {
         char tmp[32];
@@ -445,7 +468,10 @@ static int activate(AVFilterContext *ctx)
         AVFrame *src, *dst;
         in = s->inputs[i];
 
-        if (in->state == INPUT_EOF)
+        if (in->state & INPUT_EOF)
+            continue;
+
+        if (!frame_wanted(ctx, in))
             continue;
 
         src = av_frame_alloc();
@@ -485,7 +511,7 @@ static int activate(AVFilterContext *ctx)
     calculate_scales(s, 0);
 
     for (i = 0; i < s->nb_outputs; i++) {
-        int nb_samples = 4096;
+        int nb_samples = INT_MAX;
 
         if (s->map && s->map[i] < 0)
             continue;
@@ -497,6 +523,9 @@ static int activate(AVFilterContext *ctx)
 
             nb_samples = FFMIN(av_audio_fifo_size(in->fifos[i]), nb_samples);
         }
+
+        if (nb_samples == INT_MAX)
+            continue;
 
         ret = output_frame(ctx, i, nb_samples);
         if (ret < 0) {
