@@ -159,12 +159,10 @@ static int anxsrc_control_message(AVFilterContext *ctx, int type,
     return 0;
 }
 
-static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
+static int anxsrc_read_packet(AVFilterContext *ctx, AVPacket **p)
 {
-    AVFilterLink *link = ctx->outputs[0];
     ANxSrcPriv *s = ctx->priv;
     NuttxPriv *priv = &s->priv;
-    AVFrame *out = NULL;
     uint32_t samples;
     AVPacket *pkt;
     int ret;
@@ -186,6 +184,22 @@ static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
     pkt->size = ret;
     pkt->pts = priv->timestamp;
     priv->timestamp += samples > 0 ? samples : ret / priv->sample_bytes;
+    *p = pkt;
+
+    return 0;
+
+error:
+    av_packet_free(&pkt);
+    return ret;
+}
+
+static int anxsrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket *pkt, AVFrame **frame)
+{
+    AVFilterLink *link = ctx->outputs[pad];
+    ANxSrcPriv *s = ctx->priv;
+    NuttxPriv *priv = &s->priv;
+    AVFrame *out = NULL;
+    int ret;
 
     out = av_frame_alloc();
     if (!out) {
@@ -205,16 +219,10 @@ static int anxsrc_wrap_frame(AVFilterContext *ctx, AVFrame **frame)
     out->extended_data = out->data;
     out->pts = pkt->pts;
 
-    pkt->buf = NULL;
-    pkt->data = NULL;
-    pkt->size = 0;
-    av_packet_free(&pkt);
-
     *frame = out;
     return 0;
 
 error:
-    av_packet_free(&pkt);
     av_frame_free(&out);
     return ret;
 }
@@ -224,6 +232,7 @@ static int anxsrc_activate(AVFilterContext *ctx)
     ANxSrcPriv *s = ctx->priv;
     NuttxPriv *priv = &s->priv;
     AVFrame *frame = NULL;
+    AVPacket *pkt = NULL;
     AVFilterLink *link;
     int i, ret;
 
@@ -234,7 +243,7 @@ static int anxsrc_activate(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    ret = anxsrc_wrap_frame(ctx, &frame);
+    ret = anxsrc_read_packet(ctx, &pkt);
     if (ret < 0)
         goto out;
 
@@ -242,14 +251,24 @@ static int anxsrc_activate(AVFilterContext *ctx)
         if (s->map && s->map[i] < 0)
             continue;
 
+        ret = anxsrc_wrap_frame(ctx, i, pkt, &frame);
+        if (ret < 0)
+            goto out;
+
         link = ctx->outputs[i];
-        ret = ff_filter_frame(link, av_frame_clone(frame));
+        ret = ff_filter_frame(link, frame);
         if (ret < 0)
             goto out;
     }
 
 out:
-    av_frame_free(&frame);
+    if (pkt != NULL) {
+        pkt->buf = NULL;
+        pkt->data = NULL;
+        pkt->size = 0;
+        av_packet_free(&pkt);
+    }
+
     return ret;
 }
 
