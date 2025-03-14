@@ -124,6 +124,52 @@ static const AVOption amix_options[] = {
 
 AVFILTER_DEFINE_CLASS(amix);
 
+/**
+ * Clear closed inputs, and rearrange inputs array.
+ */
+static int clear_inputs(AVFilterContext *ctx)
+{
+    MixContext *s = ctx->priv;
+    MixInput *in;
+    int i, j;
+
+    for (i = 0; i < s->nb_inputs;) {
+        in = s->inputs[i];
+
+        if (in->state & INPUT_EOF) { /* If all fifos of current input are empty, set INPUT_EOF */
+            for (j = 0; j < s->nb_outputs; j++)
+                if (in->fifos[j] && av_audio_fifo_size(in->fifos[j]) != 0)
+                    break;
+            if (j == s->nb_outputs)
+                in->state = INPUT_EOF;
+        }
+
+        if (in->state != INPUT_EOF) {
+            i++;
+            continue;
+        }
+
+        for (j = 0; j < s->nb_outputs; j++) {
+            if (in->fifos[j]) {
+                av_audio_fifo_free(in->fifos[j]);
+                in->fifos[j] = NULL;
+            }
+        }
+
+        av_freep(&in->fifos);
+        av_freep(&s->inputs[i]);
+
+        for (j = i; j < s->nb_inputs - 1; j++) {
+            s->inputs[j] = s->inputs[j + 1];
+        }
+
+        s->inputs[s->nb_inputs - 1] = NULL;
+        s->nb_inputs--;
+    }
+
+    return s->nb_inputs;
+}
+
 static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
                                int (*on_event_cb)(void *udata, int evt, int64_t args),
                                void *on_event_cb_udata)
@@ -198,7 +244,9 @@ static int amix_buffersrc_close(MixInput **pin)
 
     ff_resample_uninit(&in->resample);
 
-    in->state = INPUT_EOF;
+    in->state |= INPUT_EOF;
+
+    clear_inputs(in->ctx);
 
     *pin = NULL;
 
@@ -331,43 +379,6 @@ static int frame_wanted(AVFilterContext *ctx, MixInput *in)
 }
 
 /**
- * Clear closed inputs, and rearrange inputs array.
- */
-static int clear_inputs(AVFilterContext *ctx)
-{
-    MixContext *s = ctx->priv;
-    MixInput *in;
-    int i, j;
-
-    for (i = 0; i < s->nb_inputs;) {
-        in = s->inputs[i];
-        if (in->state != INPUT_EOF) {
-            i++;
-            continue;
-        }
-
-        for (j = 0; j < s->nb_outputs; j++) {
-            if (in->fifos[j]) {
-                av_audio_fifo_free(in->fifos[j]);
-                in->fifos[j] = NULL;
-            }
-        }
-
-        av_freep(&in->fifos);
-        av_freep(&s->inputs[i]);
-
-        for (j = i; j < s->nb_inputs - 1; j++) {
-            s->inputs[j] = s->inputs[j + 1];
-        }
-
-        s->inputs[s->nb_inputs - 1] = NULL;
-        s->nb_inputs--;
-    }
-
-    return s->nb_inputs;
-}
-
-/**
  * Read samples from the input FIFOs, mix, and write to the output link.
  */
 static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
@@ -390,9 +401,6 @@ static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
     for (i = 0; i < s->nb_inputs; i++) {
         MixInput *in = s->inputs[i];
         int planar;
-
-        if (in->state == INPUT_EOF)
-            continue;
 
         ret = av_audio_fifo_read(in->fifos[index], (void **)in_buf->extended_data, nb_samples);
         if (ret < 0) {
@@ -519,8 +527,6 @@ static int activate(AVFilterContext *ctx)
 
         for (j = 0; j < s->nb_inputs; j++) {
             in = s->inputs[j];
-            if (in->state == INPUT_EOF)
-                continue;
 
             nb_samples = FFMIN(av_audio_fifo_size(in->fifos[i]), nb_samples);
         }
