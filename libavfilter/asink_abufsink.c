@@ -96,6 +96,9 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
             av_abufsink_set_event_cb(ctx, on_event_cb, udata);
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
+        if (sink->on_event_cb)
+            sink->on_event_cb(sink->on_event_cb_udata, -1, 0);
+
         av_abufsink_set_event_cb(ctx, NULL, NULL);
         return 0;
     }

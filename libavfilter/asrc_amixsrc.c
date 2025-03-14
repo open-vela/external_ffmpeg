@@ -615,6 +615,9 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         if (!in)
             return AVERROR(EINVAL);
 
+        if (in->on_event_cb)
+            in->on_event_cb(in->on_event_cb_udata, -1, 0);
+
         ret = amix_buffersrc_close(&in);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "amixsrc: error closing input: %s\n", av_err2str(ret));
