@@ -292,12 +292,16 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
     NuttxPriv *priv = &src->priv;
     int ret;
 
-    if (!strcmp(cmd, "unlink")) {
+    if (!strcmp(cmd, "link")) {
+        anxsrc_control_message(ctx, AV_DEV_TO_APP_STATE_CHANGED, NULL, 0);
+        return 0;
+    } else if (!strcmp(cmd, "unlink")) {
         AVFilterLink* link;
         AVFrame *frame;
         int i;
 
-        link = (AVFilterLink*)args;
+        if (sscanf(args, "%p", &link) != 1)
+            return AVERROR(EINVAL);
 
         frame = av_frame_alloc();
         if (!frame)
