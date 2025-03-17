@@ -37,6 +37,7 @@
 #include "filters.h"
 #include "internal.h"
 #include "formats.h"
+#include "aresample.h"
 
 typedef struct ANxSrcPriv {
     const AVClass *class;
@@ -56,22 +57,84 @@ typedef struct ANxSrcPriv {
     char *map_str;
     int *map;
     int nb_outputs;
+
+    AResampleContext *resample; /**< resampler context for audio output */
 } ANxSrcPriv;
 
 static int anxsrc_config_props(AVFilterLink *link)
 {
+    av_log(link->src, AV_LOG_INFO, "link sample format: %s, sample_rate %d, channels %d.\n",
+           av_get_sample_fmt_name(link->format), link->sample_rate,
+           link->ch_layout.nb_channels);
+    return 0;
+}
+
+static int anxsrc_get_device_support_format(AVFilterContext *ctx, const char *devname,
+                                            const char *key, int value, int *out_value)
+{
+    AVOptionRanges* ranges = NULL;
+    AVOptionRange* range = NULL;
+    int ret, range_idx;
+
+    ret = ff_nuttx_capbility_query_ranges(&ranges, devname, key, 0, false);
+    if (ret > 0) {
+        for (range_idx = 0; range_idx < ranges->nb_ranges; range_idx++) {
+            range = ranges->range[range_idx];
+            if ((range->is_range && value >= range->value_min &&
+                 value <= range->value_max) ||
+                (!range->is_range && range->value_min == value)) {
+                break;
+            }
+        }
+
+        if (range_idx == ranges->nb_ranges) {
+            av_log(ctx, AV_LOG_WARNING, "Unsupported %s: %d\n", key, value);
+            *out_value = range->value_min;
+        } else {
+            *out_value = value;
+        }
+        av_opt_freep_ranges(&ranges);
+    } else {
+        av_log(ctx, AV_LOG_ERROR, "Unsupported query %s: %d\n", key, value);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
+static int anxsrc_config_output_formats(AVFilterLink *link)
+{
     AVFilterContext *ctx = link->src;
-    ANxSrcPriv *sink = ctx->priv;
-    NuttxPriv *priv = &sink->priv;
+    ANxSrcPriv *src = ctx->priv;
+    NuttxPriv *priv = &src->priv;
+    int ret;
 
-    priv->periods = sink->periods;
-    priv->period_time = sink->period_time;
-
+    priv->periods = src->periods;
+    priv->period_time = src->period_time;
     priv->nonblock = true;
-    priv->codec = av_get_pcm_codec(link->format, -1);
-    priv->sample_rate = link->sample_rate;
-    priv->format = link->format;
-    priv->ch_layout.nb_channels = link->ch_layout.nb_channels;
+
+    ret = anxsrc_get_device_support_format(ctx, src->devname, "sample_fmts",
+                                           link->format, &priv->format);
+    if (ret < 0)
+        return ret;
+
+    priv->codec = av_get_pcm_codec(priv->format, -1);
+
+    ret = anxsrc_get_device_support_format(ctx, src->devname, "sample_rates",
+                                           link->sample_rate, &priv->sample_rate);
+    if (ret < 0)
+        return ret;
+
+    ret = anxsrc_get_device_support_format(ctx, src->devname, "channels",
+                                           link->ch_layout.nb_channels,
+                                           &priv->ch_layout.nb_channels);
+    if (ret < 0)
+        return ret;
+
+    if (priv->ch_layout.nb_channels == link->ch_layout.nb_channels)
+        av_channel_layout_copy(&priv->ch_layout, &link->ch_layout);
+    else
+        av_channel_layout_default(&priv->ch_layout, priv->ch_layout.nb_channels);
 
     return 0;
 }
@@ -101,6 +164,13 @@ static int anxsrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
+    src->resample = av_mallocz(sizeof(AResampleContext) * src->nb_outputs);
+    if (!src->resample)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < src->nb_outputs; i++)
+        ff_resample_init(&src->resample[i]);
+
     return ff_nuttx_init(priv, src->devname, false);
 }
 
@@ -108,7 +178,11 @@ static void anxsrc_uninit(AVFilterContext *ctx)
 {
     ANxSrcPriv *src = ctx->priv;
     NuttxPriv *priv = &src->priv;
+    int i;
+    for (i = 0; i < src->nb_outputs; i++)
+        ff_resample_uninit(&src->resample[i]);
 
+    av_freep(&src->resample);
     ff_nuttx_deinit(priv);
     av_freep(&src->map);
 }
@@ -127,7 +201,8 @@ static int anxsrc_open(AVFilterContext *ctx)
         if (src->map && src->map[i] < 0)
             continue;
 
-        anxsrc_config_props(ctx->outputs[i]);
+        anxsrc_config_output_formats(ctx->outputs[i]);
+        break;
     }
 
     ret = ff_nuttx_open(priv);
@@ -202,37 +277,42 @@ error:
     return ret;
 }
 
-static int anxsrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket *pkt, AVFrame **frame)
+static int anxsrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket **pkt, AVFrame **frame)
 {
     AVFilterLink *link = ctx->outputs[pad];
     ANxSrcPriv *s = ctx->priv;
     NuttxPriv *priv = &s->priv;
-    AVFrame *out = NULL;
+    AVFrame *src;
     int ret;
 
-    out = av_frame_alloc();
-    if (!out) {
-        ret = AVERROR(ENOMEM);
-        goto error;
+    src = av_frame_alloc();
+    if (!src) {
+        return AVERROR(ENOMEM);
     }
 
-    out->format = link->format;
-    out->sample_rate = link->sample_rate;
-    av_channel_layout_copy(&out->ch_layout, &link->ch_layout);
-    out->nb_samples = pkt->size / priv->sample_bytes;
-    out->pkt_size = pkt->size;
+    src->format = priv->format;
+    src->sample_rate = priv->sample_rate;
+    av_channel_layout_copy(&src->ch_layout, &priv->ch_layout);
+    src->nb_samples = (*pkt)->size / priv->sample_bytes;
+    src->pkt_size = (*pkt)->size;
 
-    out->buf[0] = pkt->buf;
-    out->data[0] = out->buf[0]->data;
-    out->linesize[0] = pkt->size;
-    out->extended_data = out->data;
-    out->pts = pkt->pts;
+    src->buf[0] = (*pkt)->buf;
+    src->data[0] = src->buf[0]->data;
+    src->linesize[0] = (*pkt)->size;
+    src->extended_data = src->data;
+    src->pts = (*pkt)->pts;
 
-    *frame = out;
-    return 0;
+    ret = ff_resample_frame(&s->resample[pad], link, src, frame);
+    if (ret == 0)
+        *frame = src;
+    else
+        av_frame_free(&src);
 
-error:
-    av_frame_free(&out);
+    (*pkt)->buf = NULL;
+    (*pkt)->data = NULL;
+    (*pkt)->size = 0;
+    av_packet_free(pkt);
+
     return ret;
 }
 
@@ -240,9 +320,7 @@ static int anxsrc_activate(AVFilterContext *ctx)
 {
     ANxSrcPriv *s = ctx->priv;
     NuttxPriv *priv = &s->priv;
-    AVFrame *frame = NULL;
     AVPacket *pkt = NULL;
-    AVFilterLink *link;
     int i, ret;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -261,10 +339,20 @@ static int anxsrc_activate(AVFilterContext *ctx)
         goto out;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        AVFrame *frame = NULL;
+        AVFilterLink *link;
+        AVPacket *pkt_out;
+
         if (s->map && s->map[i] < 0)
             continue;
 
-        ret = anxsrc_wrap_frame(ctx, i, pkt, &frame);
+        pkt_out = av_packet_clone(pkt);
+        if (!pkt_out) {
+            ret = AVERROR(ENOMEM);
+            goto out;
+        }
+
+        ret = anxsrc_wrap_frame(ctx, i, &pkt_out, &frame);
         if (ret < 0)
             goto out;
 
@@ -276,9 +364,6 @@ static int anxsrc_activate(AVFilterContext *ctx)
 
 out:
     if (pkt != NULL) {
-        pkt->buf = NULL;
-        pkt->data = NULL;
-        pkt->size = 0;
         av_packet_free(&pkt);
     }
 
