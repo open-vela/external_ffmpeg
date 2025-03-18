@@ -39,6 +39,8 @@
 #include "formats.h"
 #include "aresample.h"
 
+#define ROUTE_ON 0
+#define ROUTE_OFF -1
 typedef struct ANxSrcPriv {
     const AVClass *class;
 
@@ -370,6 +372,28 @@ out:
     return ret;
 }
 
+static int anxsrc_send_empty_frame(AVFilterContext *ctx, AVFilterLink *link)
+{
+    AVFrame *frame = av_frame_alloc();
+    int ret;
+
+    if (!frame)
+        return AVERROR(ENOMEM);
+
+    frame->nb_samples = 0;
+    frame->format = link->format;
+    frame->sample_rate = link->sample_rate;
+    av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
+
+    ret = ff_filter_frame(link, frame);
+    if (ret < 0) {
+        av_frame_free(&frame);
+        return ret;
+    }
+
+    return 0;
+}
+
 static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                                   char *res, int res_len, int flags)
 {
@@ -382,22 +406,13 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
         AVFilterLink* link;
-        AVFrame *frame;
         int i;
 
         if (sscanf(args, "%p", &link) != 1)
             return AVERROR(EINVAL);
 
-        frame = av_frame_alloc();
-        if (!frame)
-            return AVERROR(ENOMEM);
-
-        frame->nb_samples = 0;
-        frame->format = link->format;
-        frame->sample_rate = link->sample_rate;
-        av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
-
-        if ((ret = ff_filter_frame(link, frame)) < 0)
+        ret = anxsrc_send_empty_frame(ctx, link);
+        if (ret < 0)
             av_log(ctx, AV_LOG_ERROR, "send empty frame failed:%d\n", ret);
 
         for (i = 0; i < ctx->nb_outputs; i++) {
@@ -440,11 +455,48 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
                  dq_count(&priv->bufferq), priv->mq);
         return 0;
     } else if (!av_strcasecmp(cmd, "map")) {
+        int *old_map = NULL;
+        int active_outputs = 0;
+        int i;
+
+        if (src->map) {
+            old_map = av_calloc(src->nb_outputs, sizeof(*old_map));
+            if (!old_map)
+                return AVERROR(ENOMEM);
+
+            memcpy(old_map, src->map, src->nb_outputs * sizeof(*old_map));
+        }
+
         ret = avfilter_parse_mapping(args, &src->map, src->nb_outputs);
         if (ret < 0)
             return ret;
 
-        ff_filter_set_ready(ctx, 100);
+        for (i = 0; i < src->nb_outputs; i++) {
+            if (old_map[i] == ROUTE_ON && src->map[i] == ROUTE_OFF &&
+                ff_outlink_frame_wanted(ctx->outputs[i])) {
+                ret = anxsrc_send_empty_frame(ctx, ctx->outputs[i]);
+                if (ret < 0) {
+                    av_freep(&old_map);
+                    return ret;
+                }
+            }
+
+            if (old_map[i] == ROUTE_OFF && src->map[i] == ROUTE_ON) {
+                if (!avfilter_link_is_active(ctx->outputs[i]))
+                    active_outputs++;
+            }
+
+            if (old_map[i] != src->map[i])
+                ff_filter_set_ready(ctx, 100);
+        }
+
+        if (i == src->nb_outputs && !active_outputs) {
+            ff_nuttx_close(priv);
+            src->running = false;
+        }
+
+        av_freep(&old_map);
+
         return ret;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);

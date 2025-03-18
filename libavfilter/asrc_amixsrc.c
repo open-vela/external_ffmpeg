@@ -58,6 +58,9 @@ enum MixInputState {
 #define DURATION_SHORTEST 1
 #define DURATION_FIRST    2
 
+#define ROUTE_ON 0
+#define ROUTE_OFF -1
+
 /* FIXME: use directly links fifo */
 
 typedef struct MixInput {
@@ -626,6 +629,26 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
 }
 
+static int amix_buffersrc_send_empty_frame(AVFilterContext *ctx, AVFilterLink *link)
+{
+    AVFrame *frame = av_frame_alloc();
+    int ret;
+
+    if (!frame)
+        return AVERROR(ENOMEM);
+
+    frame->nb_samples = 0;
+    frame->format = link->format;
+    frame->sample_rate = link->sample_rate;
+    av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
+
+    ret = ff_filter_frame(link, frame);
+    if (ret < 0)
+        return ret;
+
+    return 0;
+}
+
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                            char *res, int res_len, int flags)
 {
@@ -672,11 +695,38 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 
         return 0;
     } else if (!av_strcasecmp(cmd, "map")) {
-        ret = avfilter_parse_mapping(args, &s->map, s->nb_outputs);
-        if (ret < 0)
-            return ret;
+        int *old_map = NULL;
+        int i;
 
-        ff_filter_set_ready(ctx, 100);
+        if (s->map) {
+            old_map = av_calloc(s->nb_outputs, sizeof(*old_map));
+            if (!old_map)
+                return AVERROR(ENOMEM);
+
+            memcpy(old_map, s->map, s->nb_outputs * sizeof(*old_map));
+        }
+
+        ret = avfilter_parse_mapping(args, &s->map, s->nb_outputs);
+        if (ret < 0) {
+            av_freep(&old_map);
+            return ret;
+        }
+
+        for (i = 0; i < s->nb_outputs; i++) {
+            if (old_map[i] == ROUTE_ON && s->map[i] == ROUTE_OFF &&
+                ff_outlink_frame_wanted(ctx->outputs[i])) {
+                ret = amix_buffersrc_send_empty_frame(ctx, ctx->outputs[i]);
+                if (ret < 0) {
+                    av_freep(&old_map);
+                    return ret;
+                }
+            }
+        }
+        av_freep(&old_map);
+
+        if (s->nb_inputs > 0)
+            ff_filter_set_ready(ctx, 100);
+
         return ret;
     } else if(!strcmp(cmd, "volume")) {
         double value;
