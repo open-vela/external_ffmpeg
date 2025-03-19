@@ -577,6 +577,17 @@ try_out:
     }
 
     if (calc_active_inputs(s)) {
+        AVFrame *frame = av_frame_alloc();
+        if (!frame)
+            return AVERROR(ENOMEM);
+        frame->nb_samples = 0;
+        frame->format = outlink->format;
+        frame->sample_rate = outlink->sample_rate;
+        av_channel_layout_copy(&frame->ch_layout, &outlink->ch_layout);
+        ret = ff_filter_frame(outlink, frame);
+        if (ret < 0)
+            return ret;
+
         //ff_outlink_set_status(outlink, AVERROR_EOF, s->next_pts);
         return 0;
     }
