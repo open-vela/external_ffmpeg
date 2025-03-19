@@ -76,6 +76,10 @@ typedef struct MixInput {
 
     AResampleContext resample; /**< resampler context */
     AVAudioFifo **fifos;       /**< audio fifo for each output */
+
+    int sample_rate;            /**< sample rate */
+    AVChannelLayout ch_layout;  /**< channel layout */
+    enum AVSampleFormat sample_fmt;  /**< sample format */
 } MixInput;
 
 typedef struct MixOutput {
@@ -121,7 +125,6 @@ static const AVOption amix_options[] = {
             OFFSET(normalize), AV_OPT_TYPE_BOOL, {.i64=1}, 0, 1, A|F|T },
     { "map", "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},    .flags = A|F },
     { "map_array", "get map list", OFFSET(map),    AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX,    .flags = A|F },
-
     { NULL }
 };
 
@@ -175,7 +178,7 @@ static int clear_inputs(AVFilterContext *ctx)
 
 static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
                                int (*on_event_cb)(void *udata, int evt, int64_t args),
-                               void *on_event_cb_udata)
+                               void *on_event_cb_udata, int format, int sample_rate, int channels)
 {
     MixContext *s = ctx->priv;
     MixInput *in;
@@ -206,11 +209,19 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
 
     ff_resample_init(&in->resample);
 
+    in->sample_fmt = format;
+    in->sample_rate = sample_rate;
+    av_channel_layout_default(&in->ch_layout, channels);
+
     s->inputs[s->nb_inputs] = in;
     s->nb_inputs++;
 
     for (i = 0; i < s->nb_outputs; i++) {
-        FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+        FilterLinkInternal *li;
+        if (s->map && s->map[i] < 0)
+            continue;
+
+        li = ff_link_internal(ctx->outputs[i]);
         li->frame_wanted_out = 1;
     }
     ff_filter_set_ready(ctx, 100);
@@ -272,15 +283,32 @@ static int set_parameter(MixInput *in, const char *key, const char *value)
     return AVERROR(EINVAL);
 }
 
-static int get_parameter(MixInput *in, const char *key, char *value, int len)
+static int get_parameter(AVFilterContext *ctx, MixInput *in, const char *key, char *value, int len)
 {
-    if (!in || !key || len <= 0)
+    MixContext *s = ctx->priv;
+
+    if (!key || len <= 0)
         return AVERROR(EINVAL);
 
     if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", in->volume);
 
         av_log(in->ctx, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, in->volume);
+        return 0;
+    }  else if (!strcmp(key, "get_format")) {
+        MixInput *in;
+        int i;
+
+        if (s->nb_inputs == 0)
+            return  snprintf(value, len, "fmt=0:rate=0:ch=0");
+
+        for (i = 0; i < s->nb_inputs; i++) {
+            in = s->inputs[i];
+            if (in->state != INPUT_EOF)
+                break;
+        }
+
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", in->sample_fmt, in->sample_rate, in->ch_layout.nb_channels);
         return 0;
     }
 
@@ -471,10 +499,12 @@ static int activate(AVFilterContext *ctx)
     int i, j, ret;
 
     for (i = 0; i < s->nb_outputs; i++) {
-        if (!ff_outlink_frame_wanted(ctx->outputs[i])) {
-            return 0;
-        }
+        if (s->map && s->map[i] == 0)
+            break;
     }
+
+    if (i == s->nb_outputs)
+        return 0;
 
     for (i = 0; i < s->nb_inputs; i++) {
         AVFrame *src, *dst;
@@ -660,16 +690,17 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
 
     if (!strcmp(cmd, "link")) {
         MixInput *in;
+        int format, sample_rate, channels;
         int (*on_event_cb)(void *udata, int evt, int64_t args);
         void *udata;
 
         if (!args || !res)
             return AVERROR(EINVAL);
 
-        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
+        if (sscanf(args, "%p %p fmt=%d:rate=%d:ch=%d", &on_event_cb, &udata, &format, &sample_rate, &channels) != 5)
             return AVERROR(EINVAL);
 
-        ret = amix_buffersrc_open(&in, ctx, on_event_cb, udata);
+        ret = amix_buffersrc_open(&in, ctx, on_event_cb, udata, format, sample_rate, channels);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "amixsrc: error opening input: %s\n", av_err2str(ret));
             return ret;
@@ -760,7 +791,21 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         if (sscanf(args, "%p %31s", &in, key) != 2)
             return AVERROR(EINVAL);
 
-        return get_parameter(in, key, res, res_len);
+        return get_parameter(ctx, in, key, res, res_len);
+    } else if (!strcmp(cmd, "force_request")){
+        FilterLinkInternal *li;
+        int i;
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (s->map && s->map[i] < 0 && !ff_outlink_frame_wanted(ctx->outputs[i]))
+                continue;
+
+            li = ff_link_internal(ctx->outputs[i]);
+            li->frame_wanted_out = 1;
+            ff_filter_set_ready(ctx, 100);
+        }
+
+        return 0;
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);

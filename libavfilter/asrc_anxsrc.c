@@ -60,6 +60,8 @@ typedef struct ANxSrcPriv {
     int *map;
     int nb_outputs;
 
+    bool running;
+
     AResampleContext *resample; /**< resampler context for audio output */
 } ANxSrcPriv;
 
@@ -211,6 +213,7 @@ static int anxsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
+    src->running = true;
     return 0;
 }
 
@@ -394,6 +397,34 @@ static int anxsrc_send_empty_frame(AVFilterContext *ctx, AVFilterLink *link)
     return 0;
 }
 
+static int anxsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int value_len)
+{
+    ANxSrcPriv *src = ctx->priv;
+
+    if (!ctx || !key || value_len <=0)
+        return AVERROR(EINVAL);
+
+    if (!strcmp(key, "get_format")) {
+        AVFilterLink* link;
+        int i;
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (src->map && src->map[i] == 0)
+                break;
+        }
+
+        if (i == ctx->nb_outputs)
+            snprintf(value, value_len, "fmt=0:rate=0:ch=0");
+        else
+          snprintf(value, value_len, "fmt=%d:rate=%d:ch=%d", ctx->outputs[i]->format, ctx->outputs[i]->sample_rate,
+                    ctx->outputs[i]->ch_layout.nb_channels);
+        return 0;
+    }
+
+    av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
 static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                                   char *res, int res_len, int flags)
 {
@@ -421,8 +452,10 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
                 break;
         }
 
-        if (i == ctx->nb_outputs && priv->running)
+        if (i == ctx->nb_outputs && priv->running) {
             ff_nuttx_close(priv);
+            src->running = false;
+        }
 
         return 0;
     } else if (!strcmp(cmd, "get_pollfd")) {
@@ -498,9 +531,18 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         av_freep(&old_map);
 
         return ret;
-    } else {
+    } else if (!strcmp(cmd, "force_request")){
+        anxsrc_force_request(ctx);
+        return 0;
+    } else if (!strcmp(cmd, "get_parameter")){
+        char key[32];
+
+        if (sscanf(args, "%*p %31s", key) != 1)
+            return AVERROR(EINVAL);
+
+        return anxsrc_get_parameter(ctx, key, res, res_len);
+    } else
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    }
 }
 
 static int anxsrc_query_formats(const AVFilterContext *ctx,
@@ -577,6 +619,7 @@ static const AVOption anxsrc_options[] = {
     { "outputs",     "", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
     { "map",         "", OFFSET(map_str),     AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
     { "map_array",   "", OFFSET(map),         AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
+    { "is_activate", "", OFFSET(running),     AV_OPT_TYPE_BOOL,        {.i64 = 0}, 0, 1, .flags = A|R },
     { NULL },
 };
 

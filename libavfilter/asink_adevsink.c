@@ -593,6 +593,7 @@ static const AVOption adevsink_options[] = {
     { "sample_fmt",  "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE}, -1, INT_MAX, FLAGSR },
     { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                 0, INT_MAX, FLAGSR },
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},              0, 0,       FLAGSR },
+    { "is_activate", "", OFFSET(started),     AV_OPT_TYPE_BOOL,       {.i64 = 0},                 0, 1,       FLAGSR },
     { NULL },
 };
 
