@@ -1171,6 +1171,15 @@ void av_opt_freep_ranges(AVOptionRanges **ranges);
  */
 int av_opt_query_ranges(AVOptionRanges **, void *obj, const char *key, int flags);
 
+/*
+ * Get a list of allowed ranges for the given option.
+ *
+ * The result must be freed with av_opt_free_ranges.
+ *
+ * @return number of compontents returned on success, a negative errro code otherwise
+ */
+int av_opt_query_ranges2(AVOptionRanges **, void *obj, void *udata, const char *key, int flags);
+
 /**
  * Get a default list of allowed ranges for the given option.
  *

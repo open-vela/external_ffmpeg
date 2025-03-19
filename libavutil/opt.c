@@ -2477,6 +2477,24 @@ int av_opt_query_ranges(AVOptionRanges **ranges_arg, void *obj, const char *key,
     return ret;
 }
 
+int av_opt_query_ranges2(AVOptionRanges **ranges_arg, void *obj, void *udata, const char *key, int flags)
+{
+    int ret;
+    const AVClass *c = *(AVClass **)obj;
+    int (*callback)(AVOptionRanges **, void *obj, const char *key, int flags) = c->query_ranges;
+
+    if (!callback)
+        callback = av_opt_query_ranges_default;
+
+    ret = callback(ranges_arg, udata, key, flags);
+    if (ret >= 0) {
+        if (!(flags & AV_OPT_MULTI_COMPONENT_RANGE))
+            ret = 1;
+        (*ranges_arg)->nb_components = ret;
+    }
+    return ret;
+}
+
 int av_opt_query_ranges_default(AVOptionRanges **ranges_arg, void *obj, const char *key, int flags)
 {
     AVOptionRanges *ranges = av_mallocz(sizeof(*ranges));
