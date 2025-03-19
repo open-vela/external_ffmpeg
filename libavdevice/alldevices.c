@@ -45,6 +45,7 @@ extern const FFInputFormat  ff_iec61883_demuxer;
 extern const FFInputFormat  ff_jack_demuxer;
 extern const FFInputFormat  ff_kmsgrab_demuxer;
 extern const FFInputFormat  ff_lavfi_demuxer;
+extern const FFInputFormat  ff_nuttx_demuxer;
 extern const FFOutputFormat ff_nuttx_muxer;
 extern const FFInputFormat  ff_openal_demuxer;
 extern const FFOutputFormat ff_opengl_muxer;

@@ -30,41 +30,15 @@
 
 #include <poll.h>
 
+#include "libavformat/demux.h"
 #include "libavformat/internal.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
-#include "libavutil/time.h"
+#include "libavutil/mem.h"
 
 #include "nuttx.h"
 
-static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges, void *obj,
-                                        const char *key, int flags)
-{
-    struct AVDeviceCapabilitiesQuery *devcap = obj;
-    struct AVFormatContext *s1 = devcap->device_context;
-
-    return ff_nuttx_capbility_query_ranges(ranges, s1->url, key, flags, false);
-}
-
-static const AVClass nuttx_cap_class = {
-    .class_name   = "NUTTX indev capbility",
-    .item_name    = av_default_item_name,
-    .version      = LIBAVUTIL_VERSION_INT,
-    .category     = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
-    .query_ranges = nuttx_capbility_query_ranges,
-};
-
-static int nuttx_init(struct AVFormatContext *s1)
-{
-    NuttxPriv *priv = s1->priv_data;
-
-    return ff_nuttx_init(priv, s1->url, false);
-}
-
-static void nuttx_deinit(struct AVFormatContext *s1)
-{
-    ff_nuttx_deinit(s1->priv_data);
-}
+#define AVFMT_FLAG_CODEC_READY    0x20000
 
 static int nuttx_control_message(struct AVFormatContext *s1,
                                  int type, void *data, size_t data_size)
@@ -72,21 +46,10 @@ static int nuttx_control_message(struct AVFormatContext *s1,
     NuttxPriv *priv = s1->priv_data;
 
     switch (type) {
-        case AV_APP_TO_DEV_GET_CAPS_REQUEST: {
-            struct AVDeviceCapabilitiesQuery *caps = data;
-
-            if (!caps)
-                return AVERROR(EINVAL);
-
-            caps->av_class = &nuttx_cap_class;
-            caps->device_context = s1;
-            av_opt_set_defaults(caps);
-            return 0;
-        }
         case AV_APP_TO_DEV_GET_POLLFD: {
             struct pollfd *poll = data;
 
-            if (!data || data_size < sizeof(struct pollfd))
+            if (!data || data_size < sizeof(struct pollfd) || !priv->running)
                 return AVERROR(EINVAL);
 
             poll[0].fd     = priv->mq;
@@ -140,6 +103,9 @@ static int nuttx_read_header(AVFormatContext *s1)
     AVStream *st;
     int ret;
 
+    if (!(s1->flags & AVFMT_FLAG_CODEC_READY))
+        return 0;
+
     st = avformat_new_stream(s1, NULL);
     if (!st)
         return AVERROR(ENOMEM);
@@ -152,6 +118,12 @@ static int nuttx_read_header(AVFormatContext *s1)
 
     if (s1->flags & AVFMT_FLAG_NONBLOCK)
         priv->nonblock = true;
+
+    ret = ff_nuttx_init(priv, s1->url, false);
+    if (ret < 0) {
+        ff_remove_stream(s1, st);
+        return ret;
+    }
 
     ret = ff_nuttx_open(s1->priv_data);
     if (ret < 0) {
@@ -180,7 +152,8 @@ static int nuttx_read_close(AVFormatContext *s1)
 
     st = s1->streams[0];
 
-    ff_nuttx_close(priv);
+    ff_nuttx_deinit(s1->priv_data);
+
     ff_remove_stream(s1, st);
 
     return 0;
@@ -220,6 +193,27 @@ static int nuttx_get_device_list(struct AVFormatContext *s, struct AVDeviceInfoL
     return ff_nuttx_get_device_list(device_list, false);
 }
 
+static int nuttx_capbility_query_ranges(struct AVOptionRanges **ranges_, void *obj,
+                                        const char *key, int flags)
+{
+    struct AVFormatContext *s1 = obj;
+    struct AVOptionRanges *ranges;
+    int ret;
+
+    if (!strcmp(key, "control_message")) {
+        ranges = av_mallocz(sizeof(struct AVOptionRanges));
+        if (!ranges)
+            return AVERROR(ENOMEM);;
+
+        ranges->range = (AVOptionRange **)nuttx_control_message;
+        ranges->nb_ranges = 0;
+        *ranges_ = ranges;
+        return 0;
+    }
+
+    return ff_nuttx_capbility_query_ranges(ranges_, s1->url, key, flags, false);
+}
+
 #define OFFSET(x) offsetof(NuttxPriv, x)
 #define FLAGS AV_OPT_FLAG_DECODING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 static const AVOption options[] = {
@@ -239,19 +233,17 @@ static const AVClass nuttx_demuxer_class = {
     .option     = options,
     .version    = LIBAVUTIL_VERSION_INT,
     .category   = AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT,
+    .query_ranges = nuttx_capbility_query_ranges,
 };
 
-AVInputFormat ff_nuttx_demuxer = {
-    .name                       = "nuttx",
-    .long_name                  = NULL_IF_CONFIG_SMALL("NUTTX audio input"),
+const FFInputFormat ff_nuttx_demuxer = {
+    .p.name                     = "nuttx",
+    .p.long_name                = NULL_IF_CONFIG_SMALL("NUTTX audio input"),
+    .p.flags                    = AVFMT_NOFILE,
+    .p.priv_class               = &nuttx_demuxer_class,
     .priv_data_size             = sizeof(NuttxPriv),
-    .init                       = nuttx_init,
-    .deinit                     = nuttx_deinit,
-    .control_message            = nuttx_control_message,
     .read_header                = nuttx_read_header,
     .read_packet                = nuttx_read_packet,
     .read_close                 = nuttx_read_close,
     .get_device_list            = nuttx_get_device_list,
-    .flags                      = AVFMT_NOFILE,
-    .priv_class                 = &nuttx_demuxer_class,
 };
