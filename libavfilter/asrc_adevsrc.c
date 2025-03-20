@@ -421,14 +421,15 @@ static int adevsrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 }
 
 static int adevsrc_query_formats(const AVFilterContext *ctx,
-                                AVFilterFormatsConfig **cfg_in,
-                                AVFilterFormatsConfig **cfg_out)
+                                 AVFilterFormatsConfig **cfg_in,
+                                 AVFilterFormatsConfig **cfg_out)
 {
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
     ADevSrcPriv *priv = ctx->priv;
+    AVOptionRanges *ranges = NULL;
     AVChannelLayout layout;
-    int ret, i;
+    int ret, i, j;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         int list[] = { 0, -1 };
@@ -438,8 +439,21 @@ static int adevsrc_query_formats(const AVFilterContext *ctx,
             formats = ff_make_format_list(list);
             if (!formats)
                 goto out;
-        } else
-            formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+        } else {
+            ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data,
+                                       priv->fmt_ctx, "sample_fmts",
+                                       AV_OPT_MULTI_COMPONENT_RANGE);
+            if (ret >= 0) {
+                for (j = 0; j < ranges->nb_ranges; j++) {
+                    ret = ff_add_format(&formats, ranges->range[j]->value_min);
+                    if (ret < 0)
+                        goto out;
+                }
+                av_opt_freep_ranges(&ranges);
+            } else {
+                formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+            }
+        }
 
         ff_formats_unref(&cfg_out[i]->formats);
         ret = ff_formats_ref(formats, &cfg_out[i]->formats);
@@ -453,8 +467,21 @@ static int adevsrc_query_formats(const AVFilterContext *ctx,
             formats = ff_make_format_list(list);
             if (!formats)
                 goto out;
-        } else
-            formats = ff_all_samplerates();
+        } else {
+            ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data,
+                                       priv->fmt_ctx, "sample_rates",
+                                       AV_OPT_MULTI_COMPONENT_RANGE);
+            if (ret >= 0) {
+                for (j = 0; j < ranges->nb_ranges; j++) {
+                    ret = ff_add_format(&formats, ranges->range[j]->value_min);
+                    if (ret < 0)
+                        goto out;
+                }
+                av_opt_freep_ranges(&ranges);
+            } else {
+                formats = ff_all_samplerates();
+            }
+        }
 
         ff_formats_unref(&cfg_out[i]->samplerates);
         ret = ff_formats_ref(formats, &cfg_out[i]->samplerates);
@@ -468,14 +495,42 @@ static int adevsrc_query_formats(const AVFilterContext *ctx,
             layouts = ff_make_channel_layout_list(list64);
             if (!layouts)
                 goto out;
-        } else
-            layouts = ff_all_channel_counts();
+        } else {
+            ret = av_opt_query_ranges2(&ranges, priv->fmt_ctx->priv_data,
+                                       priv->fmt_ctx, "channels",
+                                       AV_OPT_MULTI_COMPONENT_RANGE);
+            if (ret >= 0) {
+                int ch;
+
+                for (j = 0; j < ranges->nb_ranges; j++) {
+                    if (ranges->range[j]->is_range) {
+                        for (ch = ranges->range[0]->value_min; ch <= ranges->range[0]->value_max; ch++) {
+                            av_channel_layout_default(&layout, ch);
+                            ret = ff_add_channel_layout(&layouts, &layout);
+                            if (ret < 0)
+                                goto out;
+                        }
+                    } else {
+                        ch = ranges->range[j]->value_min;
+                        av_channel_layout_default(&layout, ch);
+                        ret = ff_add_channel_layout(&layouts, &layout);
+                        if (ret < 0)
+                            goto out;
+                    }
+                }
+
+                av_opt_freep_ranges(&ranges);
+            } else {
+                layouts = ff_all_channel_counts();
+            }
+        }
 
         ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
         ret = ff_channel_layouts_ref(layouts, &cfg_out[i]->channel_layouts);
     }
 
 out:
+    av_opt_freep_ranges(&ranges);
     return ret;
 }
 
