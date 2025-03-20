@@ -439,6 +439,9 @@ static int output_frame(AVFilterLink *outlink)
                 }
             }
         }
+
+        if ((s->input_state[i] & INPUT_EOF) && av_audio_fifo_size(s->fifos[i]) == 0)
+            s->input_state[i] &= ~INPUT_ON;
     }
     av_frame_free(&in_buf);
 
@@ -512,7 +515,9 @@ static int activate(AVFilterContext *ctx)
         if ((ret = ff_inlink_consume_frame(ctx->inputs[i], &buf)) > 0) {
             if (buf->nb_samples <= 0) {
                 av_log(ctx, AV_LOG_INFO, "input[%d] read EMPTY frame\n", i);
-                s->input_state[i] = INPUT_EOF;
+                s->input_state[i] |= INPUT_EOF;
+                if (av_audio_fifo_size(s->fifos[i]) == 0)
+                    s->input_state[i] &= ~INPUT_ON;
                 goto try_out;
             } else {
                 s->input_state[i] = INPUT_ON;
