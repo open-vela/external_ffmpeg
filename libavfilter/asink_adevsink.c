@@ -343,19 +343,21 @@ static int adevsink_activate(AVFilterContext *ctx)
         if (ret < 0)
             return ret;
         else if (ret > 0) {
-            ret = adevsink_send_frame(ctx, frame);
-            av_frame_free(&frame);
-            if (ret >= 0)
-                ff_filter_set_ready(ctx, 100);
-            return ret;
+            if (frame->nb_samples <= 0) {
+                av_frame_free(&frame);
+                return adevsink_send_frame(ctx, NULL);
+            }
+            else {
+                ret = adevsink_send_frame(ctx, frame);
+                av_frame_free(&frame);
+                if (ret >= 0)
+                    ff_filter_set_ready(ctx, 100);
+                return ret;
+            }
         }
     }
 
-    ff_inlink_acknowledge_status(inlink, &ret, &pts);
-    if (ret >= 0)
-        ff_inlink_request_frame(inlink);
-    else if (ret == AVERROR_EOF)
-        return adevsink_send_frame(ctx, NULL);
+    ff_inlink_request_frame(inlink);
 
     return ret;
 }
