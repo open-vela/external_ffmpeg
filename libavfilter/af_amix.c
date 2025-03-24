@@ -281,12 +281,6 @@ static int config_output(AVFilterLink *outlink)
         return AVERROR(EINVAL);
     }
 
-    for (i = 0; i < s->nb_inputs; i++) {
-        s->fifos[i] = av_audio_fifo_alloc(outlink->format, s->ch_layout.nb_channels, 1024);
-        if (!s->fifos[i])
-            return AVERROR(ENOMEM);
-    }
-
     s->input_state = av_malloc(s->nb_inputs);
     if (!s->input_state)
         return AVERROR(ENOMEM);
@@ -438,10 +432,13 @@ static int output_frame(AVFilterLink *outlink)
                                                 plane_size);
                 }
             }
-        }
 
-        if ((s->input_state[i] & INPUT_EOF) && av_audio_fifo_size(s->fifos[i]) == 0)
-            s->input_state[i] &= ~INPUT_ON;
+            if ((s->input_state[i] & INPUT_EOF) && av_audio_fifo_size(s->fifos[i]) == 0) {
+                s->input_state[i] &= ~INPUT_ON;
+                av_audio_fifo_free(s->fifos[i]);
+                s->fifos[i] = NULL;
+            }
+        }
     }
     av_frame_free(&in_buf);
 
@@ -516,11 +513,25 @@ static int activate(AVFilterContext *ctx)
             if (buf->nb_samples <= 0) {
                 av_log(ctx, AV_LOG_INFO, "input[%d] read EMPTY frame\n", i);
                 s->input_state[i] |= INPUT_EOF;
-                if (av_audio_fifo_size(s->fifos[i]) == 0)
+                if (s->fifos[i] && av_audio_fifo_size(s->fifos[i]) == 0) {
                     s->input_state[i] &= ~INPUT_ON;
+                    av_audio_fifo_free(s->fifos[i]);
+                    s->fifos[i] = NULL;
+                }
                 goto try_out;
             } else {
                 s->input_state[i] = INPUT_ON;
+                s->planar         = av_sample_fmt_is_planar(outlink->format);
+                s->sample_rate    = outlink->sample_rate;
+                s->sample_fmt     = outlink->format;
+
+                if (!s->fifos[i]) {
+                    s->fifos[i] = av_audio_fifo_alloc(outlink->format, outlink->ch_layout.nb_channels, 1024);
+                    if (!s->fifos[i])
+                        return AVERROR(ENOMEM);
+                }
+                if (av_channel_layout_compare(&s->ch_layout, &outlink->ch_layout))
+                    av_channel_layout_copy(&s->ch_layout, &outlink->ch_layout);
             }
 
             if (i == 0) {
