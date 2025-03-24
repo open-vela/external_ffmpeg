@@ -363,12 +363,12 @@ static int activate(AVFilterContext *ctx)
     int ret = 0, status;
     AVFrame *frame;
     int64_t pts;
-  
+
     FF_FILTER_FORWARD_STATUS_BACK_ALL(outlink, ctx);
-  
+
     ff_inlink_acknowledge_status(inlink, &status, &pts);
     if (status == AVERROR_EOF) {
-        av_log(ctx, AV_LOG_INFO, "[%s][%d] fade_clear_queue fq_nbs:%d\n", __func__, __LINE__,
+        av_log(ctx, AV_LOG_INFO, "[%s][%d] fade_clear_queue fq_nbs:%zu\n", __func__, __LINE__,
                ff_framequeue_queued_frames(&priv->fq));
 
         /* when EOF is received during the stop/reset/close operation.
@@ -428,7 +428,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
     int ret = AVERROR(ENOSYS);
 
     if (!strcmp(cmd, "dump"))
-        ret = snprintf(res, res_len, "fq_nbs:%d", ff_framequeue_queued_frames(&priv->fq));
+        ret = snprintf(res, res_len, "fq_nbs:%zu", ff_framequeue_queued_frames(&priv->fq));
     else if (!strcmp(cmd, "fade")) {
         int drain;
         ret = sscanf(args, "%d,%d", &priv->type, &drain);
@@ -438,7 +438,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         }
 
         if (ff_framequeue_queued_frames(&priv->fq)) {
-            av_log(ctx, AV_LOG_INFO, "[%s][%d] fq_nbs:%d", __func__, __LINE__,
+            av_log(ctx, AV_LOG_INFO, "[%s][%d] fq_nbs:%zu", __func__, __LINE__,
                 ff_framequeue_queued_frames(&priv->fq));
             if (priv->type == AFADE_DIR_NONE)
                 fade_clear_queue(ctx, 1);
