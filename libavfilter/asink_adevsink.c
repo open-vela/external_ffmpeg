@@ -283,7 +283,7 @@ static int adevsink_output_packet(AVFilterContext *ctx, int status)
     }
 
     if (ret == AVERROR_EOF || status) {
-        ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+        // ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
         adevsink_stop(ctx);
     }
 
@@ -331,8 +331,8 @@ static int adevsink_activate(AVFilterContext *ctx)
     if (ff_inlink_check_available_frame(inlink)) {
         ret = adevsink_start(ctx);
         if (ret < 0) {
-            if (ret == AVERROR_EOF)
-                ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+            // if (ret == AVERROR_EOF)
+            //     ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
             return ret;
         }
 
