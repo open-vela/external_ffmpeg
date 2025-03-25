@@ -440,6 +440,7 @@ static int output_frame(AVFilterContext *ctx, int index, int nb_samples)
     s->output_duration = av_rescale_q(out_buf->nb_samples, av_make_q(1, outlink->sample_rate),
                                       AV_TIME_BASE_Q);
     out_buf->pts = s->outputs[index].next_pts;
+    s->outputs[index].next_pts += s->output_duration;
     out_buf->duration = s->output_duration;
 
     if (s->volume != s->volume_last) {
