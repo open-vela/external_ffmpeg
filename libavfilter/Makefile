@@ -193,6 +193,7 @@ OBJS-$(CONFIG_HILBERT_FILTER)                += asrc_hilbert.o
 OBJS-$(CONFIG_SINC_FILTER)                   += asrc_sinc.o
 OBJS-$(CONFIG_SINE_FILTER)                   += asrc_sine.o
 
+OBJS-$(CONFIG_TINYCOMPRSRC_FILTER)           += asrc_tinycomprsrc.o
 OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
 OBJS-$(CONFIG_ADEVSRC_FILTER)                += asrc_adevsrc.o
 OBJS-$(CONFIG_ALSASINK_FILTER)               += asink_alsasink.o alsa.o
