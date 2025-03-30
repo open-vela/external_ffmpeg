@@ -181,6 +181,7 @@ extern const AVFilter ff_asink_adevsink;
 extern const AVFilter ff_asrc_adevsrc;
 extern const AVFilter ff_asink_alsasink;
 extern const AVFilter ff_asink_anullsink;
+extern const AVFilter ff_asink_tinycomprsink;
 
 extern const AVFilter ff_vf_addroi;
 extern const AVFilter ff_vf_alphaextract;
