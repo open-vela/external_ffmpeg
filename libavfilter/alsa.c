@@ -281,6 +281,20 @@ int alsa_write(AlsaHandle *s, const void *buffer, int size)
     return ret;
 }
 
+int alsa_read(AlsaHandle *s, const void *buffer, int size)
+{
+    int ret;
+
+    ret = snd_pcm_readi(s->h, buffer, size);
+    if (ret < 0) {
+        if (alsa_xrun_recover(s->h, ret) < 0)
+            return ret;
+        ret = snd_pcm_readi(s->h, buffer, size);
+    }
+
+    return ret;
+}
+
 static int alsa_set_ranges(struct AVOptionRanges *ranges, int nb_ranges,
                            int is_range, int min_v[], int max_v[])
 {
