@@ -576,20 +576,11 @@ static int activate(AVFilterContext *ctx)
 
     if (!clear_inputs(ctx)) {
         for (i = 0; i < s->nb_outputs; i++) {
-            AVFrame *frame;
-
+            AVFilterLink *outlink = ctx->outputs[i];
             if (s->map && s->map[i] < 0)
                 continue;
 
-            frame = av_frame_alloc();
-            if (!frame)
-                return AVERROR(ENOMEM);
-
-            frame->nb_samples = 0;
-            frame->format = ctx->outputs[i]->format;
-            frame->sample_rate = ctx->outputs[i]->sample_rate;
-            av_channel_layout_copy(&frame->ch_layout, &ctx->outputs[i]->ch_layout);
-            ff_filter_frame(ctx->outputs[i], frame);
+            ff_outlink_set_status(outlink, AVERROR_EOF, AV_NOPTS_VALUE);
         }
     }
 
@@ -659,26 +650,6 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
 }
 
-static int amix_buffersrc_send_empty_frame(AVFilterContext *ctx, AVFilterLink *link)
-{
-    AVFrame *frame = av_frame_alloc();
-    int ret;
-
-    if (!frame)
-        return AVERROR(ENOMEM);
-
-    frame->nb_samples = 0;
-    frame->format = link->format;
-    frame->sample_rate = link->sample_rate;
-    av_channel_layout_copy(&frame->ch_layout, &link->ch_layout);
-
-    ret = ff_filter_frame(link, frame);
-    if (ret < 0)
-        return ret;
-
-    return 0;
-}
-
 static int process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                            char *res, int res_len, int flags)
 {
@@ -746,7 +717,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
         for (i = 0; i < s->nb_outputs; i++) {
             if (old_map[i] == ROUTE_ON && s->map[i] == ROUTE_OFF &&
                 ff_outlink_frame_wanted(ctx->outputs[i])) {
-                ret = amix_buffersrc_send_empty_frame(ctx, ctx->outputs[i]);
+                ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
                 if (ret < 0) {
                     av_freep(&old_map);
                     return ret;
@@ -792,20 +763,6 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             return AVERROR(EINVAL);
 
         return get_parameter(ctx, in, key, res, res_len);
-    } else if (!strcmp(cmd, "force_request")){
-        FilterLinkInternal *li;
-        int i;
-
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            if (s->map && s->map[i] < 0 && !ff_outlink_frame_wanted(ctx->outputs[i]))
-                continue;
-
-            li = ff_link_internal(ctx->outputs[i]);
-            li->frame_wanted_out = 1;
-            ff_filter_set_ready(ctx, 100);
-        }
-
-        return 0;
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
