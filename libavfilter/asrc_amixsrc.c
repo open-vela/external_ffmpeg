@@ -58,8 +58,8 @@ enum MixInputState {
 #define DURATION_SHORTEST 1
 #define DURATION_FIRST    2
 
-#define ROUTE_ON 0
-#define ROUTE_OFF -1
+#define ROUTE_OFF 0
+#define ROUTE_ON 1
 
 /* FIXME: use directly links fifo */
 
@@ -218,7 +218,7 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
 
     for (i = 0; i < s->nb_outputs; i++) {
         FilterLinkInternal *li;
-        if (s->map && s->map[i] < 0)
+        if (s->map && s->map[i] == ROUTE_OFF)
             continue;
 
         li = ff_link_internal(ctx->outputs[i]);
@@ -397,7 +397,7 @@ static int frame_wanted(AVFilterContext *ctx, MixInput *in)
 
     /* If all outputs fifo size are bigger than last output size, then skip current read frame. */
     for (j = 0; j < s->nb_outputs; j++) {
-        if (s->map[j] < 0 ||
+        if (s->map[j] == ROUTE_OFF ||
             (in->fifos[j] &&
              av_rescale_q(av_audio_fifo_size(in->fifos[j]),
                           av_make_q(1, ctx->outputs[j]->sample_rate),
@@ -499,7 +499,7 @@ static int activate(AVFilterContext *ctx)
     int i, j, ret;
 
     for (i = 0; i < s->nb_outputs; i++) {
-        if (s->map && s->map[i] == 0)
+        if (s->map && s->map[i] == ROUTE_ON)
             break;
     }
 
@@ -524,7 +524,7 @@ static int activate(AVFilterContext *ctx)
             in->on_event_cb(in->on_event_cb_udata, 0, (intptr_t)src);
 
         for (j = 0; j < s->nb_outputs; j++) {
-            if (s->map && s->map[j] < 0)
+            if (s->map && s->map[j] == ROUTE_OFF)
                 continue;
 
             if (!in->fifos[j]) {
@@ -555,7 +555,7 @@ static int activate(AVFilterContext *ctx)
     for (i = 0; i < s->nb_outputs; i++) {
         int nb_samples = INT_MAX;
 
-        if (s->map && s->map[i] < 0)
+        if (s->map && s->map[i] == ROUTE_OFF)
             continue;
 
         for (j = 0; j < s->nb_inputs; j++) {
@@ -577,7 +577,7 @@ static int activate(AVFilterContext *ctx)
     if (!clear_inputs(ctx)) {
         for (i = 0; i < s->nb_outputs; i++) {
             AVFilterLink *outlink = ctx->outputs[i];
-            if (s->map && s->map[i] < 0)
+            if (s->map && s->map[i] == ROUTE_OFF)
                 continue;
 
             ff_outlink_set_status(outlink, AVERROR_EOF, AV_NOPTS_VALUE);
