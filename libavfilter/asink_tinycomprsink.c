@@ -292,13 +292,13 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
     if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll_fd = (struct pollfd *)res;
         if(priv->compress) {
-            poll_fd[0].fd = compress_get_pollfd(priv->compress);
+            poll_fd[0].fd = compress_get_file_descriptor(priv->compress);
             poll_fd[0].events = POLLIN;
             ret = 1;
         }
     } else if (!strcmp(cmd, "poll_available")) {
         struct pollfd *poll_fd = (struct pollfd *)res;
-        if (priv->compress && poll_fd[0].fd == compress_get_pollfd(priv->compress))
+        if (priv->compress && poll_fd[0].fd == compress_get_file_descriptor(priv->compress))
             ff_filter_set_ready(ctx, 100);
         return 0;
     } else {
