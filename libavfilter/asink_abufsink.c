@@ -57,17 +57,20 @@ static int abufsink_activate(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
 
-        if (!frame->data[0]) {
-            av_log(ctx, AV_LOG_INFO, "received EOF frame\n");
-            goto out;
-        }
-
         if (s->on_event_cb)
             s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
     }
 
     if (s->on_event_cb)
         ff_inlink_request_frame(link);
+    else {
+        if (!ff_inlink_queued_frames(link)) {
+            ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+        } else {
+            ff_filter_set_ready(ctx, 100);
+        }
+    }
+
 out:
     av_frame_free(&frame);
 
