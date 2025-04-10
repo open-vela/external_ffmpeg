@@ -64,8 +64,6 @@ static int abufsink_activate(AVFilterContext *ctx)
 
         if (s->on_event_cb)
             s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
-
-        goto out;
     }
 
     if (s->on_event_cb)

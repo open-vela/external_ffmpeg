@@ -58,6 +58,7 @@ typedef struct AlsasrcPriv {
     int *map;
     int nb_outputs;
 
+    int64_t timestamp;
     AVPacket *pkt;
 
     AResampleContext **resamples; /**< resampler context for audio output */
@@ -326,8 +327,10 @@ static int alsasrc_read_packet(AlsasrcPriv *priv)
         return res;
 
     priv->pkt->size = res * handle->frame_size;
-
-    return 0;
+    priv->pkt->pts = av_rescale(priv->timestamp, 1000000, priv->sample_rate);
+    priv->timestamp += res;
+  
+    return res;
 }
 
 static int alsasrc_open(AVFilterContext *ctx)
@@ -373,6 +376,8 @@ static int alsasrc_open(AVFilterContext *ctx)
         ret = AVERROR(ENOMEM);
         goto error;
     }
+
+    priv->timestamp = 0;
 
     return 0;
 
