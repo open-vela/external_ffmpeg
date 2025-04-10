@@ -77,6 +77,19 @@ static int alsasink_close(AVFilterContext *ctx, int pad)
     return 0;
 }
 
+static void alsasink_consume_frame(AVFrame *frame, int consumed, int frame_size, int ch)
+{
+    int step = frame_size;
+    int i;
+
+    if (frame->data[1]) // planer
+        step = frame_size / ch;
+
+    for (i = 0; i < AV_NUM_DATA_POINTERS && frame->data[i]; i++)
+      frame->data[i] += consumed * step;
+    frame->nb_samples -= consumed;
+}
+
 static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
 {
     AVFilterLink *inlink = ctx->inputs[pad];
@@ -87,13 +100,13 @@ static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
     if (!sink->h || !sink->last_frame)
         return 0;
 
-    ret = alsa_write(sink, sink->last_frame->data[0],
+    ret = alsa_write(sink, (void **)sink->last_frame->data,
                      sink->last_frame->nb_samples);
     if (ret < 0)
         return ret;
 
-    sink->last_frame->data[0] += ret * sink->frame_size;
-    sink->last_frame->nb_samples -= ret;
+    alsasink_consume_frame(sink->last_frame, ret, sink->frame_size,
+                           inlink->ch_layout.nb_channels);
 
     if (sink->last_frame->nb_samples)
         return AVERROR(EAGAIN);
@@ -121,13 +134,13 @@ static int alsasink_write_frame(AVFilterContext *ctx, int pad, AVFrame *frame)
             snd_pcm_pause(sink->h, 0);
     }
 
-    ret = alsa_write(sink, frame->data[0], frame->nb_samples);
+    ret = alsa_write(sink, (void **)frame->data, frame->nb_samples);
     if (ret < 0)
         goto exit;
 
     if (ret != frame->nb_samples) {
-        frame->data[0] += ret * sink->frame_size;
-        frame->nb_samples -= ret;
+        alsasink_consume_frame(frame, ret, sink->frame_size,
+                               inlink->ch_layout.nb_channels);
         sink->last_frame = frame;
         return AVERROR(EAGAIN);
     }

@@ -32,17 +32,24 @@
 
 #include "alsa.h"
 
-static snd_pcm_format_t smpfmt_to_alsafmt(enum AVSampleFormat smpfmt)
+static snd_pcm_format_t smpfmt_to_alsafmt(enum AVSampleFormat smpfmt,
+                                          snd_pcm_access_t *access)
 {
     switch (smpfmt) {
+    case AV_SAMPLE_FMT_U8P:
+        *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
     case AV_SAMPLE_FMT_U8:
         return SND_PCM_FORMAT_U8;
+    case AV_SAMPLE_FMT_S16P:
+        *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
     case AV_SAMPLE_FMT_S16:
 #if AV_HAVE_BIGENDIAN
         return SND_PCM_FORMAT_S16_BE;
 #else
         return SND_PCM_FORMAT_S16_LE;
 #endif
+    case AV_SAMPLE_FMT_S32P:
+        *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
     case AV_SAMPLE_FMT_S32:
 #if AV_HAVE_BIGENDIAN
         return SND_PCM_FORMAT_S32_BE;
@@ -161,12 +168,13 @@ static int alsa_get_capabilities(const char *device, int ac_type,
 int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
               int rate, int channels, enum AVSampleFormat smpfmt)
 {
+    snd_pcm_access_t access = SND_PCM_ACCESS_RW_INTERLEAVED;
     snd_pcm_hw_params_t *hw_params;
     snd_pcm_format_t format;
     snd_pcm_t *h;
     int res;
 
-    format = smpfmt_to_alsafmt(smpfmt);
+    format = smpfmt_to_alsafmt(smpfmt, &access);
     if (format == SND_PCM_FORMAT_UNKNOWN) {
         av_log(NULL, AV_LOG_ERROR, "sample format %d is not supported\n", smpfmt);
         return AVERROR(ENOSYS);
@@ -189,7 +197,7 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         goto fail;
     }
 
-    res = snd_pcm_hw_params_set_access(h, hw_params, SND_PCM_ACCESS_RW_INTERLEAVED);
+    res = snd_pcm_hw_params_set_access(h, hw_params, access);
     if (res < 0) {
         av_log(NULL, AV_LOG_ERROR, "cannot set access type (%s)\n",
                snd_strerror(res));
@@ -266,16 +274,21 @@ static int alsa_xrun_recover(snd_pcm_t *handle, int err)
     return err;
 }
 
-int alsa_write(AlsaHandle *s, const void *buffer, int size)
+int alsa_write(AlsaHandle *s, void **bufs, int size)
 {
     int ret;
 
-    ret = snd_pcm_writei(s->h, buffer, size);
-    if (ret < 0) {
-        if (alsa_xrun_recover(s->h, ret) < 0)
-            return ret;
+    while (1) {
+        if (bufs[1])
+            ret = snd_pcm_writen(s->h, bufs, size);
+        else
+            ret = snd_pcm_writei(s->h, bufs[0], size);
 
-        ret = snd_pcm_writei(s->h, buffer, size);
+        if (ret >= 0 || ret == -EAGAIN)
+            break;
+
+        if (alsa_xrun_recover(s->h, ret) < 0)
+            break;
     }
 
     return ret;
