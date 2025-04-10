@@ -60,8 +60,6 @@ typedef struct AlsasrcPriv {
 
     int64_t timestamp;
     AVPacket *pkt;
-
-    AResampleContext **resamples; /**< resampler context for audio output */
 } AlsasrcPriv;
 
 static inline void alsasrc_force_request(AVFilterContext *ctx)
@@ -118,14 +116,6 @@ static int alsasrc_config_formats(AVFilterLink *link, int pad)
     else
         av_channel_layout_default(&priv->ch_layout, priv->ch_layout.nb_channels);
 
-    if (priv->format_id != link->format || priv->sample_rate != link->sample_rate || priv->ch_layout.nb_channels != link->ch_layout.nb_channels) {
-        priv->resamples[pad] = av_mallocz(sizeof(AResampleContext));
-        if (!priv->resamples[pad])
-            return AVERROR(ENOMEM);
-
-        ff_resample_init(priv->resamples[pad]);
-    }
-
     return 0;
 }
 
@@ -173,10 +163,6 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
-    priv->resamples = av_mallocz(sizeof(AResampleContext *) * priv->nb_outputs);
-    if (!priv->resamples)
-        return AVERROR(ENOMEM);
-
     return 0;
 }
 
@@ -185,14 +171,6 @@ static void alsasrc_uninit(AVFilterContext *ctx)
     AlsasrcPriv *priv = ctx->priv;
     int i;
 
-    for (i = 0; i < priv->nb_outputs; i++) {
-        if (priv->resamples[i]) {
-            ff_resample_uninit(priv->resamples[i]);
-            av_free(priv->resamples[i]);
-        }
-    }
-
-    av_free(priv->resamples);
     av_freep(&priv->map);
 }
 
@@ -208,7 +186,6 @@ static int alsasrc_query_formats(const AVFilterContext *ctx, AVFilterFormatsConf
         ret = ff_formats_ref(formats, &cfg_in[i]->formats);
         if (ret < 0)
             goto out;
-
 
         formats = ff_all_samplerates();
         ff_formats_unref(&cfg_in[i]->samplerates);
@@ -329,7 +306,7 @@ static int alsasrc_read_packet(AlsasrcPriv *priv)
     priv->pkt->size = res * handle->frame_size;
     priv->pkt->pts = av_rescale(priv->timestamp, 1000000, priv->sample_rate);
     priv->timestamp += res;
-  
+
     return res;
 }
 
@@ -391,7 +368,6 @@ static int alsasrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket **pkt, AVF
     AVFilterLink *link = ctx->outputs[pad];
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
-    AResampleContext *resample_ctx;
     int sample_bytes;
     AVFrame *src;
     int ret;
@@ -416,17 +392,8 @@ static int alsasrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket **pkt, AVF
     src->extended_data = src->data;
     src->pts = (*pkt)->pts;
 
-    resample_ctx = priv->resamples[pad];
-    if (resample_ctx) {
-        ret = ff_resample_frame(resample_ctx, link, src, frame);
-        if (ret == 0)
-            *frame = src;
-        else
-            av_frame_free(&src);
-    } else {
-        *frame = src;
-        ret = 0;
-    }
+    *frame = src;
+    ret = 0;
 
     (*pkt)->buf = NULL;
 
