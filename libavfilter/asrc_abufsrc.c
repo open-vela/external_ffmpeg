@@ -38,57 +38,41 @@
 
 #define SUGGESTED_NB_SAMPLES 1024
 
-typedef struct BufferSourceContext {
-    const AVClass    *class;
-    unsigned          nb_failed_requests;
-    int               nb_outputs;
+#define ROUTE_ON 1
+#define ROUTE_OFF 0
 
-    AResampleContext *aresamples;
-
+typedef struct BuffSrcPriv {
+    const AVClass *class;
+    int nb_outputs;
+    char *map_str;
+    int *map;
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
-} BufferSourceContext;
+} BuffSrcPriv;
 
 static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
-    BufferSourceContext *s = ctx->priv;
-    AVFrame *copy;
-    int i, ret;
-
-    s->nb_failed_requests = 0;
-
-    if (!frame) {
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            AVFilterLink *outlink = ctx->outputs[i];
-            AVFrame *frame = av_frame_alloc();
-            if (!frame)
-                return AVERROR(ENOMEM);
-
-            frame->format = outlink->format;
-            frame->sample_rate = outlink->sample_rate;
-            av_channel_layout_copy(&frame->ch_layout, &outlink->ch_layout);
-
-            ret = ff_filter_frame(ctx->outputs[i], frame);
-            if (ret < 0) {
-                av_log(ctx, AV_LOG_WARNING, "outputlink[%d] out_frame failed ret:%d:%s\n", i, ret, av_err2str(ret));
-            }
-        }
-
-        return 0;
-    }
+    BuffSrcPriv *priv = ctx->priv;
+    int i, ret, first = 1;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterLink *outlink = ctx->outputs[i];
-        ret = ff_resample_frame(&s->aresamples[i], outlink, frame, &copy);
-        if (ret <= 0) {
-            copy = av_frame_clone(frame);
-            if (!copy)
-                return AVERROR(ENOMEM);
-        }
+        if (priv->map && priv->map[i] == ROUTE_OFF)
+            continue;
 
-        ret = ff_filter_frame(ctx->outputs[i], copy);
-        if (ret < 0)
-            return ret;
+        if (first) { // do not clone at fisrt sending.
+            ret = ff_filter_frame(ctx->outputs[i], frame);
+            if (ret < 0)
+                return ret;
+            first = 0;
+        } else {
+            AVFrame *clone = av_frame_clone(frame);
+            if (!clone)
+                return AVERROR(ENOMEM);
+
+            ret = ff_filter_frame(ctx->outputs[i], clone);
+            if (ret < 0)
+                return ret;
+        }
     }
 
     return 0;
@@ -97,23 +81,19 @@ static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame 
 static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
     int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
 {
-    BufferSourceContext *s = ctx->priv;
-    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
+    BuffSrcPriv *priv = ctx->priv;
     int i, ret;
 
-    s->on_event_cb = on_event_cb;
-    s->on_event_cb_udata = udata;
+    priv->on_event_cb = on_event_cb;
+    priv->on_event_cb_udata = udata;
 
-    if (s->on_event_cb) {
-        li->frame_wanted_out = 1;
+    if (priv->on_event_cb) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+            li->frame_wanted_out = 1;
+        }
+
         ff_filter_set_ready(ctx, 100);
-    } else {
-        ret = abufsrc_send_frame(ctx, NULL);
-        if (ret < 0)
-            return ret;
-
-        for (i = 0; i < s->nb_outputs; i++)
-            ff_resample_uninit(&s->aresamples[i]);
     }
 
     return 0;
@@ -124,13 +104,12 @@ static int config_props(AVFilterLink *link)
     return 0;
 }
 
-static av_cold int init_audio(AVFilterContext *ctx)
+static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
 {
-    BufferSourceContext *s = ctx->priv;
-    char buf[128];
+    BuffSrcPriv *priv = ctx->priv;
     int i, ret = 0;
 
-    for (i = 0; i < s->nb_outputs; i++) {
+    for (i = 0; i < priv->nb_outputs; i++) {
         AVFilterPad pad = { 0 };
 
         pad.type = AVMEDIA_TYPE_AUDIO;
@@ -143,71 +122,72 @@ static av_cold int init_audio(AVFilterContext *ctx)
             return ret;
     }
 
-    s->aresamples = av_mallocz(s->nb_outputs * sizeof(*s->aresamples));
-    if (!s->aresamples)
-        return AVERROR(ENOMEM);
+    if (priv->map_str) {
+        ret = avfilter_parse_mapping(priv->map_str, &priv->map, priv->nb_outputs);
+        if (ret < 0)
+            return ret;
+    }
 
     return ret;
 }
 
-static av_cold void uninit(AVFilterContext *ctx)
+static av_cold void abufsrc_uninit(AVFilterContext *ctx)
 {
-    BufferSourceContext *s = ctx->priv;
-    int i;
-
-    for (i = 0; i < s->nb_outputs; i++)
-        ff_resample_uninit(&s->aresamples[i]);
-    if (s->aresamples)
-        av_freep(&s->aresamples);
+    BuffSrcPriv *priv = ctx->priv;
+    av_freep(&priv->map);
 }
 
-static int query_formats(const AVFilterContext *ctx,
+static int abufsrc_query_formats(const AVFilterContext *ctx,
                          AVFilterFormatsConfig **cfg_in,
                          AVFilterFormatsConfig **cfg_out)
 {
-    const enum AVSampleFormat sample_fmts[] = {
-        AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP,
-        AV_SAMPLE_FMT_DBL, AV_SAMPLE_FMT_DBLP,
-        AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P,
-        AV_SAMPLE_FMT_NONE
-    };
-    const BufferSourceContext *c = ctx->priv;
-    int i, ret;
+    AVFilterChannelLayouts *layouts = NULL;
+    AVFilterFormats *formats = NULL;
+    int ret, i;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (ctx->outputs[i]->type != AVMEDIA_TYPE_AUDIO) {
-            av_log((void*)ctx, AV_LOG_ERROR, "Output[%d]:%s media-type mismatch\n", i, av_get_media_type_string(ctx->outputs[i]->type));
-            return AVERROR(EINVAL);
-        }
+        formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+        ff_formats_unref(&cfg_out[i]->formats);
+        ret = ff_formats_ref(formats, &cfg_out[i]->formats);
+        if (ret < 0)
+            goto out;
+
+
+        formats = ff_all_samplerates();
+        ff_formats_unref(&cfg_out[i]->samplerates);
+        ret = ff_formats_ref(formats, &cfg_out[i]->samplerates);
+        if (ret < 0)
+            goto out;
+
+        layouts = ff_all_channel_counts();
+        ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(layouts, &cfg_out[i]->channel_layouts);
+        if (ret < 0)
+            goto out;
     }
 
-    if ((ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_format_list(sample_fmts))) < 0)
-        return ret;
-
-    if ((ret = ff_set_common_samplerates2(ctx, cfg_in, cfg_out, ff_all_samplerates())) < 0)
-        return ret;
-
-    if ((ret = ff_set_common_channel_layouts2(ctx, cfg_in, cfg_out, ff_all_channel_counts())) < 0)
-        return ret;
-
-    return 0;
+out:
+    return ret;
 }
 
-static int activate(AVFilterContext *ctx)
+static int abufsrc_activate(AVFilterContext *ctx)
 {
-    AVFilterLink *outlink = ctx->outputs[0];
-    BufferSourceContext *c = ctx->priv;
+    BuffSrcPriv *priv = ctx->priv;
     AVFrame *frame;
-    int i, ret;
+    int i, ret, routed = 0;
 
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (!ff_outlink_frame_wanted(ctx->outputs[i])) {
-            c->nb_failed_requests++;
-            return FFERROR_NOT_READY;
+    for (i = 0; i < priv->nb_outputs; i++) {
+        if (priv->map && priv->map[i] == ROUTE_ON) {
+            routed = 1;
+            if (!ff_outlink_frame_wanted(ctx->outputs[i]))
+                return 0;
         }
     }
 
-    if (!c->on_event_cb)
+    if (!routed)
+        return 0;
+
+    if (!priv->on_event_cb)
         return 0;
 
     frame = av_frame_alloc();
@@ -215,14 +195,13 @@ static int activate(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
 
     frame->nb_samples = SUGGESTED_NB_SAMPLES;
-    ret = c->on_event_cb(c->on_event_cb_udata, 0, (intptr_t)frame);
+    ret = priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)frame);
     if (ret < 0) {
         av_frame_free(&frame);
         return ret;
     }
 
     ret = abufsrc_send_frame(ctx, frame);
-    av_frame_free(&frame);
     if (ret < 0)
         return ret;
 
@@ -232,7 +211,7 @@ static int activate(AVFilterContext *ctx)
 static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const char *args,
     char *res, int res_len, int flags)
 {
-    BufferSourceContext *s = ctx->priv;
+    BuffSrcPriv *priv = ctx->priv;
     int ret;
 
     if (!cmd)
@@ -260,32 +239,68 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return ret;
 
         return 0;
+    } else if (!av_strcasecmp(cmd, "map")) {
+        int *old_map = NULL;
+        int i;
+
+        if (priv->map) {
+            old_map = av_calloc(priv->nb_outputs, sizeof(*old_map));
+            if (!old_map)
+                return AVERROR(ENOMEM);
+
+            memcpy(old_map, priv->map, priv->nb_outputs * sizeof(*old_map));
+        }
+
+        ret = avfilter_parse_mapping(args, &priv->map, priv->nb_outputs);
+        if (ret < 0) {
+            av_freep(&old_map);
+            return ret;
+        }
+
+        for (i = 0; i < priv->nb_outputs; i++) {
+            if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
+                ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                if (ret < 0) {
+                    av_freep(&old_map);
+                    return ret;
+                }
+            }
+        }
+
+        av_freep(&old_map);
+        ff_filter_set_ready(ctx, 100);
+        return ret;
     }
 
-    return AVERROR(ENOSYS);
+    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+    if (ret < 0)
+        return ret;
+
+    return 0;
 }
 
-#define OFFSET(x) offsetof(BufferSourceContext, x)
-#define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
+#define OFFSET(x) offsetof(BuffSrcPriv, x)
+#define A AV_OPT_FLAG_AUDIO_PARAM
+#define F AV_OPT_FLAG_FILTERING_PARAM
 
 static const AVOption abuffer_options[] = {
     { "outputs", "set number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT,   { .i64 = 1 }, 1, INT_MAX, A },
+    { "map", "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},    .flags = A|F },
+    { "map_array", "get map list", OFFSET(map),    AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX,    .flags = A|F },
     { NULL },
 };
 
 AVFILTER_DEFINE_CLASS(abuffer);
 
 const AVFilter ff_asrc_abufsrc = {
-    .name          = "abufsrc",
-    .description   = NULL_IF_CONFIG_SMALL("Buffer audio frames, and make them accessible to the filterchain."),
-    .priv_size     = sizeof(BufferSourceContext),
-    .activate  = activate,
-    .init      = init_audio,
-    .uninit    = uninit,
-
-    .inputs    = NULL,
-    FILTER_QUERY_FUNC2(query_formats),
-    .priv_class = &abuffer_class,
-    .flags = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
+    .name            = "abufsrc",
+    .description     = NULL_IF_CONFIG_SMALL("Buffer audio frames, and make them accessible to the filterchain."),
+    .priv_size       = sizeof(BuffSrcPriv),
+    .priv_class      = &abuffer_class,
+    .init            = abufsrc_init_dict,
+    .uninit          = abufsrc_uninit,
+    .activate        = abufsrc_activate,
+    FILTER_QUERY_FUNC2(abufsrc_query_formats),
     .process_command = abufsrc_proccess_command,
+    .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
