@@ -38,6 +38,9 @@
 #include "aresample.h"
 #include "libavutil/mem.h"
 
+#define ROUTE_OFF 0
+#define ROUTE_ON 1
+
 typedef struct AlsasrcPriv {
     const AVClass *class;
 
@@ -64,9 +67,18 @@ typedef struct AlsasrcPriv {
 
 static inline void alsasrc_force_request(AVFilterContext *ctx)
 {
-    FilterLinkInternal *li = ff_link_internal(ctx->outputs[0]);
-    li->frame_wanted_out = 1;
-    ff_filter_set_ready(ctx, 300);
+    AlsasrcPriv *s = ctx->priv;
+    FilterLinkInternal *li;
+    int i;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (s->map && s->map[i] == ROUTE_OFF)
+            continue;
+
+        li = ff_link_internal(ctx->outputs[i]);
+        li->frame_wanted_out = 1;
+        ff_filter_set_ready(ctx, 300);
+    }
 }
 
 static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *devname, const char *key, int value, int *out_value)
@@ -280,7 +292,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         for (int i = 0; i < ctx->nb_outputs; i++) {
             AVFilterLink *link = ctx->outputs[i];
-            if (priv->map && !priv->map[i])
+            if (priv->map && priv->map[i] == ROUTE_OFF)
             {
                 av_log(ctx, AV_LOG_INFO, "disable output%d\n", i);
                 ff_inlink_set_status(link, AVERROR_EOF);
@@ -321,7 +333,7 @@ static int alsasrc_open(AVFilterContext *ctx)
         return 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (priv->map && !priv->map[i])
+        if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
         alsasrc_config_formats(ctx->outputs[i], i);
@@ -431,7 +443,7 @@ static int alsasrc_activate(AVFilterContext *ctx)
         AVFilterLink *link;
         AVPacket *pkt_out;
 
-        if (priv->map && !priv->map[i])
+        if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
         pkt_out = av_packet_clone(priv->pkt);
