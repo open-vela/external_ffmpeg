@@ -298,8 +298,10 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
         }
     } else if (!strcmp(cmd, "poll_available")) {
         struct pollfd *poll_fd = (struct pollfd *)res;
-        if (priv->compress && poll_fd[0].fd == compress_get_file_descriptor(priv->compress))
+        if (priv->compress) {
+            compress_poll_available(priv->compress);
             ff_filter_set_ready(ctx, 100);
+        }
         return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
