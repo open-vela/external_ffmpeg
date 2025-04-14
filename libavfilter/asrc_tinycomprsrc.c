@@ -255,6 +255,8 @@ error:
 static void tinycomprsrc_close(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
+    if (!s->compress)
+        return;
     compress_stop(s->compress);
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
@@ -390,10 +392,8 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             ret = 1;
         }
     } else if (!strcmp(cmd, "poll_available")) {
-        struct pollfd *poll_fd = (struct pollfd *)res;
-        if (poll_fd[0].fd == compress_get_file_descriptor(s->compress)) {
-            ff_filter_set_ready(ctx, 100);
-        }
+        compress_poll_available(s->compress);
+        ff_filter_set_ready(ctx, 100);
         return 0;
     } else if (!strcmp(cmd, "link")) {
         ret = tinycomprsrc_open(ctx);
