@@ -430,9 +430,10 @@ static int alsasrc_activate(AVFilterContext *ctx)
 
             break;
         }
-
-        return FFERROR_NOT_READY;
     }
+
+    if (i == ctx->nb_outputs)
+       return FFERROR_NOT_READY;
 
     ret = alsasrc_read_packet(priv);
     if (ret < 0)
