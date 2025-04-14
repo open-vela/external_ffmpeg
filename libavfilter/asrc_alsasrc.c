@@ -27,17 +27,19 @@
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 #include "libavutil/time.h"
+#include "libavutil/mem.h"
 
 #include <poll.h>
 
 #include "alsa.h"
 #include "avfilter.h"
+#include "aresample.h"
 #include "avfilter_internal.h"
+#include "buffersink.h"
+#include "buffersrc.h"
 #include "filters.h"
 #include "formats.h"
 #include "internal.h"
-#include "aresample.h"
-#include "libavutil/mem.h"
 #include "volume.h"
 
 #define ROUTE_OFF 0
@@ -47,10 +49,9 @@ typedef struct AlsasrcPriv {
     const AVClass *class;
 
     AlsaHandle priv;
-
-    int format_id;
     char *devname;
 
+    int format;
     uint32_t sample_rate;
     AVChannelLayout ch_layout;
 
@@ -68,7 +69,169 @@ typedef struct AlsasrcPriv {
     AResampleContext resample;
 
     VolumeContext vol_ctx;
+    int *af_map;
+    char *af_map_str;
+    char *filter_desc;
+    int af_informat;
+    int af_outformat;
+    int af_insample_rate;
+    int af_outsample_rate;
+    AVChannelLayout af_inch_layout;
+    AVChannelLayout af_outch_layout;
+    AVFilterGraph *agraph;
+    AVFilterContext *src_filter;
+    AVFilterContext *sink_filter;
 } AlsasrcPriv;
+
+
+static int alsasrc_subgraph_dump(AVFilterContext *ctx)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    char* dump;
+
+    if (!priv->agraph)
+        return AVERROR(EINVAL);
+
+    dump = avfilter_graph_dump(priv->agraph, NULL);
+    if (dump != NULL) {
+        av_log(ctx, AV_LOG_INFO, "Filtergraph dump:\n%s\n", dump);
+        av_free(dump);
+    } else {
+        av_log(ctx, AV_LOG_ERROR, "Unable to dump filtergraph\n");
+        return AVERROR(ENOMEM);
+    }
+
+    return 0;
+}
+
+static inline int alsasrc_subgraph_avaliable(AVFilterContext *ctx, int pad)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    return (priv->filter_desc && priv->af_map && priv->af_map[pad]);
+}
+
+static int alsasrc_subgraph_process(AVFilterContext *ctx, AVFrame *frame)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    int ret;
+    if ((ret = av_buffersrc_add_frame(priv->src_filter, frame)) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Error while submitting the audio to filtergraph\n");
+        return ret;
+    }
+
+    if ((ret = av_buffersink_get_frame(priv->sink_filter, frame)) < 0) {
+        if (ret != AVERROR(EAGAIN))
+            av_log(ctx, AV_LOG_ERROR, "Error while getting the audio from filtergraph\n");
+        return ret;
+    }
+
+    return 0;
+}
+static int alsasrc_subgraph_config(AVFilterGraph *graph, const char *filter_desc,
+                                   AVFilterContext *source_ctx, AVFilterContext *sink_ctx)
+{
+    AVFilterInOut *outputs = NULL, *inputs = NULL;
+    int nb_filters = graph->nb_filters;
+    int ret, i;
+    if (filter_desc) {
+        outputs = avfilter_inout_alloc();
+        inputs  = avfilter_inout_alloc();
+        if (!outputs || !inputs) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+        outputs->name       = av_strdup("in");
+        outputs->filter_ctx = source_ctx;
+        outputs->pad_idx    = 0;
+        outputs->next       = NULL;
+        inputs->name        = av_strdup("out");
+        inputs->filter_ctx  = sink_ctx;
+        inputs->pad_idx     = 0;
+        inputs->next        = NULL;
+        if ((ret = avfilter_graph_parse_ptr(graph, filter_desc, &inputs, &outputs, NULL)) < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error while parsing filtergraph, ret %d\n", ret);
+            goto fail;
+        }
+    } else {
+        if ((ret = avfilter_link(source_ctx, 0, sink_ctx, 0)) < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error while linking filtergraph, ret %d\n", ret);
+            goto fail;
+        }
+    }
+
+    ret = avfilter_graph_config(graph, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error while configuring filtergraph, ret %d\n", ret);
+        goto fail;
+    }
+
+fail:
+    avfilter_inout_free(&outputs);
+    avfilter_inout_free(&inputs);
+    return ret;
+}
+static int alsasrc_subgraph_init(AVFilterContext *ctx)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    AVFilterContext *alg_filter = NULL;
+    AVFilterContext *asrc = NULL;
+    AVFilterContext *asink = NULL;
+    AVFilterLink *link;
+    char args[64];
+    int ret;
+    int i;
+
+    if (!(priv->agraph = avfilter_graph_alloc()))
+        return AVERROR(ENOMEM);
+
+    // create source filter
+    snprintf(args, sizeof(args),
+             "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+             priv->af_insample_rate, av_get_sample_fmt_name(priv->af_informat),
+             priv->af_inch_layout.nb_channels == 1 ? "mono" : "stereo");
+
+    ret = avfilter_graph_create_filter(&asrc, avfilter_get_by_name("abuffer"),
+                                       "abuffer", args, NULL, priv->agraph);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Cannot create audio source filter ret %d.\n", ret);
+        goto end;
+    }
+
+    // create sink filter
+    memset(args, 0, sizeof(args));
+    snprintf(args, sizeof(args),
+             "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+             priv->af_outsample_rate, av_get_sample_fmt_name(priv->af_outformat),
+             priv->af_outch_layout.nb_channels == 1 ? "mono" : "stereo");
+
+    ret = avfilter_graph_create_filter(&asink, avfilter_get_by_name("abuffersink"),
+                                       "abuffersink", NULL, NULL, priv->agraph);
+    if (ret < 0){
+        av_log(ctx, AV_LOG_ERROR, "Cannot create audio sink filter ret %d.\n", ret);
+        goto end;
+    }
+
+    ret = alsasrc_subgraph_config(priv->agraph, priv->filter_desc, asrc, asink);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Cannot create filter graph ret %d.\n", ret);
+        goto end;
+    }
+
+    priv->src_filter = asrc;
+    priv->sink_filter = asink;
+    return 0;
+end:
+    if (priv->agraph)
+        avfilter_graph_free(&priv->agraph);
+    return ret;
+}
+
+static void alsasrc_subgraph_uninit(AVFilterContext *ctx)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    if (priv->agraph)
+        avfilter_graph_free(&priv->agraph);
+}
 
 static inline void alsasrc_force_request(AVFilterContext *ctx)
 {
@@ -86,7 +249,8 @@ static inline void alsasrc_force_request(AVFilterContext *ctx)
     }
 }
 
-static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *devname, const char *key, int value, int *out_value)
+static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *devname,
+                                             const char *key, int value, int *out_value)
 {
     AVOptionRanges* ranges = NULL;
     AVOptionRange* range = NULL;
@@ -112,27 +276,60 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
 
 static int alsasrc_config_formats(AVFilterLink *link, int pad)
 {
-    // TODO: optimize
     AVFilterContext *ctx = link->src;
     AlsasrcPriv *priv = ctx->priv;
+    AVChannelLayout dst_chan_layout;
+    int dst_sample_rate;
+    int dst_format;
     int ret;
 
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts", link->format, &priv->format_id);
+    /* if subgragh is enable, use the subgraph input format to negotiate with alsasrc dev,
+       or use out link format to negotiate with alsasrc dev */
+    if (alsasrc_subgraph_avaliable(ctx, pad)) {
+        dst_sample_rate = priv->af_insample_rate;
+        dst_chan_layout = priv->af_inch_layout;
+        dst_format = priv->af_informat;
+
+        // if output format is not configured, use link format
+        if (priv->af_outformat == -1)
+            priv->af_outformat = link->format;
+
+        if (priv->af_outsample_rate == -1)
+            priv->af_outsample_rate = link->sample_rate;
+
+        if (priv->af_outch_layout.nb_channels == 0)
+            av_channel_layout_copy(&priv->af_outch_layout, &link->ch_layout);
+    } else {
+        dst_sample_rate = link->sample_rate;
+        dst_chan_layout = link->ch_layout;
+        dst_format = link->format;
+    }
+
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
+                                            dst_format, &priv->format);
     if (ret < 0)
         return ret;
 
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates", link->sample_rate, &priv->sample_rate);
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
+                                            dst_sample_rate, &priv->sample_rate);
     if (ret < 0)
         return ret;
 
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels", link->ch_layout.nb_channels, &priv->ch_layout.nb_channels);
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
+                                            dst_chan_layout.nb_channels, &priv->ch_layout.nb_channels);
     if (ret < 0)
         return ret;
 
-    if (priv->ch_layout.nb_channels == link->ch_layout.nb_channels)
-        av_channel_layout_copy(&priv->ch_layout, &link->ch_layout);
+    if (priv->ch_layout.nb_channels == dst_chan_layout.nb_channels)
+        av_channel_layout_copy(&priv->ch_layout, &dst_chan_layout);
     else
         av_channel_layout_default(&priv->ch_layout, priv->ch_layout.nb_channels);
+
+    if (alsasrc_subgraph_avaliable(ctx, pad)) {
+        priv->af_insample_rate = priv->sample_rate;
+        priv->af_informat = priv->format;
+        av_channel_layout_copy(&priv->af_inch_layout, &priv->ch_layout);
+    }
 
     return 0;
 }
@@ -140,8 +337,8 @@ static int alsasrc_config_formats(AVFilterLink *link, int pad)
 static int alsasrc_config_props(AVFilterLink *link)
 {
     av_log(link->src, AV_LOG_INFO, "link sample format: %s, sample_rate %d, channels %d.\n",
-        av_get_sample_fmt_name(link->format), link->sample_rate,
-        link->ch_layout.nb_channels);
+           av_get_sample_fmt_name(link->format), link->sample_rate,
+           link->ch_layout.nb_channels);
     return 0;
 }
 
@@ -157,6 +354,7 @@ static void alsasrc_close(AVFilterContext *ctx)
     }
 
     volume_uninit(&priv->vol_ctx);
+    alsasrc_subgraph_uninit(ctx);
 }
 
 static int alsasrc_init_dict(AVFilterContext *ctx)
@@ -183,6 +381,14 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
+    if (priv->af_map_str) {
+        ret = avfilter_parse_mapping(priv->af_map_str, &priv->af_map, priv->nb_outputs);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "parse af_map_str failed ret %d.\n", ret);
+            return ret;
+        }
+    }
+
     ff_resample_init(&priv->resample);
 
     return 0;
@@ -198,7 +404,8 @@ static void alsasrc_uninit(AVFilterContext *ctx)
     av_freep(&priv->map);
 }
 
-static int alsasrc_query_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in, AVFilterFormatsConfig **cfg_out)
+static int alsasrc_query_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in,
+                                 AVFilterFormatsConfig **cfg_out)
 {
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
@@ -262,9 +469,28 @@ static int alsasrc_check_outlink_status(AVFilterContext *ctx)
 static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     AlsasrcPriv *priv = ctx->priv;
+    int ret;
 
     if (!strcmp(key, "format")) {
-        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", priv->format_id, priv->sample_rate, priv->ch_layout.nb_channels);
+        // return the default format of the alsasrc dev
+        ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
+                                                -1, &priv->format);
+        if (ret < 0)
+            return ret;
+
+        ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
+                                                -1, &priv->sample_rate);
+        if (ret < 0)
+            return ret;
+
+        ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
+                                                0, &priv->ch_layout.nb_channels);
+        if (ret < 0)
+            return ret;
+
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
+                 priv->format, priv->sample_rate, priv->ch_layout.nb_channels);
+
         return 0;
     } else if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", priv->vol_ctx.volume);
@@ -388,6 +614,9 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             return AVERROR(EINVAL);
 
         return alsasrc_set_parameter(ctx, args);
+    } else if (!strcmp(cmd, "dump")) {
+        alsasrc_subgraph_dump(ctx);
+        return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
@@ -413,7 +642,9 @@ static int alsasrc_open(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
+    AVFilterLink *outlink = NULL;
     int ret;
+    int pad;
     int i;
 
     if (handle->h)
@@ -423,15 +654,35 @@ static int alsasrc_open(AVFilterContext *ctx)
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        alsasrc_config_formats(ctx->outputs[i], i);
-        break;
+        pad = i;
+        outlink = ctx->outputs[i];
+        if (priv->af_map && priv->af_map[i])
+            break;
+    }
+
+    if (!outlink)
+        return AVERROR(EINVAL);
+
+    ret = alsasrc_config_formats(outlink, pad);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "config formats failed %d.\n", ret);
+        goto error;
+    }
+
+    if (alsasrc_subgraph_avaliable(ctx, pad)) {
+       ret = alsasrc_subgraph_init(ctx);
+       if (ret < 0) {
+           av_log(ctx, AV_LOG_ERROR, "subgraph(%s) init failed %d.\n", priv->filter_desc, ret);
+           goto error;
+       }
     }
 
     priv->period_size = priv->period_time * priv->sample_rate / 1000;
     handle->periods = priv->periods;
     handle->period_time = priv->period_time;
 
-    ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE, priv->sample_rate, priv->ch_layout.nb_channels, priv->format_id);
+    ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE, priv->sample_rate,
+                    priv->ch_layout.nb_channels, priv->format);
     if (ret < 0)
         return ret;
 
@@ -455,7 +706,7 @@ static int alsasrc_open(AVFilterContext *ctx)
 
     priv->timestamp = 0;
 
-    ret = volume_init(&priv->vol_ctx, priv->format_id);
+    ret = volume_init(&priv->vol_ctx, priv->format);
     if (ret < 0)
         goto error;
 
@@ -473,38 +724,33 @@ static int alsasrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket **pkt, AVF
     AlsaHandle *handle = &priv->priv;
     int sample_bytes;
     AVFrame *src;
-    int ret;
 
     src = av_frame_alloc();
     if (!src) {
         return AVERROR(ENOMEM);
     }
 
-    src->format = priv->format_id;
+    src->format = priv->format;
     src->sample_rate = priv->sample_rate;
     av_channel_layout_copy(&src->ch_layout, &priv->ch_layout);
     sample_bytes = handle->frame_size * priv->ch_layout.nb_channels;
     src->nb_samples = (*pkt)->size / sample_bytes;
     src->pkt_size = (*pkt)->size;
-
     src->buf[0] = (*pkt)->buf;
     src->data[0] = src->buf[0]->data;
     src->linesize[0] = (*pkt)->size;
     src->extended_data = src->data;
     src->pts = (*pkt)->pts;
 
-    ret = ff_resample_frame(&priv->resample, link, src, frame);
-    if (ret == 0)
-        *frame = src;
-    else
-        av_frame_free(&src);
+    *frame = src;
 
     (*pkt)->buf = NULL;
     (*pkt)->data = NULL;
     (*pkt)->size = 0;
+
     av_packet_free(pkt);
 
-    return ret;
+    return 0;
 }
 
 static int alsasrc_activate(AVFilterContext *ctx)
@@ -535,6 +781,7 @@ static int alsasrc_activate(AVFilterContext *ctx)
         goto out;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
+        AVFrame *oframe = NULL;
         AVFrame *frame = NULL;
         AVFilterLink *link;
         AVPacket *pkt_out;
@@ -552,12 +799,22 @@ static int alsasrc_activate(AVFilterContext *ctx)
         if (ret < 0)
             goto out;
 
-        av_packet_free(&pkt_out);
+        if (priv->agraph && priv->af_map && priv->af_map[i]) {
+            ret = alsasrc_subgraph_process(ctx, frame);
+            if (ret < 0)
+                continue;
+        }
 
         volume_scale(&priv->vol_ctx, frame);
 
         link = ctx->outputs[i];
-        ret = ff_filter_frame(link, frame);
+        ret = ff_resample_frame(&priv->resample, link, frame, &oframe);
+        if (ret == 0)
+            oframe = frame;
+        else
+            av_frame_free(&frame);
+
+        ret = ff_filter_frame(link, oframe);
         if (ret < 0)
             goto out;
     }
@@ -570,15 +827,22 @@ out:
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasrc_options[] = {
-    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,      .flags = A },
-    { "sample_fmt",  "", OFFSET(format_id),   AV_OPT_TYPE_SAMPLE_FMT, {.i64 = AV_SAMPLE_FMT_S16}, -1, INT_MAX, R },
-    { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 16000},              0, INT_MAX, R },
-    { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = "mono"},             0, 0,       R },
-    { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX, R },
-    { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,        {.i64 = 20},                 0, INT_MAX, R },
-    { "outputs",     "", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
-    { "map",         "", OFFSET(map_str),     AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
-    { "map_array",   "", OFFSET(map),         AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
+    { "devname",           "", OFFSET(devname),           AV_OPT_TYPE_STRING,     .flags = A },
+    { "sample_rate",       "", OFFSET(sample_rate),       AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX, R },
+    { "ch_layout",         "", OFFSET(ch_layout),         AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
+    { "periods",           "", OFFSET(periods),           AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX, R },
+    { "period_time",       "", OFFSET(period_time),       AV_OPT_TYPE_INT,        {.i64 = 20},                 0, INT_MAX, R },
+    { "outputs",           "", OFFSET(nb_outputs),        AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
+    { "map",               "", OFFSET(map_str),           AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
+    { "map_array",         "", OFFSET(map),               AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
+    { "af",                "", OFFSET(filter_desc),       AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
+    { "af_map",            "", OFFSET(af_map_str),        AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
+    { "af_informat",       "", OFFSET(af_informat),       AV_OPT_TYPE_INT,        {.i64 = -1},                  -1, INT_MAX, R },
+    { "af_insample_rate",  "", OFFSET(af_insample_rate),  AV_OPT_TYPE_INT,        {.i64 = -1},                  -1, INT_MAX, R },
+    { "af_inch_layout",    "", OFFSET(af_inch_layout),    AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
+    { "af_outformat",      "", OFFSET(af_outformat),      AV_OPT_TYPE_INT,        {.i64 = -1},                  -1, INT_MAX, R },
+    { "af_outsample_rate", "", OFFSET(af_outsample_rate), AV_OPT_TYPE_INT,        {.i64 = -1},                  -1, INT_MAX, R },
+    { "af_outch_layout",   "", OFFSET(af_outch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
     { NULL },
 };
 
