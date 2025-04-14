@@ -90,7 +90,8 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
     ret = alsa_query_caps(&ranges, devname, key, false);
     if (ret > 0) {
         for (range_idx = 0; range_idx < ranges->nb_ranges; range_idx++) {
-            if (value == ranges->range[range_idx]->value_min)
+            range = ranges->range[range_idx];
+            if (value >= range->value_min && value <= range->value_max)
                 break;
         }
 
