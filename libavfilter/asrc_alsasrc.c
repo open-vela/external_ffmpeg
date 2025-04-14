@@ -248,6 +248,19 @@ static int alsasrc_check_outlink_status(AVFilterContext *ctx)
     return 1;
 }
 
+static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
+{
+    AlsasrcPriv *s = ctx->priv;
+
+    if (!strcmp(key, "format")) {
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", s->format_id, s->sample_rate, s->ch_layout.nb_channels);
+        return 0;
+    }
+
+    av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
 static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                                    char *res, int res_len, int flags)
 {
@@ -302,6 +315,11 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         ff_filter_set_ready(ctx, 100);
         return ret;
+    } else if (!strcmp(cmd, "get_parameter")){
+        if (!args || res_len <= 0)
+            return AVERROR(EINVAL);
+
+        return alsasrc_get_parameter(ctx, args, res, res_len);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
@@ -475,6 +493,7 @@ out:
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasrc_options[] = {
     { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,     .flags = A },
+    { "sample_fmt",  "", OFFSET(format_id),   AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE},  -1, INT_MAX, R },
     { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX, R },
     { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
     { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX, R },
