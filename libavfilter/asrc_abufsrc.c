@@ -48,6 +48,11 @@ typedef struct BuffSrcPriv {
     /* nb_outputs needs to follow map because av_opt_get_array
        assumes the next address of map points to nb_outputs.*/
     int nb_outputs;
+
+    int sample_rate;            /**< sample rate */
+    AVChannelLayout ch_layout;  /**< channel layout */
+    enum AVSampleFormat sample_fmt;  /**< sample format */
+
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
 } BuffSrcPriv;
@@ -210,6 +215,19 @@ static int abufsrc_activate(AVFilterContext *ctx)
     return 0;
 }
 
+static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
+{
+    BuffSrcPriv *s = ctx->priv;
+
+    if (!strcmp(key, "format")) {
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", s->sample_fmt, s->sample_rate, s->ch_layout.nb_channels);
+        return 0;
+    }
+
+    av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
 static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const char *args,
     char *res, int res_len, int flags)
 {
@@ -222,13 +240,18 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
     av_log(ctx, AV_LOG_INFO, "cmd:%s args:%s\n", cmd, args);
     if (!av_strcasecmp(cmd, "link")) {
         int (*on_event_cb)(void *udata, int evt, int64_t args);
+        int format, sample_rate, channels;
         void *udata;
 
         if (!args)
             return AVERROR(EINVAL);
 
-        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
+        if (sscanf(args, "%p %p fmt=%d:rate=%d:ch=%d", &on_event_cb, &udata, &format, &sample_rate, &channels) != 5)
             return AVERROR(EINVAL);
+
+        priv->sample_fmt = format;
+        priv->sample_rate = sample_rate;
+        av_channel_layout_default(&priv->ch_layout, channels);
 
         ret = abufsrc_set_event_cb(ctx, on_event_cb, udata);
         if (ret < 0)
@@ -278,6 +301,11 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         av_freep(&old_map);
         ff_filter_set_ready(ctx, 100);
         return ret;
+    } else if (!strcmp(cmd, "get_parameter")){
+        if (!args || res_len <= 0)
+            return AVERROR(EINVAL);
+
+        return abufsrc_get_parameter(ctx, args, res, res_len);
     }
 
     ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
