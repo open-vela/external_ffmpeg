@@ -236,9 +236,15 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 
         return 0;
     } else if (!av_strcasecmp(cmd, "unlink")) {
-        ret = abufsrc_set_event_cb(ctx, NULL, NULL);
-        if (ret < 0)
-            return ret;
+        int i;
+
+        for (i= 0; i < priv->nb_outputs; i++)
+             ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+
+        if (priv->on_event_cb)
+            priv->on_event_cb(priv->on_event_cb_udata, -1, 0);
+
+        abufsrc_set_event_cb(ctx, NULL, NULL);
 
         return 0;
     } else if (!av_strcasecmp(cmd, "map")) {
