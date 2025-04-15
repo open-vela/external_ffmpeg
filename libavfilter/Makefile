@@ -179,7 +179,7 @@ OBJS-$(CONFIG_VOLUME_FILTER)                 += af_volume.o
 OBJS-$(CONFIG_VOLUMEDETECT_FILTER)           += af_volumedetect.o
 
 OBJS-$(CONFIG_AEVALSRC_FILTER)               += aeval.o
-OBJS-$(CONFIG_ABUFSRC_FILTER)                += asrc_abufsrc.o
+OBJS-$(CONFIG_ABUFSRC_FILTER)                += asrc_abufsrc.o volume.o
 OBJS-$(CONFIG_ABUFSINK_FILTER)               += asink_abufsink.o
 OBJS-$(CONFIG_AFDELAYSRC_FILTER)             += asrc_afdelaysrc.o
 OBJS-$(CONFIG_AFIREQSRC_FILTER)              += asrc_afirsrc.o

@@ -23,6 +23,7 @@
  * memory buffer source filter
  */
 
+#include "libavutil/eval.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/frame.h"
@@ -35,6 +36,7 @@
 #include "filters.h"
 #include "formats.h"
 #include "aresample.h"
+#include "volume.h"
 
 #define SUGGESTED_NB_SAMPLES 1024
 
@@ -55,12 +57,17 @@ typedef struct BuffSrcPriv {
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
+    VolumeContext vol_ctx;
+    double player_volume;
+    double stream_volume;
 } BuffSrcPriv;
 
 static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     BuffSrcPriv *priv = ctx->priv;
     int i, ret, first = 1;
+
+    volume_scale(&priv->vol_ctx, frame);
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->map && priv->map[i] == ROUTE_OFF)
@@ -128,6 +135,9 @@ static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
         if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
             return ret;
     }
+
+    priv->player_volume = 1.0f;
+    priv->stream_volume = 1.0f;
 
     if (priv->map_str) {
         ret = avfilter_parse_mapping(priv->map_str, &priv->map, priv->nb_outputs);
@@ -215,6 +225,39 @@ static int abufsrc_activate(AVFilterContext *ctx)
     return 0;
 }
 
+static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
+{
+
+    BuffSrcPriv *priv = ctx->priv;
+    char *key = NULL, *value = NULL;
+    const char *p = args;
+    int ret = 0;
+
+    av_log(ctx, AV_LOG_INFO, "Parsing args: %s\n", args);
+
+    while (*p) {
+        ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            break;
+        }
+        if (*p)
+            p++;
+        av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
+        if (!strcmp(key, "volume")) {
+            priv->player_volume = strtof(value, NULL);
+            volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
+        } else if (!strcmp(key, "stream_volume")){
+            priv->stream_volume = strtof(value, NULL);
+            volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
+        } else
+            av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+        av_freep(&key);
+        av_freep(&value);
+    }
+    return ret;
+}
+
 static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     BuffSrcPriv *s = ctx->priv;
@@ -257,7 +300,8 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         if (ret < 0)
             return ret;
 
-        return 0;
+        ret = volume_init(&priv->vol_ctx, format);
+        return ret;
     } else if (!av_strcasecmp(cmd, "unlink")) {
         int i;
 
@@ -267,9 +311,9 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         if (priv->on_event_cb)
             priv->on_event_cb(priv->on_event_cb_udata, -1, 0);
 
-        abufsrc_set_event_cb(ctx, NULL, NULL);
-
-        return 0;
+        volume_uninit(&priv->vol_ctx);
+        ret = abufsrc_set_event_cb(ctx, NULL, NULL);
+        return ret;
     } else if (!av_strcasecmp(cmd, "map")) {
         int *old_map = NULL;
         int i;
@@ -302,18 +346,19 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         av_freep(&old_map);
         ff_filter_set_ready(ctx, 100);
         return ret;
-    } else if (!strcmp(cmd, "get_parameter")){
+    } else if (!av_strcasecmp(cmd, "get_parameter")) {
         if (!args || res_len <= 0)
             return AVERROR(EINVAL);
 
         return abufsrc_get_parameter(ctx, args, res, res_len);
+    } else if (!av_strcasecmp(cmd, "set_parameter")) {
+        if (!args)
+            return AVERROR(EINVAL);
+
+        return abufsrc_set_parameter(ctx, args);
+    } else {
+        return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
-
-    ret = ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
-    if (ret < 0)
-        return ret;
-
-    return 0;
 }
 
 #define OFFSET(x) offsetof(BuffSrcPriv, x)
