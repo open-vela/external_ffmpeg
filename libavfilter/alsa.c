@@ -249,8 +249,8 @@ int alsa_close(AlsaHandle *s)
 
 static int alsa_xrun_recover(snd_pcm_t *handle, int err)
 {
-    av_log(NULL, AV_LOG_WARNING, "ALSA buffer xrun ret=%d.\n", err);
     if (err == -EPIPE) {
+        av_log(NULL, AV_LOG_WARNING, "ALSA buffer XRUN ret=%d.\n", err);
         err = snd_pcm_prepare(handle);
         if (err < 0) {
             av_log(NULL, AV_LOG_ERROR, "cannot recover from underrun (snd_pcm_prepare failed: %s)\n", snd_strerror(err));
