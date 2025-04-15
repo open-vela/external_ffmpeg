@@ -43,9 +43,11 @@
 
 typedef struct BuffSrcPriv {
     const AVClass *class;
-    int nb_outputs;
     char *map_str;
     int *map;
+    /* nb_outputs needs to follow map because av_opt_get_array
+       assumes the next address of map points to nb_outputs.*/
+    int nb_outputs;
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
 } BuffSrcPriv;
