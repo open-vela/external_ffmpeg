@@ -289,11 +289,12 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         }
 
         for (i = 0; i < priv->nb_outputs; i++) {
-            if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
-                ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
-                if (ret < 0) {
-                    av_freep(&old_map);
-                    return ret;
+            if (old_map[i] != priv->map[i]) {
+                if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
+                    ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                } else if (old_map[i] == ROUTE_OFF && priv->map[i] == ROUTE_ON) {
+                    FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+                    li->frame_wanted_out = 1;
                 }
             }
         }
