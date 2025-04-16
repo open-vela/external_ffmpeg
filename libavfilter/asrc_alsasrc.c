@@ -266,6 +266,40 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
     return AVERROR(EINVAL);
 }
 
+static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
+{
+    AlsasrcPriv *s = ctx->priv;
+    char *key = NULL, *value = NULL;
+    const char *p = args;
+    int ret = 0;
+
+    av_log(ctx, AV_LOG_INFO, "Parsing args: %s\n", args);
+
+    while (*p) {
+        ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            break;
+        }
+
+        if (*p)
+            p++;
+
+        av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
+
+        if (!strcmp(key, "sample_rate")) {
+            s->sample_rate = atoi(value);
+            av_log(ctx, AV_LOG_INFO, "Set sample_rate to %d\n", s->sample_rate);
+        } else
+            av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+
+        av_freep(&key);
+        av_freep(&value);
+    }
+
+    return ret;
+}
+
 static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
                                    char *res, int res_len, int flags)
 {
@@ -320,11 +354,16 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         ff_filter_set_ready(ctx, 100);
         return ret;
-    } else if (!strcmp(cmd, "get_parameter")){
+    } else if (!strcmp(cmd, "get_parameter")) {
         if (!args || res_len <= 0)
             return AVERROR(EINVAL);
 
         return alsasrc_get_parameter(ctx, args, res, res_len);
+    } else if (!strcmp(cmd, "set_parameter")) {
+        if (!args)
+            return AVERROR(EINVAL);
+
+        return alsasrc_set_parameter(ctx, args);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
