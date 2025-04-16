@@ -492,10 +492,10 @@ out:
 #define A AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasrc_options[] = {
-    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,     .flags = A },
-    { "sample_fmt",  "", OFFSET(format_id),   AV_OPT_TYPE_SAMPLE_FMT, {.i64=AV_SAMPLE_FMT_NONE},  -1, INT_MAX, R },
-    { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX, R },
-    { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
+    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,      .flags = A },
+    { "sample_fmt",  "", OFFSET(format_id),   AV_OPT_TYPE_SAMPLE_FMT, {.i64 = AV_SAMPLE_FMT_S16}, -1, INT_MAX, R },
+    { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 16000},              0, INT_MAX, R },
+    { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = "mono"},             0, 0,       R },
     { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX, R },
     { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,        {.i64 = 20},                 0, INT_MAX, R },
     { "outputs",     "", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
