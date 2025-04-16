@@ -276,8 +276,10 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     ff_inlink_acknowledge_status(inlink, &ret, &pts);
     if (ret >= 0)
         ff_inlink_request_frame(inlink);
-    else if (ret == AVERROR_EOF)
-        return tinycomprsink_send_frame(ctx, NULL);
+    else if (ret == AVERROR_EOF) {
+        ret = tinycomprsink_send_frame(ctx, NULL);
+        return ret == AVERROR_EOF ? AVERROR_EOF : ret;
+    }
 
     return ret;
 }
