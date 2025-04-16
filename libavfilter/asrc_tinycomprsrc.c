@@ -180,7 +180,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     const AVCodec *dec;
     int ret;
 
-    if (s->dec_ctx)
+    if (s->dec_ctx || s->compress)
         return 0;
 
     s->compress = compress_open_by_name(s->devname, COMPRESS_OUT, &config);
@@ -303,6 +303,10 @@ static int activate(AVFilterContext *ctx)
     if (i == ctx->nb_outputs)
         return AVERROR(EAGAIN);
 
+    ret = tinycomprsrc_open(ctx);
+    if (ret < 0)
+        return ret;
+
     ret = tinycomprsrc_receive_frame(ctx, &frame);
     if (ret < 0)
         goto out;
@@ -396,7 +400,6 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         ff_filter_set_ready(ctx, 100);
         return 0;
     } else if (!strcmp(cmd, "link")) {
-        ret = tinycomprsrc_open(ctx);
         tinycomprsrc_force_request(ctx);
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
