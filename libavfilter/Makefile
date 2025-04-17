@@ -198,7 +198,7 @@ OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
 OBJS-$(CONFIG_ADEVSRC_FILTER)                += asrc_adevsrc.o
 OBJS-$(CONFIG_ALSASINK_FILTER)               += asink_alsasink.o alsa.o
 OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
-OBJS-$(CONFIG_ALSASRC_FILTER)                += asrc_alsasrc.o alsa.o
+OBJS-$(CONFIG_ALSASRC_FILTER)                += asrc_alsasrc.o alsa.o volume.o
 OBJS-$(CONFIG_TINYCOMPRSINK_FILTER)         += asink_tinycomprsink.o
 
 # video filters

@@ -21,6 +21,7 @@
  * audio alsa src
  */
 
+#include <libavutil/eval.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/avstring.h>
 #include <libavutil/opt.h>
@@ -37,6 +38,7 @@
 #include "internal.h"
 #include "aresample.h"
 #include "libavutil/mem.h"
+#include "volume.h"
 
 #define ROUTE_OFF 0
 #define ROUTE_ON 1
@@ -64,6 +66,8 @@ typedef struct AlsasrcPriv {
     int64_t timestamp;
     AVPacket *pkt;
     AResampleContext resample;
+
+    VolumeContext vol_ctx;
 } AlsasrcPriv;
 
 static inline void alsasrc_force_request(AVFilterContext *ctx)
@@ -151,6 +155,8 @@ static void alsasrc_close(AVFilterContext *ctx)
     if (priv->pkt != NULL) {
         av_packet_free(&priv->pkt);
     }
+
+    volume_uninit(&priv->vol_ctx);
 }
 
 static int alsasrc_init_dict(AVFilterContext *ctx)
@@ -255,10 +261,15 @@ static int alsasrc_check_outlink_status(AVFilterContext *ctx)
 
 static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
-    AlsasrcPriv *s = ctx->priv;
+    AlsasrcPriv *priv = ctx->priv;
 
     if (!strcmp(key, "format")) {
-        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", s->format_id, s->sample_rate, s->ch_layout.nb_channels);
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", priv->format_id, priv->sample_rate, priv->ch_layout.nb_channels);
+        return 0;
+    } else if (!strcmp(key, "volume")) {
+        snprintf(value, len, "vol:%f", priv->vol_ctx.volume);
+
+        av_log(priv, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, priv->vol_ctx.volume);
         return 0;
     }
 
@@ -268,7 +279,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
 
 static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
 {
-    AlsasrcPriv *s = ctx->priv;
+    AlsasrcPriv *priv = ctx->priv;
     char *key = NULL, *value = NULL;
     const char *p = args;
     int ret = 0;
@@ -288,11 +299,24 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
         av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
 
         if (!strcmp(key, "sample_rate")) {
-            s->sample_rate = atoi(value);
-            av_log(ctx, AV_LOG_INFO, "Set sample_rate to %d\n", s->sample_rate);
+            priv->sample_rate = atoi(value);
+            av_log(ctx, AV_LOG_INFO, "Set sample_rate to %d\n", priv->sample_rate);
+        } else if (!strcmp(key, "volume")) {
+            double volume;
+
+            ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n", ctx->name, value);
+                goto end;
+            }
+
+            volume_set(&priv->vol_ctx, volume);
+
+            av_log(priv, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, priv->vol_ctx.volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
+end:
         av_freep(&key);
         av_freep(&value);
     }
@@ -431,6 +455,10 @@ static int alsasrc_open(AVFilterContext *ctx)
 
     priv->timestamp = 0;
 
+    ret = volume_init(&priv->vol_ctx, priv->format_id);
+    if (ret < 0)
+        goto error;
+
     return 0;
 
 error:
@@ -525,6 +553,8 @@ static int alsasrc_activate(AVFilterContext *ctx)
             goto out;
 
         av_packet_free(&pkt_out);
+
+        volume_scale(&priv->vol_ctx, frame);
 
         link = ctx->outputs[i];
         ret = ff_filter_frame(link, frame);
