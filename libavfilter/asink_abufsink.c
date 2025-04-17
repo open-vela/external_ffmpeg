@@ -105,7 +105,7 @@ static void calculate_scales(ABufSinkPriv *s)
 
     for (i = 0; i < s->nb_inputs; i++) {
         if (s->input_state[i] & INPUT_ON) {
-            s->input_state[i] = 1.0 / activate_inputs;
+            s->input_scale[i] = 1.0 / activate_inputs;
         }
     }
 }
