@@ -27,6 +27,7 @@
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 #include <libavutil/channel_layout.h>
+#include <libavutil/eval.h>
 
 #include "avfilter.h"
 #include "avfilter_internal.h"
@@ -38,6 +39,8 @@
 #include <tinycompress/tinycompress.h>
 #include <sound/compress_params.h>
 #include <poll.h>
+
+#include "volume.h"
 
 typedef struct TinyCompressContext {
     const AVClass *class;
@@ -58,6 +61,8 @@ typedef struct TinyCompressContext {
     int nb_outputs;
     int64_t next_pts;
     AVPacket *pkt;
+
+    VolumeContext vol_ctx;
 } TinyCompressContext;
 
 static int tinycompr_fmt_to_avcodec(int audio_fmt)
@@ -238,6 +243,10 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto error;
 
+    ret = volume_init(&s->vol_ctx, s->sample_fmt);
+    if (ret < 0)
+        goto error;
+
     return ret;
 
 error:
@@ -258,6 +267,7 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     if (!s->compress)
         return;
     compress_stop(s->compress);
+    volume_uninit(&s->vol_ctx);
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
     av_packet_free(&s->pkt);
@@ -326,6 +336,8 @@ static int activate(AVFilterContext *ctx)
             }
         }
 
+        volume_scale(&s->vol_ctx, resampled);
+
         ret = ff_filter_frame(link, resampled);
         if (ret < 0)
             goto out;
@@ -382,6 +394,66 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
 }
 
+static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
+{
+    TinyCompressContext *s = ctx->priv;
+
+    if (!strcmp(key, "volume")) {
+        snprintf(value, len, "vol:%f", s->vol_ctx.volume);
+
+        av_log(s, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
+        return 0;
+    }
+
+    av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
+    return AVERROR(EINVAL);
+}
+
+static int tinycomprsrc_set_parameter(AVFilterContext *ctx, const char *args)
+{
+    TinyCompressContext *s = ctx->priv;
+    char *key = NULL, *value = NULL;
+    const char *p = args;
+    int ret = 0;
+
+    av_log(ctx, AV_LOG_INFO, "Parsing args: %s\n", args);
+
+    while (*p) {
+        ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            break;
+        }
+
+        if (*p)
+            p++;
+
+        av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
+
+        if (!strcmp(key, "volume")) {
+            double volume;
+
+            ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR,
+                    "Error when parsing %s volume expression '%s'\n", ctx->name, value);
+                goto end;
+            }
+
+            volume_set(&s->vol_ctx, volume);
+
+            av_log(s, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
+        } else
+            av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+
+end:
+        av_freep(&key);
+        av_freep(&value);
+    }
+
+    return ret;
+}
+
 static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, const char *arg,
                                     char *res, int res_len, int flags)
 {
@@ -432,6 +504,16 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         if (need_close)
             tinycomprsrc_close(ctx);
         return ret;
+    } else if (!strcmp(cmd, "get_parameter")) {
+        if (!arg || res_len <= 0)
+            return AVERROR(EINVAL);
+
+        return tinycomprsrc_get_parameter(ctx, arg, res, res_len);
+    } else if (!strcmp(cmd, "set_parameter")) {
+        if (!arg)
+            return AVERROR(EINVAL);
+
+        return tinycomprsrc_set_parameter(ctx, arg);
     } else {
         ret = ff_filter_process_command(ctx, cmd, arg, res, res_len, flags);
     }
