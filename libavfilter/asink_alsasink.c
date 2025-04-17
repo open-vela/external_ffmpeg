@@ -184,12 +184,7 @@ static int alsasink_init(AVFilterContext *ctx)
 static void alsasink_uninit(AVFilterContext *ctx)
 {
     AlsaSinkPriv *priv = ctx->priv;
-    int i;
-
     av_freep(&priv->handles);
-
-    for (i = 0; i < ctx->nb_inputs; i++)
-        av_freep(&ctx->input_pads[i].name);
 }
 
 static int alsasink_activate(AVFilterContext *ctx)
@@ -275,48 +270,30 @@ static int alsasink_process_command(AVFilterContext *ctx,
 {
     AlsaSinkPriv *priv = ctx->priv;
     AlsaHandle *sink;
+    int ret = 0;
     int i;
 
-    if (!strcmp(cmd, "volume")) {
-        double volume;
-        int ret;
-
-        ret = av_expr_parse_and_eval(&volume, args, NULL, NULL,
-                                     NULL, NULL, NULL, NULL,
-                                     NULL, 0, NULL);
-        if (ret < 0)
-            return ret;
-
-        priv->volume = volume;
-        for (i = 0; i < ctx->nb_inputs; i++) {
-            sink = &priv->handles[i];
-            if (sink->h)
-                snd_pcm_set_volume(sink->h,  priv->volume * 100);
-        }
-        return 0;
-    } else if (!strcmp(cmd, "get_pollfd")) {
+    if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
-        int pos = 0;
 
         for (i = 0; i < ctx->nb_inputs; i++) {
             sink = &priv->handles[i];
             if (sink->h) {
                 if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED)
                     continue;
-                snd_pcm_poll_descriptors(sink->h, &poll[pos++], 1);
+                snd_pcm_poll_descriptors(sink->h, &poll[ret++], 1);
             }
         }
 
-        return pos;
+        return ret;
     } else if (!strcmp(cmd, "poll_available")) {
         snd_pcm_sw_params_t *sw_params;
-        int avail;
 
         for (i = 0; i < ctx->nb_inputs; i++) {
             sink = &priv->handles[i];
             if (sink->h) {
-                avail = snd_pcm_avail_update(sink->h);
-                if (avail == -EPIPE) {
+                ret = snd_pcm_avail_update(sink->h);
+                if (ret == -EPIPE) {
                     snd_pcm_pause(sink->h, 1);
                     snd_pcm_sw_params_alloca(&sw_params);
                     snd_pcm_sw_params_current(sink->h, sw_params);
@@ -331,11 +308,10 @@ static int alsasink_process_command(AVFilterContext *ctx,
         alsa_set_parameter(priv->devname, args);
         return 0;
     } else if (!strcmp(cmd, "dump")) {
-        int pos = 0;
 
-        for (i = 0; i < ctx->nb_inputs && res_len > pos; i++) {
+        for (i = 0; i < ctx->nb_inputs && res_len > ret; i++) {
             sink = &priv->handles[i];
-            pos += snprintf(res + pos, res_len - pos, "|%d: %p %d", i,
+            ret += snprintf(res + ret, res_len - ret, "|%d: %p %d", i,
                             sink->h, sink->h ? snd_pcm_state(sink->h) : -1);
         }
         return 0;
@@ -349,8 +325,8 @@ static int alsasink_process_command(AVFilterContext *ctx,
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasink_options[] = {
     { "inputs",      "", OFFSET(nb_inputs),   AV_OPT_TYPE_INT,    { .i64 = 1 },       1, INT16_MAX, FLAGS },
-    { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,    {.i64 = 4},         0, INT_MAX,   FLAGS},
-    { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,    {.i64 = 20},        0, INT_MAX,   FLAGS},
+    { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,    {.i64 = 4},         0, INT_MAX,   FLAGS },
+    { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,    {.i64 = 20},        0, INT_MAX,   FLAGS },
     { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING, {.str = "default"}, 0, 0,         FLAGS },
     { NULL },
 };
