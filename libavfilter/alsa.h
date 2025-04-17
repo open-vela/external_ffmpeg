@@ -21,8 +21,8 @@
  * alsa common handle
  */
 
-#ifndef LIBAVFILTER_ALSA_H
-#define LIBAVFILTER_ALSA_H
+#ifndef AVFILTER_ALSA_H
+#define AVFILTER_ALSA_H
 
 #include <libavutil/frame.h>
 #include <libavutil/log.h>
@@ -44,8 +44,8 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
               int rate, int channels, enum AVSampleFormat smpfmt);
 int alsa_close(AlsaHandle *s);
 int alsa_write(AlsaHandle *s, void **bufs, int size);
-int alsa_read(AlsaHandle *s, const void *buffer, int size);
+int alsa_read(AlsaHandle *s, void *buffer, int size);
 int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
                     const char *key, bool playback);
 int alsa_set_parameter(const char *device, const char *parameter);
-#endif /* LIBAVFILTER_ALSA_H */
+#endif /* AVFILTER_ALSA_H */

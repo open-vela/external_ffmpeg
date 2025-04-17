@@ -294,7 +294,7 @@ int alsa_write(AlsaHandle *s, void **bufs, int size)
     return ret;
 }
 
-int alsa_read(AlsaHandle *s, const void *buffer, int size)
+int alsa_read(AlsaHandle *s, void *buffer, int size)
 {
     int ret;
 
