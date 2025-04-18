@@ -31,6 +31,7 @@
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/samplefmt.h"
+#include "audio.h"
 #include "avfilter.h"
 #include "avfilter_internal.h"
 #include "filters.h"
@@ -43,6 +44,11 @@
 #define ROUTE_ON 1
 #define ROUTE_OFF 0
 
+#define FADE_NONE 0
+#define FADE_IN 1
+#define FADE_OUT 2
+#define FADE_OUT_IN (FADE_OUT|FADE_IN)
+
 typedef struct BuffSrcPriv {
     const AVClass *class;
     char *map_str;
@@ -51,9 +57,14 @@ typedef struct BuffSrcPriv {
        assumes the next address of map points to nb_outputs.*/
     int nb_outputs;
 
-    int sample_rate;            /**< sample rate */
-    AVChannelLayout ch_layout;  /**< channel layout */
-    enum AVSampleFormat sample_fmt;  /**< sample format */
+    int sample_rate;                /**< sample rate */
+    AVChannelLayout ch_layout;      /**< channel layout */
+    enum AVSampleFormat sample_fmt; /**< sample format */
+
+    int fade_type;                  /**< fade type */
+    AVFrame *frame;                 /**< frame buffer for fade. */
+    int64_t next_pts;               /**< next expected pts for current input. */
+    int eof_reached;                /**< eof reached */
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
@@ -61,6 +72,27 @@ typedef struct BuffSrcPriv {
     double player_volume;
     double stream_volume;
 } BuffSrcPriv;
+
+static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
+    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
+{
+    BuffSrcPriv *priv = ctx->priv;
+    int i, ret;
+
+    priv->on_event_cb = on_event_cb;
+    priv->on_event_cb_udata = udata;
+
+    if (priv->on_event_cb) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+            li->frame_wanted_out = 1;
+        }
+
+        ff_filter_set_ready(ctx, 100);
+    }
+
+    return 0;
+}
 
 static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
@@ -89,25 +121,14 @@ static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame 
         }
     }
 
-    return 0;
-}
-
-static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
-    int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
-{
-    BuffSrcPriv *priv = ctx->priv;
-    int i, ret;
-
-    priv->on_event_cb = on_event_cb;
-    priv->on_event_cb_udata = udata;
-
-    if (priv->on_event_cb) {
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
-            li->frame_wanted_out = 1;
+    if (priv->eof_reached && !priv->frame) {
+        for (i= 0; i < priv->nb_outputs; i++) {
+            ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
         }
 
-        ff_filter_set_ready(ctx, 100);
+        abufsrc_set_event_cb(ctx, NULL, NULL);
+
+        volume_uninit(&priv->vol_ctx);
     }
 
     return 0;
@@ -115,6 +136,53 @@ static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
 
 static int config_props(AVFilterLink *link)
 {
+    return 0;
+}
+
+static void fade_samples_s16(int16_t **dst, int16_t * const *src, int nb_samples,
+                             int channels, int dir, int64_t start, int64_t range)
+{
+    int16_t *d = dst[0];
+    const int16_t *s = src[0];
+    int i, c, k = 0;
+
+    for (i = 0; i < nb_samples; i++) {
+        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);
+    for (c = 0; c < channels; c++, k++)
+        d[k] = s[k] * gain;
+    }
+}
+
+static void fade_samples_s16p(int16_t **dst, int16_t * const *src, int nb_samples,
+                              int channels, int dir, int64_t start, int64_t range)
+{
+    int i, c;
+
+    for (i = 0; i < nb_samples; i++) {
+        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);
+        for (c = 0; c < channels; c++) {
+            int16_t *d = dst[c];
+            const int16_t *s = src[c];
+            d[i] = s[i] * gain;
+        }
+    }
+}
+
+static int fade_frame(int fade_type, AVFrame *dst, AVFrame *src)
+{
+    switch (src->format) {
+        case AV_SAMPLE_FMT_S16:
+            fade_samples_s16((int16_t **)dst->extended_data, (int16_t **)src->extended_data,
+                            src->nb_samples, src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
+                            fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
+            break;
+        case AV_SAMPLE_FMT_S16P:
+            fade_samples_s16p((int16_t **)dst->extended_data, (int16_t **)src->extended_data,
+                             src->nb_samples, src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
+                             fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
+            break;
+    }
+
     return 0;
 }
 
@@ -212,10 +280,55 @@ static int abufsrc_activate(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
 
     frame->nb_samples = SUGGESTED_NB_SAMPLES;
-    ret = priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)frame);
-    if (ret < 0) {
-        av_frame_free(&frame);
-        return ret;
+
+    if (!priv->eof_reached) {
+        if (priv->frame) {
+            av_frame_move_ref(frame, priv->frame);
+            priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame);
+        } else {
+            priv->frame = av_frame_alloc();
+            if (!priv->frame)
+                return AVERROR(ENOMEM);
+
+            priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame);
+            av_frame_free(&frame);
+            ff_filter_set_ready(ctx, 100);
+            return 0;
+        }
+    } else {
+        if (priv->fade_type || priv->frame) {
+            av_frame_move_ref(frame, priv->frame);
+            av_frame_free(&priv->frame);
+        }
+    }
+
+    if (frame->pts > 0 && !priv->eof_reached) {
+        if (priv->next_pts == frame->pts && priv->fade_type == FADE_NONE) { //shoule not set fade again, when in fade process.
+            int64_t next_pts = frame->pts + av_rescale_q(frame->nb_samples, (AVRational){1, frame->sample_rate}, frame->time_base);
+            if (next_pts != priv->frame->pts)
+                priv->fade_type = FADE_OUT_IN;
+        }
+    }
+
+    /* Only unsilent frame could do fade and clear fade flags.
+     *
+     * If fade out and fade in set at the same time, fade out should be done first
+     * and fade in done in next frame.
+     * If playing complete, next_pts will accumulate frame->nb_samples until next unsilent frame.
+     */
+    if (frame->pts >= 0) {
+        if (priv->fade_type) {
+            if (priv->fade_type & FADE_OUT) {
+                fade_frame(FADE_OUT, frame, frame);
+                priv->fade_type &= ~FADE_OUT;
+            } else if (priv->fade_type & FADE_IN) {
+                fade_frame(FADE_IN, frame, frame);
+                priv->fade_type &= ~FADE_IN;
+            }
+            priv->next_pts = frame->pts + av_rescale_q(frame->nb_samples, (AVRational){1, frame->sample_rate}, frame->time_base);
+        } else if (priv->next_pts > 0) { //if no fade occur during playing, next_pts should add frame->nb_samples.
+            priv->next_pts += av_rescale_q(frame->nb_samples, (AVRational){1, frame->sample_rate}, frame->time_base);
+        }
     }
 
     ret = abufsrc_send_frame(ctx, frame);
@@ -292,6 +405,10 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         if (sscanf(args, "%p %p fmt=%d:rate=%d:ch=%d", &on_event_cb, &udata, &format, &sample_rate, &channels) != 5)
             return AVERROR(EINVAL);
 
+        priv->next_pts = 0;
+        priv->fade_type = FADE_IN;
+        priv->eof_reached = 0;
+
         priv->sample_fmt = format;
         priv->sample_rate = sample_rate;
         av_channel_layout_default(&priv->ch_layout, channels);
@@ -305,15 +422,14 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
     } else if (!av_strcasecmp(cmd, "unlink")) {
         int i;
 
-        for (i= 0; i < priv->nb_outputs; i++)
-             ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+        priv->eof_reached = 1;
 
         if (priv->on_event_cb)
             priv->on_event_cb(priv->on_event_cb_udata, -1, 0);
 
-        volume_uninit(&priv->vol_ctx);
-        ret = abufsrc_set_event_cb(ctx, NULL, NULL);
-        return ret;
+        priv->fade_type = FADE_OUT;
+
+        return 0;
     } else if (!av_strcasecmp(cmd, "map")) {
         int *old_map = NULL;
         int i;
