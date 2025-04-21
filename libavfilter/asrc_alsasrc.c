@@ -110,6 +110,58 @@ static inline int alsasrc_subgraph_avaliable(AVFilterContext *ctx, int pad)
     return (priv->filter_desc && priv->af_map && priv->af_map[pad]);
 }
 
+/**
+ * the format for the subgraph command is:
+ * agrs = "filtername:sub_cmd:sub_args"
+ */
+static int alsasrc_subgraph_process_command(AVFilterContext *ctx, const char *args,
+                                            char *res, int res_len, int flags)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    char *p, *target, *sub_cmd, *sub_args;
+    char *saveptr = NULL;
+    int ret = AVERROR(EINVAL);
+    int i;
+
+    if (!args)
+        return AVERROR(EINVAL);
+
+    p = av_strdup(args);
+    if (!p)
+        return AVERROR(ENOMEM);
+
+    target = strtok_r(p, ":", &saveptr);
+    sub_cmd = target ? strtok_r(NULL, ":", &saveptr) : NULL;
+    sub_args = sub_cmd ? strtok_r(NULL, ":", &saveptr) : NULL;
+
+    if (!target || !sub_cmd || !sub_args) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid format for subgraph command: %s\n", args);
+        ret = AVERROR(EINVAL);
+        goto end;
+    }
+
+    av_log(ctx, AV_LOG_INFO, "subgraph cmd: %s %s %s.\n", target, sub_cmd, sub_args);
+
+    for (i = 0; i < priv->agraph->nb_filters; i++) {
+        AVFilterContext *filter = priv->agraph->filters[i];
+        if ((filter->name && !strcmp(target, filter->name)) || !strcmp(target, filter->filter->name)) {
+            ret = avfilter_process_command(filter, sub_cmd, sub_args, res, res_len, flags);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Error executing filter(%s) command %s %s, ret %d\n",
+                       target, sub_cmd, args, ret);
+            }
+            goto end;
+        }
+    }
+
+    av_log(ctx, AV_LOG_ERROR, "Filter %s not found\n", target);
+    ret = AVERROR(ENOENT);
+
+end:
+    av_freep(&p);
+    return ret;
+}
+
 static int alsasrc_subgraph_process(AVFilterContext *ctx, AVFrame *frame)
 {
     AlsasrcPriv *priv = ctx->priv;
@@ -617,6 +669,8 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
     } else if (!strcmp(cmd, "dump")) {
         alsasrc_subgraph_dump(ctx);
         return 0;
+    }  else if (!strcmp(cmd, "af_cmd")) {
+        return alsasrc_subgraph_process_command(ctx, args, res, res_len, flags);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
