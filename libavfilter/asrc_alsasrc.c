@@ -123,6 +123,11 @@ static int alsasrc_subgraph_process_command(AVFilterContext *ctx, const char *ar
     int ret = AVERROR(EINVAL);
     int i;
 
+    if(!priv->agraph) {
+        av_log(ctx, AV_LOG_WARNING, "subgraph filter not initialized.\n");
+        return 0;
+    }
+
     if (!args)
         return AVERROR(EINVAL);
 
