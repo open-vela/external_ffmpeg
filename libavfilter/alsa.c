@@ -419,3 +419,21 @@ err:
     av_opt_freep_ranges(&ranges);
     return ret;
 }
+
+int alsa_set_parameter(const char *device, const char *parameter)
+{
+    char path[32];
+    int ret;
+    int fd;
+
+    snprintf(path, sizeof(path), CONFIG_AUDIOUTILS_ALSA_LIB_DEV_PATH "/%s", device);
+    fd = open(path, O_RDWR | O_CLOEXEC);
+
+    if (fd < 0)
+        return -ENOENT;
+
+    ret = alsa_ioctl(fd, AUDIOIOC_SETPARAMTER, parameter);
+    close(fd);
+
+    return ret;
+}

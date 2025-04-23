@@ -327,6 +327,9 @@ static int alsasink_process_command(AVFilterContext *ctx,
 
         ff_filter_set_ready(ctx, 100);
         return 0;
+    } else if (!strcmp(cmd, "set_parameter")) {
+        alsa_set_parameter(priv->devname, args);
+        return 0;
     } else if (!strcmp(cmd, "dump")) {
         int pos = 0;
 

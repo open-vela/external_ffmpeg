@@ -47,5 +47,5 @@ int alsa_write(AlsaHandle *s, void **bufs, int size);
 int alsa_read(AlsaHandle *s, const void *buffer, int size);
 int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
                     const char *key, bool playback);
-
+int alsa_set_parameter(const char *device, const char *parameter);
 #endif /* LIBAVFILTER_ALSA_H */
