@@ -31,7 +31,7 @@ static inline void fade_samples_s16_small(int16_t *dst, const int16_t *src,
     int i, j, k = 0;
     int32_t step;
 
-    step = ((dst_volume - src_volume) << 15) / nb_samples;
+    step = ((int32_t)(dst_volume - src_volume) * (1 << 15)) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
             dst[k] = av_clip_int16((src[k] * (src_volume + (step * i >> 15)) + 0x4000) >> 15);
@@ -138,8 +138,8 @@ void volume_scale(VolumeContext *vol, AVFrame *frame)
         int32_t volume_i = (int32_t)(vol->volume * 256 + 0.5);
         if (volume_i != vol_isrc) {
             for (p = 0; p < planes; p++) {
-                vol->fade_samples(frame->extended_data[p],
-                                  frame->extended_data[p],
+                vol->fade_samples((int16_t *)frame->extended_data[p],
+                                  (int16_t *)frame->extended_data[p],
                                   frame->nb_samples, planar ? 1 : frame->ch_layout.nb_channels,
                                   volume_i, vol_isrc);
             }
