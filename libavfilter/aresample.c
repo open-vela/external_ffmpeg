@@ -94,7 +94,7 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
     if (delay > 0)
         n_out += FFMIN(delay, FFMAX(4096, n_out));
 
-    oframe = ff_get_audio_buffer(link, n_out);
+    oframe = ff_default_get_audio_buffer(link, n_out);
     if (!oframe) {
         return AVERROR(ENOMEM);
     }
