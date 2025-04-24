@@ -135,8 +135,10 @@ static void request_frame(AVFilterContext *ctx, int pad)
 
     ff_inlink_acknowledge_status(link, &ret, &pts);
     if (ret < 0) {
-        s->input_state[pad] |= INPUT_EOF;
-        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] reached EOF.\n", ctx->name, pad);
+        if (s->input_state[pad] & INPUT_ON) {
+            s->input_state[pad] |= INPUT_EOF;
+            av_log(ctx, AV_LOG_INFO, "%s inputs[%d] reached EOF.\n", ctx->name, pad);
+        }
         return;
     }
 
