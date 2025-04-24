@@ -21,6 +21,8 @@
  * audio tinycompress sink
  */
 
+#include <libavutil/avstring.h>
+#include <libavutil/mem.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
 #include <libavcodec/avcodec.h>
@@ -29,6 +31,7 @@
 #include <tinycompress/tinycompress.h>
 #include <poll.h>
 
+#include "amix.h"
 #include "filters.h"
 #include "avfilter.h"
 #include "formats.h"
@@ -43,6 +46,7 @@ typedef struct CompSinkPriv {
     AVChannelLayout ch_layout;
     enum AVCodecID codec_id;
     AVPacket *last_pkt;
+    AMixContext *mix;
     FAR struct compress *compress;
 } CompSinkPriv;
 
@@ -69,6 +73,7 @@ static int tinycomprsink_subfmt_to_avcodec(int subfmt)
 static int tinycomprsink_subfmt_to_smpfmt(int subfmt)
 {
     switch (subfmt) {
+        case AUDIO_SUBFMT_PCM_S8:
         case AUDIO_SUBFMT_PCM_U8:
             return AV_SAMPLE_FMT_U8;
         case AUDIO_SUBFMT_PCM_S16_LE:
@@ -100,9 +105,9 @@ static int tinycomprsink_open_encoder(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
 
     priv->enc_ctx->codec_type  = inlink->type;
-    priv->enc_ctx->sample_fmt  = inlink->format;
-    priv->enc_ctx->sample_rate = inlink->sample_rate;
-    av_channel_layout_copy(&priv->enc_ctx->ch_layout, &inlink->ch_layout);
+    priv->enc_ctx->sample_fmt  = priv->sample_fmt;
+    priv->enc_ctx->sample_rate = priv->sample_rate;
+    av_channel_layout_copy(&priv->enc_ctx->ch_layout, &priv->ch_layout);
 
     ret = avcodec_open2(priv->enc_ctx, enc, NULL);
     if (ret < 0) {
@@ -140,6 +145,12 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     if (config.codec)
         free(config.codec);
 
+    if (!priv->mix) {
+        priv->mix = ff_amix_alloc(priv->sample_rate, priv->sample_fmt, priv->ch_layout.nb_channels);
+        if (!priv->mix)
+            return AVERROR(ENOMEM);
+    }
+
     compress_nonblock(priv->compress, 1);
     priv->last_pkt = av_packet_alloc();
     if (!priv->last_pkt) {
@@ -165,6 +176,10 @@ out:
     if (priv->compress) {
         compress_close(priv->compress);
         priv->compress = NULL;
+    }
+    if (priv->mix) {
+        ff_amix_free(priv->mix);
+        priv->mix = NULL;
     }
 
     return ret;
@@ -238,55 +253,69 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
 {
     AVFilterLink *inlink = ctx->inputs[0];
     CompSinkPriv *priv = ctx->priv;
-    AVFrame *frame;
+    int i, ret, empty_inputs = 0;
+    AVFrame *frame = NULL;
+    AVFilterLink *link;
     int64_t pts;
-    int ret;
 
     ret = tinycomprsink_output_packet(ctx);
     if (ret < 0)
         return ret;
 
-    if (ff_inlink_check_available_frame(inlink)) {
-        ret = tinycomprsink_start(ctx);
-        if (ret < 0) {
-            return ret;
-        }
+    ret = tinycomprsink_start(ctx);
+    if (ret < 0)
+        return ret;
 
-        if (priv->enc_ctx && priv->enc_ctx->frame_size)
-            ret = ff_inlink_consume_samples(inlink, priv->enc_ctx->frame_size, priv->enc_ctx->frame_size, &frame);
-        else
-            ret = ff_inlink_consume_frame(inlink, &frame);
-        if (ret < 0)
-            return ret;
-        else if (ret > 0) {
-            if (frame->nb_samples <= 0) {
-                av_frame_free(&frame);
-                return tinycomprsink_send_frame(ctx, NULL);
-            }
-            else {
-                ret = tinycomprsink_send_frame(ctx, frame);
-                av_frame_free(&frame);
-                if (ret >= 0)
-                    ff_filter_set_ready(ctx, 100);
-                return ret;
+    for (i = 0; i < priv->nb_inputs; i++) {
+        link = ctx->inputs[i];
+
+        if (ff_inlink_check_available_frame(link)) {
+            ret = ff_amix_input_write(priv->mix, link);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "input[%d] write to mix failed, ret:%d.\n", i, ret);
+                continue;
             }
         }
     }
 
-    ff_inlink_acknowledge_status(inlink, &ret, &pts);
-    if (ret >= 0)
-        ff_inlink_request_frame(inlink);
-    else if (ret == AVERROR_EOF) {
-        ret = tinycomprsink_send_frame(ctx, NULL);
-        return ret == AVERROR_EOF ? AVERROR_EOF : ret;
+    ret = ff_amix_read(priv->mix, &frame);
+    if (ret != 0) {
+        ret = tinycomprsink_send_frame(ctx, frame);
+        if (frame)
+            av_frame_free(&frame);
+        ff_filter_set_ready(ctx, 100);
+        return ret;
     }
 
-    return ret;
+    for (i = 0; i < priv->nb_inputs; i++) {
+        link = ctx->inputs[i];
+
+        ff_inlink_acknowledge_status(link, &ret, &pts);
+        if (ret >= 0) {
+            if (ff_amix_input_want(priv->mix, link))
+                ff_inlink_request_frame(link);
+        } else if (ret == AVERROR_EOF) {
+            if (!ff_amix_input_empty(priv->mix, link))
+                ff_filter_set_ready(ctx, 100);
+            else
+                empty_inputs++;
+        }
+    }
+
+    if (empty_inputs == priv->nb_inputs) { /* notify encoder there is no more data to handle */
+        if (priv->mix) {
+            ff_amix_free(priv->mix);
+            priv->mix = NULL;
+        }
+        return tinycomprsink_send_frame(ctx, NULL);
+    }
+
+    return 0;
 }
 
 static int tinycomprsink_process_command(AVFilterContext *ctx,
-                                    const char *cmd, const char *args,
-                                    char *res, int res_len, int flags)
+                                         const char *cmd, const char *args,
+                                         char *res, int res_len, int flags)
 {
     CompSinkPriv *priv = ctx->priv;
     int ret = 0;
@@ -313,8 +342,8 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
 }
 
 static int tinycomprsink_query_formats(const AVFilterContext *ctx,
-                                AVFilterFormatsConfig **cfg_in,
-                                AVFilterFormatsConfig **cfg_out)
+                                       AVFilterFormatsConfig **cfg_in,
+                                       AVFilterFormatsConfig **cfg_out)
 {
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
@@ -345,6 +374,26 @@ out:
     return ret;
 }
 
+static int tinycomprsink_init(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    int i, ret;
+
+    for (i = 0; i < priv->nb_inputs; i++) {
+        AVFilterPad pad = { 0 };
+
+        pad.type = AVMEDIA_TYPE_AUDIO;
+        pad.name = av_asprintf("input%d", i);
+        if (!pad.name)
+            return AVERROR(ENOMEM);
+
+        if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
+            return ret;
+    }
+
+    return 0;
+}
+
 #define OFFSET(x) offsetof(CompSinkPriv, x)
 #define FLAGS  AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
@@ -356,21 +405,14 @@ static const AVOption tinycomprsink_options[] = {
 
 AVFILTER_DEFINE_CLASS(tinycomprsink);
 
-static const AVFilterPad tinycomprsink_inputs[] = {
-    {
-        .name = "default",
-        .type = AVMEDIA_TYPE_AUDIO,
-    },
-};
-
 const AVFilter ff_asink_tinycomprsink = {
     .name            = "tinycomprsink",
     .description     = NULL_IF_CONFIG_SMALL("Audio tinycompress sink"),
     .priv_class      = &tinycomprsink_class,
     .priv_size       = sizeof(CompSinkPriv),
+    .init            = tinycomprsink_init,
     .activate        = tinycomprsink_activate,
-    FILTER_INPUTS(tinycomprsink_inputs),
     FILTER_QUERY_FUNC2(tinycomprsink_query_formats),
     .process_command = tinycomprsink_process_command,
-    .flags           = AVFILTER_FLAG_SUPPORT_POLL,
+    .flags           = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
