@@ -360,11 +360,21 @@ static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
         if (!strcmp(key, "volume")) {
             priv->player_volume = strtof(value, NULL);
             volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
-        } else if (!strcmp(key, "stream_volume")){
-            priv->stream_volume = strtof(value, NULL);
+        } else if (!strcmp(key, "stream_volume")) {
+            double volume;
+            ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL,
+                                         NULL, NULL, NULL, 0, NULL);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n",
+                       ctx->name, value);
+                goto end;
+            }
+            priv->stream_volume = volume;
             volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+
+end:
         av_freep(&key);
         av_freep(&value);
     }
