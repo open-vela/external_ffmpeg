@@ -388,6 +388,11 @@ static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
     if (!strcmp(key, "format")) {
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d", s->sample_fmt, s->sample_rate, s->ch_layout.nb_channels);
         return 0;
+    } else if (!strcmp(key, "volume")) {
+        snprintf(value, len, "vol:%f", s->player_volume);
+
+        av_log(s, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, s->player_volume);
+        return 0;
     }
 
     av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
