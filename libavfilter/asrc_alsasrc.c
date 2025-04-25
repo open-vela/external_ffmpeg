@@ -171,14 +171,21 @@ static int alsasrc_subgraph_process(AVFilterContext *ctx, AVFrame *frame)
 {
     AlsasrcPriv *priv = ctx->priv;
     int ret;
-    if ((ret = av_buffersrc_add_frame(priv->src_filter, frame)) < 0) {
-        av_log(ctx, AV_LOG_ERROR, "Error while submitting the audio to filtergraph\n");
+
+    if ((ret = av_buffersrc_add_frame_flags(priv->src_filter, frame,
+                                            AV_BUFFERSRC_FLAG_KEEP_REF)) < 0) {
+        av_log(ctx, AV_LOG_ERROR, "Error submitting audio to buffersrc: %s\n",
+               av_err2str(ret));
         return ret;
     }
 
+    av_frame_unref(frame);
+
     if ((ret = av_buffersink_get_frame(priv->sink_filter, frame)) < 0) {
         if (ret != AVERROR(EAGAIN))
-            av_log(ctx, AV_LOG_ERROR, "Error while getting the audio from filtergraph\n");
+            av_log(ctx, AV_LOG_ERROR, "Error while getting the audio from buffersink: %s\n",
+                   av_err2str(ret));
+        av_free(frame);
         return ret;
     }
 
