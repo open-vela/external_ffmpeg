@@ -115,14 +115,14 @@ static av_cold void scaler_init(VolumeContext *vol)
     }
 }
 
-int volume_set(VolumeContext *vol, double volume)
+void volume_set(VolumeContext *vol, double volume)
 {
+    /* Should not fade in first frame, cause there is no src volume. */
+    vol->volume_last = vol->volume_last > 0 ? vol->volume : volume;
+
     vol->volume = volume;
 
-    vol->volume_last = -1.0f;
-
     scaler_init(vol);
-    return 0;
 }
 
 void volume_scale(VolumeContext *vol, AVFrame *frame)
@@ -131,6 +131,9 @@ void volume_scale(VolumeContext *vol, AVFrame *frame)
     planar = av_sample_fmt_is_planar(frame->format);
     planes = planar ? frame->ch_layout.nb_channels : 1;
     plane_size = frame->nb_samples * (planar ? 1 : frame->ch_layout.nb_channels);
+
+    if (vol->volume_last < 0)
+        vol->volume_last = vol->volume; /* If volume not set after init, skip fade in first frame. */
 
     if (frame->format == AV_SAMPLE_FMT_S16 ||
         frame->format == AV_SAMPLE_FMT_S16P) {

@@ -433,6 +433,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return ret;
 
         ret = volume_init(&priv->vol_ctx, format);
+        volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
         return ret;
     } else if (!av_strcasecmp(cmd, "unlink")) {
         int i;

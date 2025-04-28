@@ -45,7 +45,7 @@ typedef struct VolumeContext {
 
 int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt);
 void volume_scale(VolumeContext *vol, AVFrame *frame);
-int volume_set(VolumeContext *vol, double volume);
+void volume_set(VolumeContext *vol, double volume);
 void volume_uninit(VolumeContext *vol);
 
 #endif /* LIBAVFILTER_VOLUME_H */
