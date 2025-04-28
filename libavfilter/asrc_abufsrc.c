@@ -65,6 +65,9 @@ typedef struct BuffSrcPriv {
     AVFrame *frame;                 /**< frame buffer for fade. */
     int64_t next_pts;               /**< next expected pts for current input. */
     int eof_reached;                /**< eof reached */
+    void (*fade_samples)(uint8_t **dst, uint8_t * const *src,
+                        int nb_samples,int channels, int dir,
+                        int64_t start, int64_t range);  /**< fade function */
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
@@ -139,51 +142,65 @@ static int config_props(AVFilterLink *link)
     return 0;
 }
 
-static void fade_samples_s16(int16_t **dst, int16_t * const *src, int nb_samples,
-                             int channels, int dir, int64_t start, int64_t range)
-{
-    int16_t *d = dst[0];
-    const int16_t *s = src[0];
-    int i, c, k = 0;
+#define FADE(name, type)                                                                \
+static void fade_samples_## name(uint8_t **dst, uint8_t * const *src, int nb_samples,   \
+                                int channels, int dir, int64_t start, int64_t range)    \
+{                                                                                       \
+    type *d = (type *)dst[0];                                                           \
+    const type *s = (type *)src[0];                                                     \
+    int i, c, k = 0;                                                                    \
+                                                                                        \
+    for (i = 0; i < nb_samples; i++) {                                                  \
+        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);                \
+    for (c = 0; c < channels; c++, k++)                                                 \
+        d[k] = s[k] * gain;                                                             \
+    }                                                                                   \
+}                                                                                       \
 
-    for (i = 0; i < nb_samples; i++) {
-        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);
-    for (c = 0; c < channels; c++, k++)
-        d[k] = s[k] * gain;
-    }
-}
+#define FADE_PLANAR(name, type)                                                             \
+static void fade_samples_## name ##p(uint8_t **dst, uint8_t * const *src, int nb_samples,   \
+                                    int channels, int dir, int64_t start, int64_t range)    \
+{                                                                                           \
+    int i, c;                                                                               \
+                                                                                            \
+    for (i = 0; i < nb_samples; i++) {                                                      \
+        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);                    \
+        for (c = 0; c < channels; c++) {                                                    \
+            type *d = (type *)dst[c];                                                       \
+            const type *s = (type *)src[c];                                                 \
+            d[i] = s[i] * gain;                                                             \
+        }                                                                                   \
+    }                                                                                       \
+}                                                                                           \
 
-static void fade_samples_s16p(int16_t **dst, int16_t * const *src, int nb_samples,
-                              int channels, int dir, int64_t start, int64_t range)
-{
-    int i, c;
 
-    for (i = 0; i < nb_samples; i++) {
-        double gain = av_clipd(1.0 * (start + i * dir) / range, 0, 1.0);
-        for (c = 0; c < channels; c++) {
-            int16_t *d = dst[c];
-            const int16_t *s = src[c];
-            d[i] = s[i] * gain;
-        }
-    }
-}
+FADE_PLANAR(dbl, double)
+FADE_PLANAR(flt, float)
+FADE_PLANAR(s16, int16_t)
+FADE_PLANAR(s32, int32_t)
 
-static int fade_frame(int fade_type, AVFrame *dst, AVFrame *src)
+FADE(dbl, double)
+FADE(flt, float)
+FADE(s16, int16_t)
+FADE(s32, int32_t)
+
+static void fade_frame(BuffSrcPriv* priv, int fade_type, AVFrame *dst, AVFrame *src)
 {
     switch (src->format) {
-        case AV_SAMPLE_FMT_S16:
-            fade_samples_s16((int16_t **)dst->extended_data, (int16_t **)src->extended_data,
-                            src->nb_samples, src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
-                            fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
-            break;
-        case AV_SAMPLE_FMT_S16P:
-            fade_samples_s16p((int16_t **)dst->extended_data, (int16_t **)src->extended_data,
-                             src->nb_samples, src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
-                             fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
-            break;
+        case AV_SAMPLE_FMT_S16:  priv->fade_samples = fade_samples_s16;  break;
+        case AV_SAMPLE_FMT_S16P: priv->fade_samples = fade_samples_s16p; break;
+        case AV_SAMPLE_FMT_S32:  priv->fade_samples = fade_samples_s32;  break;
+        case AV_SAMPLE_FMT_S32P: priv->fade_samples = fade_samples_s32p; break;
+        case AV_SAMPLE_FMT_FLT:  priv->fade_samples = fade_samples_flt;  break;
+        case AV_SAMPLE_FMT_FLTP: priv->fade_samples = fade_samples_fltp; break;
+        case AV_SAMPLE_FMT_DBL:  priv->fade_samples = fade_samples_dbl;  break;
+        case AV_SAMPLE_FMT_DBLP: priv->fade_samples = fade_samples_dblp; break;
     }
 
-    return 0;
+    priv->fade_samples(dst->extended_data, src->extended_data, src->nb_samples,
+                      src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
+                      fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
+
 }
 
 static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
@@ -319,10 +336,10 @@ static int abufsrc_activate(AVFilterContext *ctx)
     if (frame->pts >= 0) {
         if (priv->fade_type) {
             if (priv->fade_type & FADE_OUT) {
-                fade_frame(FADE_OUT, frame, frame);
+                fade_frame(priv, FADE_OUT, frame, frame);
                 priv->fade_type &= ~FADE_OUT;
             } else if (priv->fade_type & FADE_IN) {
-                fade_frame(FADE_IN, frame, frame);
+                fade_frame(priv, FADE_IN, frame, frame);
                 priv->fade_type &= ~FADE_IN;
             }
             priv->next_pts = frame->pts + av_rescale_q(frame->nb_samples, (AVRational){1, frame->sample_rate}, frame->time_base);
