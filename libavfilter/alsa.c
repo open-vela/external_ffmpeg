@@ -432,7 +432,7 @@ int alsa_set_parameter(const char *device, const char *parameter)
     if (fd < 0)
         return -ENOENT;
 
-    ret = alsa_ioctl(fd, AUDIOIOC_SETPARAMTER, parameter);
+    ret = alsa_ioctl(fd, AUDIOIOC_SETPARAMTER, (unsigned long)parameter);
     close(fd);
 
     return ret;
