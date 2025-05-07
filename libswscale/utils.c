@@ -698,6 +698,7 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
             filterAlign = 1;
     }
 
+#if ARCH_LOONGARCH
     if (have_lasx(cpu_flags) || have_lsx(cpu_flags)) {
         int reNum = minFilterSize & (0x07);
 
@@ -706,6 +707,7 @@ static av_cold int initFilter(int16_t **outFilter, int32_t **filterPos,
         if (reNum < 3)
             filterAlign = 1;
     }
+#endif
 
     av_assert0(minFilterSize > 0);
     filterSize = (minFilterSize + (filterAlign - 1)) & (~(filterAlign - 1));
@@ -1862,8 +1864,13 @@ static av_cold int sws_init_single_context(SwsContext *c, SwsFilter *srcFilter,
             const int filterAlign = X86_MMX(cpu_flags)     ? 4 :
                                     PPC_ALTIVEC(cpu_flags) ? 8 :
                                     have_neon(cpu_flags)   ? 4 :
+#if ARCH_LOONGARCH
                                     have_lsx(cpu_flags)    ? 8 :
                                     have_lasx(cpu_flags)   ? 8 : 1;
+#else
+                                    1;
+#endif
+
 
             if ((ret = initFilter(&c->hLumFilter, &c->hLumFilterPos,
                            &c->hLumFilterSize, c->lumXInc,
