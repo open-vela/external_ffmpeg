@@ -152,7 +152,7 @@ static int abufsink_activate(AVFilterContext *ctx)
     for (i = 0; i < s->nb_inputs; i++) {
         link = ctx->inputs[i];
 
-        if (!s->mix) {
+        if (!s->mix && s->on_event_cb) {
             s->mix = ff_amix_alloc(link->sample_rate, link->format, link->ch_layout.nb_channels);
             if (!s->mix)
                 return AVERROR(ENOMEM);
