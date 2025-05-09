@@ -19,13 +19,15 @@
 #ifndef AVFILTER_AMIX_H
 #define AVFILTER_AMIX_H
 
+#include <stdbool.h>
+
 typedef struct AVFrame AVFrame;
 typedef struct AVFilterLink AVFilterLink;
 typedef struct AVFilterContext AVFilterContext;
 typedef struct AMixContext AMixContext;
 
-int ff_amix_input_empty(AMixContext *s, AVFilterLink *link);
-int ff_amix_input_want(AMixContext *s, AVFilterLink *link);
+bool ff_amix_input_empty(AMixContext *s, AVFilterLink *link);
+bool ff_amix_input_want(AMixContext *s, AVFilterLink *link);
 int ff_amix_input_write(AMixContext *s, AVFilterLink *link);
 int ff_amix_read(AMixContext *s, AVFrame **oframe);
 AMixContext *ff_amix_alloc(int sample_rate, int format, int channels);

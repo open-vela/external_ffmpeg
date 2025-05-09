@@ -274,24 +274,24 @@ void ff_amix_free(AMixContext *s)
     av_free(s);
 }
 
-int ff_amix_input_empty(AMixContext *s, AVFilterLink *link)
+bool ff_amix_input_empty(AMixContext *s, AVFilterLink *link)
 {
     AMixInput *input;
 
-    if (!s || !link)
-        return AVERROR(EINVAL);
+    if (!s)
+        return true;
 
     input = amix_find_input(s, link);
 
-    return !input || !input->link || (input->fifo ? av_audio_fifo_size(input->fifo) == 0 : !ff_inlink_check_available_samples(input->link, 1));
+    return !s || !input || !input->link || (input->fifo ? av_audio_fifo_size(input->fifo) == 0 : !ff_inlink_check_available_samples(input->link, 1));
 }
 
-int ff_amix_input_want(AMixContext *s, AVFilterLink *link)
+bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
 {
     AMixInput *input;
 
-    if (!s || !link)
-        return AVERROR(EINVAL);
+    if (!s)
+        return false;
 
     input = amix_find_input(s, link);
 
