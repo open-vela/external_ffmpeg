@@ -65,7 +65,6 @@ typedef struct AlsasrcPriv {
     int nb_outputs;
 
     int64_t timestamp;
-    AVPacket *pkt;
     AResampleContext resample;
 
     VolumeContext vol_ctx;
@@ -413,10 +412,6 @@ static void alsasrc_close(AVFilterContext *ctx)
 
     alsa_close(&priv->priv);
 
-    if (priv->pkt != NULL) {
-        av_packet_free(&priv->pkt);
-    }
-
     volume_uninit(&priv->vol_ctx);
     alsasrc_subgraph_uninit(ctx);
 }
@@ -688,20 +683,47 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
     }
 }
 
-static int alsasrc_read_packet(AlsasrcPriv *priv)
+static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
 {
     AlsaHandle *handle = &priv->priv;
-    int res;
+    AVFrame *src;
+    int ret;
 
-    res = alsa_read(handle, priv->pkt->data, priv->period_size);
-    if (res < 0)
-        return res;
+    src = av_frame_alloc();
+    if (!src) {
+        av_log(priv, AV_LOG_ERROR, "Failed to allocate frame.\n");
+        return AVERROR(ENOMEM);
+    }
 
-    priv->pkt->size = res * handle->frame_size;
-    priv->pkt->pts = av_rescale(priv->timestamp, 1000000, priv->sample_rate);
-    priv->timestamp += res;
+    src->format = priv->format;
+    src->sample_rate = priv->sample_rate;
+    av_channel_layout_copy(&src->ch_layout, &priv->ch_layout);
+    src->nb_samples = priv->period_size / priv->ch_layout.nb_channels;
 
-    return res;
+    ret = av_frame_get_buffer(src, 0);
+    if (ret < 0) {
+        av_log(priv, AV_LOG_ERROR, "Failed to allocate frame buffer, ret %d.\n", ret);
+        goto fail;
+    }
+
+    ret = alsa_read(handle, src->data[0], priv->period_size);
+    if (ret < 0)
+        goto fail;
+
+    src->pkt_size = ret * handle->frame_size;
+    src->nb_samples = ret / priv->ch_layout.nb_channels;
+    src->linesize[0] = src->pkt_size;
+    src->pts = av_rescale_q(priv->timestamp, (AVRational){1, priv->sample_rate},
+                            (AVRational){1, 1000000});
+
+    priv->timestamp += ret;
+
+    *frame = src;
+    return ret;
+
+fail:
+    av_frame_free(&src);
+    return ret;
 }
 
 static int alsasrc_open(AVFilterContext *ctx)
@@ -752,24 +774,6 @@ static int alsasrc_open(AVFilterContext *ctx)
     if (ret < 0)
         return ret;
 
-    priv->pkt = av_packet_alloc();
-    if (!priv->pkt) {
-        ret = AVERROR(ENOMEM);
-        goto error;
-    }
-
-    priv->pkt->size = priv->period_size * handle->frame_size;
-    if (priv->pkt->size <= 0) {
-        ret = AVERROR(EINVAL);
-        goto error;
-    }
-
-    ret = av_new_packet(priv->pkt, priv->pkt->size);
-    if (ret < 0) {
-        ret = AVERROR(ENOMEM);
-        goto error;
-    }
-
     priv->timestamp = 0;
 
     ret = volume_init(&priv->vol_ctx, priv->format);
@@ -783,46 +787,11 @@ error:
     return ret;
 }
 
-static int alsasrc_wrap_frame(AVFilterContext *ctx, int pad, AVPacket **pkt, AVFrame **frame)
-{
-    AVFilterLink *link = ctx->outputs[pad];
-    AlsasrcPriv *priv = ctx->priv;
-    AlsaHandle *handle = &priv->priv;
-    int sample_bytes;
-    AVFrame *src;
-
-    src = av_frame_alloc();
-    if (!src) {
-        return AVERROR(ENOMEM);
-    }
-
-    src->format = priv->format;
-    src->sample_rate = priv->sample_rate;
-    av_channel_layout_copy(&src->ch_layout, &priv->ch_layout);
-    sample_bytes = handle->frame_size * priv->ch_layout.nb_channels;
-    src->nb_samples = (*pkt)->size / sample_bytes;
-    src->pkt_size = (*pkt)->size;
-    src->buf[0] = (*pkt)->buf;
-    src->data[0] = src->buf[0]->data;
-    src->linesize[0] = (*pkt)->size;
-    src->extended_data = src->data;
-    src->pts = (*pkt)->pts;
-
-    *frame = src;
-
-    (*pkt)->buf = NULL;
-    (*pkt)->data = NULL;
-    (*pkt)->size = 0;
-
-    av_packet_free(pkt);
-
-    return 0;
-}
-
 static int alsasrc_activate(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
+    AVFrame *frame = NULL;
     int i, ret;
 
     ret = alsasrc_check_outlink_status(ctx);
@@ -842,50 +811,48 @@ static int alsasrc_activate(AVFilterContext *ctx)
     if (i == ctx->nb_outputs)
        return FFERROR_NOT_READY;
 
-    ret = alsasrc_read_packet(priv);
+    ret = alsasrc_read_frame(priv, &frame);
     if (ret < 0)
         goto out;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFrame *oframe = NULL;
-        AVFrame *frame = NULL;
+        AVFrame *iframe = NULL;
         AVFilterLink *link;
-        AVPacket *pkt_out;
 
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        pkt_out = av_packet_clone(priv->pkt);
-        if (!pkt_out) {
+        iframe = av_frame_clone(frame);
+        if (!iframe) {
+            av_frame_free(&frame);
             ret = AVERROR(ENOMEM);
             goto out;
         }
 
-        ret = alsasrc_wrap_frame(ctx, i, &pkt_out, &frame);
-        if (ret < 0)
-            goto out;
-
         if (priv->agraph && priv->af_map && priv->af_map[i]) {
-            ret = alsasrc_subgraph_process(ctx, frame);
+            ret = alsasrc_subgraph_process(ctx, iframe);
             if (ret < 0)
                 continue;
         }
 
-        volume_scale(&priv->vol_ctx, frame);
+        volume_scale(&priv->vol_ctx, iframe);
 
         link = ctx->outputs[i];
-        ret = ff_resample_frame(&priv->resample, link, frame, &oframe);
+        ret = ff_resample_frame(&priv->resample, link, iframe, &oframe);
         if (ret == 0)
-            oframe = frame;
+            oframe = iframe;
         else
-            av_frame_free(&frame);
+            av_frame_free(&iframe);
 
         ret = ff_filter_frame(link, oframe);
         if (ret < 0)
             goto out;
     }
 
+    av_frame_free(&frame);
 out:
+
     return ret;
 }
 
