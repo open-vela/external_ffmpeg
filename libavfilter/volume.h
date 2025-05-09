@@ -39,7 +39,7 @@ typedef struct VolumeContext {
 
     void (*scale_samples)(uint8_t *dst, const uint8_t *src, int nb_samples,
                           int volume);
-    void (*fade_samples)(int16_t *dst, const int16_t *src,
+    void (*fade_samples)(uint8_t *dst, const uint8_t *src,
                          int nb_samples, int chs, int16_t dst_volume, int16_t src_volume);
 } VolumeContext;
 
