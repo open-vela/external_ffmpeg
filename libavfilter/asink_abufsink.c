@@ -52,6 +52,7 @@ typedef struct ABufSinkPriv {
     enum AVSampleFormat sample_fmt; /**< sample format */
 
     AMixContext *mix;               /**< mix module context */
+    int frame_size;                 /**< frame size */
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
@@ -97,23 +98,19 @@ static void request_frame(AVFilterContext *ctx, int pad)
     if (ret < 0)
         return;
 
-    if (s->on_event_cb)
+    if (s->on_event_cb && (!ff_inlink_queued_samples(link) || ff_amix_input_want(s->mix, link)))
         ff_inlink_request_frame(link);
-    else {
-        if (!ff_inlink_queued_frames(link)) {
-            ff_inlink_set_status(link, AVERROR_EOF);
-            for (i = 0; i < s->nb_inputs; i++) {
-                if (!ff_amix_input_empty(s->mix, ctx->inputs[i])) {
-                    ff_filter_set_ready(ctx, 100);
-                    break;
-                }
+    else if (!s->on_event_cb){
+        ff_inlink_set_status(link, AVERROR_EOF);
+        for (i = 0; i < s->nb_inputs; i++) {
+            if (!ff_amix_input_empty(s->mix, ctx->inputs[i])) {
+                ff_filter_set_ready(ctx, 100);
+                break;
             }
-            if (i == s->nb_inputs) {
-                ff_amix_free(s->mix);
-                s->mix = NULL;
-            }
-        } else {
-            ff_filter_set_ready(ctx, 100);
+        }
+        if (i == s->nb_inputs) {
+            ff_amix_free(s->mix);
+            s->mix = NULL;
         }
     }
 }
@@ -146,6 +143,7 @@ static int abufsink_activate(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
     AVFilterLink *link;
+    bool need_activate = true;
     int i, ret = 0;
     int64_t pts;
 
@@ -156,6 +154,8 @@ static int abufsink_activate(AVFilterContext *ctx)
             s->mix = ff_amix_alloc(link->sample_rate, link->format, link->ch_layout.nb_channels);
             if (!s->mix)
                 return AVERROR(ENOMEM);
+            if (s->frame_size)
+                ff_amix_set_frame_size(s->mix, s->frame_size);
         }
 
         if (ff_inlink_check_available_frame(link)) {
@@ -165,14 +165,52 @@ static int abufsink_activate(AVFilterContext *ctx)
                 continue;
             }
         }
-
-        output_frame(ctx);
-
-        if (ff_amix_input_want(s->mix, link))
-            request_frame(ctx, i);
     }
 
+    output_frame(ctx);
+
+    for (i = 0; i < s->nb_inputs; i++) {
+        link = ctx->inputs[i];
+
+        request_frame(ctx, i);
+
+        if (ff_outlink_frame_wanted(link))
+            need_activate = false;
+    }
+
+    if (s->on_event_cb && need_activate) //in case that all links are samples enough, no need to request frame
+        ff_filter_set_ready(ctx, 100);
+
     return 0;
+}
+
+static int abufsink_set_parameter(AVFilterContext *ctx, const char *args)
+{
+    ABufSinkPriv *s = ctx->priv;
+    char *key = NULL, *value = NULL;
+    const char *p = args;
+    int ret = 0;
+
+    av_log(ctx, AV_LOG_INFO, "Parsing args: %s\n", args);
+
+    while (*p) {
+        ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            break;
+        }
+        if (*p)
+            p++;
+        av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
+        if (!strcmp(key, "frame_size")) {
+            s->frame_size = strtol(value, NULL, 0);
+        } else
+            av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+
+        av_freep(&key);
+        av_freep(&value);
+    }
+    return ret;
 }
 
 static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const char *args,
@@ -198,8 +236,14 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
         if (sink->on_event_cb)
             sink->on_event_cb(sink->on_event_cb_udata, -1, 0);
 
+        sink->frame_size = 0;
         av_abufsink_set_event_cb(ctx, NULL, NULL);
         return 0;
+    } else if (!strcmp(cmd, "set_parameter")) {
+        if (!args)
+            return AVERROR(EINVAL);
+
+        return abufsink_set_parameter(ctx, args);
     }
 
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
