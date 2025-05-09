@@ -32,5 +32,6 @@ int ff_amix_input_write(AMixContext *s, AVFilterLink *link);
 int ff_amix_read(AMixContext *s, AVFrame **oframe);
 AMixContext *ff_amix_alloc(int sample_rate, int format, int channels);
 void ff_amix_free(AMixContext *s);
+int ff_amix_set_frame_size(AMixContext *s, int frame_size);
 
 #endif /* AVFILTER_AMIX_H */

@@ -46,7 +46,7 @@ typedef struct AMixInput {
     AMixContext *parent;        /**< amix context */
     float scale;                /**< scale for each input */
     uint8_t state;              /**< current state of each input */
-    int64_t duration;           /**< output duration of the input */
+    int mix_size;               /**< size of last mix */
     AVFilterLink *link;         /**< link for data resource */
     AResampleContext *resample; /**< resampler context */
     AVAudioFifo *fifo;          /**< fifo to store resampled data before mix */
@@ -59,6 +59,7 @@ struct AMixContext {
     AVFilterLink *out;      /**< not a real link, to store formats info and provide framepool.*/
     TAILQ_HEAD(, AMixInput)
     inputs;                 /**< inputs for mix */
+    int frame_size;         /**< out frame size */
 };
 
 /**
@@ -89,6 +90,21 @@ static void calculate_scales(AMixContext *s)
     }
 }
 
+static bool amix_is_draining(AMixContext *s)
+{
+    AMixInput *input;
+
+    if (TAILQ_EMPTY(&s->inputs))
+        return false;
+
+    TAILQ_FOREACH(input, &s->inputs, entries) {
+        if (ff_outlink_get_status(input->link) != AVERROR_EOF)
+            return false;
+    }
+
+    return true;
+}
+
 static int get_output_samples(AMixContext *s)
 {
     int ns, nb_samples = INT_MAX;
@@ -107,6 +123,13 @@ static int get_output_samples(AMixContext *s)
             if (ns != 0)
                 nb_samples = FFMIN(nb_samples, ns);
         }
+    }
+
+    if (s->frame_size && !amix_is_draining(s)) { //if the last active inputs is draining, we can mix with the actual size left in the input as last frame.
+        if (nb_samples > s->frame_size)
+            return s->frame_size;
+        else // if all activate inputs samples are smaller than the frame size and mix is not draining, we should wait for more samples.
+            return 0;
     }
 
     return nb_samples;
@@ -289,15 +312,28 @@ bool ff_amix_input_empty(AMixContext *s, AVFilterLink *link)
 bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
 {
     AMixInput *input;
+    int size;
 
     if (!s)
         return false;
 
     input = amix_find_input(s, link);
+    if (!input)
+        return false;
 
-    return !input || (!(input->state & INPUT_EOF) &&
-           (!input->link || (av_rescale_q(input->fifo ? av_audio_fifo_size(input->fifo) == 0 : ff_inlink_queued_samples(input->link),
-           av_make_q(1, input->link->sample_rate), AV_TIME_BASE_Q) <= input->duration)));
+    if (input->state & INPUT_EOF)
+        return false;
+
+    if (input->link) {
+        if (s->frame_size)
+            size = s->frame_size;
+        else
+            size = input->mix_size;
+
+        return (ff_outlink_get_status(input->link) != AVERROR_EOF && input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link) <= size);
+    }
+
+    return true;
 }
 
 /* where param "link" is a real link*/
@@ -342,10 +378,24 @@ int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
     return 0;
 }
 
+/**
+ * Mixing data and output in frame.
+ *
+ * If the output framesize is limited by codec like libopus_encoder, here are two cases
+ * we should care:
+ * case1: one of the inputs is in drain, and its data size below the output framesize;
+ * case2: all the inputs are in drain or the last active input in drain, and the data
+ *        size below the output framesize;
+ *
+ * For case1, we should fill the drain input frame to given frame size;
+ * For case2, frame can be given as last frame without filled to framesize if the codec
+ * support AV_CODEC_CAP_SMALL_LAST_FRAME, otherwise filling is also needed.
+ *
+ */
 int ff_amix_read(AMixContext *s, AVFrame **oframe)
 {
     int planes, plane_size, p, planar;
-    AVFrame *out_buf, *in_buf;
+    AVFrame *out_buf = NULL, *in_buf = NULL;
     int  i, ret, nb_samples;
     AMixInput *input;
     int64_t pts;
@@ -357,7 +407,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
         return AVERROR(EINVAL);
 
     nb_samples = get_output_samples(s);
-    if (nb_samples == INT_MAX)
+    if (nb_samples == INT_MAX || nb_samples == 0)
         return 0;
 
     out_buf = ff_default_get_audio_buffer(s->out, nb_samples);
@@ -368,22 +418,50 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
 
     TAILQ_FOREACH(input, &s->inputs, entries){
         if (input->state & INPUT_ON) {
-            if (ff_amix_input_empty(s, input->link))
+            int left_size;
+
+            if (ff_amix_input_want(s, input->link)) //if input is not draining, we should continue to wait for more data.
                 continue;
 
-            if (input->fifo) {
+            left_size = input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link);
+            if (ff_outlink_get_status(input->link) == AVERROR_EOF && left_size < nb_samples) {
                 in_buf = ff_default_get_audio_buffer(s->out, nb_samples);
                 if (!in_buf) {
-                    av_frame_free(&out_buf);
-                    return AVERROR(ENOMEM);
+                    ret = AVERROR(ENOMEM);
+                    goto err;
                 }
 
-                av_audio_fifo_read(input->fifo, (void **)in_buf->extended_data, nb_samples);
+                if (input->fifo)
+                    av_audio_fifo_read(input->fifo, (void **)in_buf->extended_data, left_size);
+                else {
+                    AVFrame *tmp;
+                    ret = ff_inlink_consume_samples(input->link, left_size, left_size, &tmp);
+                    if (ret < 0)
+                        goto err;
+
+                    if ((ret = av_samples_copy(in_buf->extended_data, tmp->extended_data, 0, 0,
+                                              tmp->nb_samples, tmp->ch_layout.nb_channels,
+                                              tmp->format)) < 0) {
+                        av_frame_free(&tmp);
+                        goto err;
+                    }
+                    av_frame_free(&tmp);
+                }
+                av_samples_set_silence(in_buf->extended_data, left_size, nb_samples - left_size,
+                    s->out->format, s->out->ch_layout.nb_channels);
             } else {
-                ret = ff_inlink_consume_samples(input->link, nb_samples, nb_samples, &in_buf);
-                if (ret < 0) {
-                    av_frame_free(&out_buf);
-                    return ret;
+                if (input->fifo) {
+                    in_buf = ff_default_get_audio_buffer(s->out, nb_samples);
+                    if (!in_buf) {
+                        ret = AVERROR(ENOMEM);
+                        goto err;
+                    }
+
+                    av_audio_fifo_read(input->fifo, (void **)in_buf->extended_data, nb_samples);
+                } else {
+                    ret = ff_inlink_consume_samples(input->link, nb_samples, nb_samples, &in_buf);
+                    if (ret < 0)
+                        goto err;
                 }
             }
 
@@ -401,16 +479,13 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
                 }
             } else {
                 av_log(NULL, AV_LOG_ERROR, "Unsupported sample format\n");
-                av_frame_free(&out_buf);
-                av_frame_free(&in_buf);
-                *oframe = NULL;
-                return AVERROR(ENOSYS);
+                ret = AVERROR(ENOSYS);
+                goto err;
             }
 
             av_frame_free(&in_buf);
 
-            input->duration = av_rescale_q(out_buf->nb_samples, av_make_q(1, out_buf->sample_rate), AV_TIME_BASE_Q);
-
+            input->mix_size =  out_buf->nb_samples;
         }
         input_sync_state(input);
         if (!input->state & INPUT_ON)
@@ -419,4 +494,15 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
 
     *oframe = out_buf;
     return nb_samples;
+
+err:
+    if (in_buf)
+        av_frame_free(&in_buf);
+    av_frame_free(&out_buf);
+    return ret;
+}
+
+int ff_amix_set_frame_size(AMixContext *s, int frame_size)
+{
+    return s->frame_size = frame_size;
 }
