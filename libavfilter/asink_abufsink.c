@@ -121,6 +121,9 @@ static int output_frame(AVFilterContext *ctx)
     AVFrame *frame = NULL;
     int i, ret;
 
+    if (!s->mix)
+        return AVERROR(EINVAL);
+
     ret = ff_amix_read(s->mix, &frame);
     if (ret <= 0)
         return ret;
@@ -150,15 +153,15 @@ static int abufsink_activate(AVFilterContext *ctx)
     for (i = 0; i < s->nb_inputs; i++) {
         link = ctx->inputs[i];
 
-        if (!s->mix && s->on_event_cb) {
-            s->mix = ff_amix_alloc(link->sample_rate, link->format, link->ch_layout.nb_channels);
-            if (!s->mix)
-                return AVERROR(ENOMEM);
-            if (s->frame_size)
-                ff_amix_set_frame_size(s->mix, s->frame_size);
-        }
-
         if (ff_inlink_check_available_frame(link)) {
+            if (!s->mix && s->on_event_cb) {
+                s->mix = ff_amix_alloc(link->sample_rate, link->format, link->ch_layout.nb_channels);
+                if (!s->mix)
+                    return AVERROR(ENOMEM);
+                if (s->frame_size)
+                    ff_amix_set_frame_size(s->mix, s->frame_size);
+            }
+
             ret = ff_amix_input_write(s->mix, link);
             if (ret < 0) {
                 av_log(ctx, AV_LOG_ERROR, "input[%d] write to mix failed, ret:%d.\n", i, ret);
@@ -174,7 +177,7 @@ static int abufsink_activate(AVFilterContext *ctx)
 
         request_frame(ctx, i);
 
-        if (ff_outlink_frame_wanted(link))
+        if (!s->mix || ff_outlink_frame_wanted(link))
             need_activate = false;
     }
 
