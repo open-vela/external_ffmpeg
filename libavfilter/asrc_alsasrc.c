@@ -397,14 +397,6 @@ static int alsasrc_config_formats(AVFilterLink *link, int pad)
     return 0;
 }
 
-static int alsasrc_config_props(AVFilterLink *link)
-{
-    av_log(link->src, AV_LOG_INFO, "link sample format: %s, sample_rate %d, channels %d.\n",
-           av_get_sample_fmt_name(link->format), link->sample_rate,
-           link->ch_layout.nb_channels);
-    return 0;
-}
-
 static void alsasrc_close(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
@@ -429,7 +421,6 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        pad.config_props = alsasrc_config_props;
         if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
             return ret;
     }
