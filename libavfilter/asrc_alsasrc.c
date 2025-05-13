@@ -329,7 +329,7 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
                 break;
         }
 
-        *out_value = range_idx == ranges->nb_ranges ? range->value_min : value;
+        *out_value = range_idx == ranges->nb_ranges ? ranges->range[0]->value_min : value;
         av_opt_freep_ranges(&ranges);
     } else {
         av_log(ctx, AV_LOG_ERROR, "Unsupported query %s: %d\n", key, value);
@@ -531,7 +531,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
             return ret;
 
         ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
-                                                -1, &priv->sample_rate);
+                                                priv->sample_rate, &priv->sample_rate);
         if (ret < 0)
             return ret;
 
