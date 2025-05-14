@@ -164,6 +164,9 @@ static int tinycomprsink_start(AVFilterContext *ctx)
         goto out;
     }
 
+    if (priv->enc_ctx->frame_size)
+        ff_amix_set_frame_size(priv->mix, priv->enc_ctx->frame_size);
+
     ret = compress_start(priv->compress);
     if (ret < 0)
         goto out;
