@@ -1,0 +1,464 @@
+/*
+ * This file is part of FFmpeg.
+ *
+ * FFmpeg is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * FFmpeg is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with FFmpeg; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+ */
+
+/**
+ * @file
+ * AVfilter graph
+ */
+#include <libavutil/mem.h>
+
+#include "avfilter_internal.h"
+#include "buffersink.h"
+#include "buffersrc.h"
+#include "subgraph.h"
+#include "formats.h"
+
+static int subgraph_create_graph(AVSubGraphContext *ctx,
+                                 const char *graph_desc,
+                                 int in_sample_rate, int out_sample_rate,
+                                 enum AVSampleFormat in_format,
+                                 enum AVSampleFormat out_format,
+                                 AVChannelLayout in_ch_layout,
+                                 AVChannelLayout out_ch_layout)
+{
+    AVFilterContext *src_filter, *sink_filter;
+    AVFilterInOut *outputs, *inputs;
+    AVFilterGraph *graph;
+    char channel_layout_str[16];
+    char args[64];
+    int ret;
+    int i;
+
+    if (!(graph = avfilter_graph_alloc()))
+        return AVERROR(ENOMEM);
+
+    // create src filter
+    ret = av_channel_layout_describe(&in_ch_layout, channel_layout_str,
+                                     sizeof(channel_layout_str));
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to describe input channel layout\n");
+        goto fail;
+    }
+
+    snprintf(args, sizeof(args),
+             "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+             in_sample_rate, av_get_sample_fmt_name(in_format),
+             channel_layout_str);
+
+    ret = avfilter_graph_create_filter(&src_filter, avfilter_get_by_name("abuffer"),
+                                       "abuffer", args, NULL, graph);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create audio source filter ret %d.\n", ret);
+        goto fail;
+    }
+
+    // create sink filter
+    memset(args, 0, sizeof(args));
+    memset(channel_layout_str, 0, sizeof(channel_layout_str));
+    ret = av_channel_layout_describe(&out_ch_layout, channel_layout_str,
+                                     sizeof(channel_layout_str));
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to describe output channel layout\n");
+        goto fail;
+    }
+
+    snprintf(args, sizeof(args),
+             "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+             out_sample_rate, av_get_sample_fmt_name(out_format),
+             channel_layout_str);
+
+    ret = avfilter_graph_create_filter(&sink_filter, avfilter_get_by_name("abuffersink"),
+                                       "abuffersink", NULL, NULL, graph);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create audio sink filter ret %d.\n", ret);
+        goto fail;
+    }
+
+    outputs = avfilter_inout_alloc();
+    inputs  = avfilter_inout_alloc();
+    if (!outputs || !inputs) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    outputs->name       = av_strdup("in");
+    outputs->filter_ctx = src_filter;
+    outputs->pad_idx    = 0;
+    outputs->next       = NULL;
+    inputs->name        = av_strdup("out");
+    inputs->filter_ctx  = sink_filter;
+    inputs->pad_idx     = 0;
+    inputs->next        = NULL;
+    ret = avfilter_graph_parse_ptr(graph, graph_desc, &inputs, &outputs, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error while parsing filtergraph %d\n", ret);
+        goto fail;
+    }
+
+    ctx->graph       = graph;
+    ctx->src_filter  = src_filter;
+    ctx->sink_filter = sink_filter;
+    return 0;
+
+fail:
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+    avfilter_graph_free(&graph);
+    return ret;
+}
+
+static inline int subgraph_is_inited(AVSubGraphContext *ctx)
+{
+    return (ctx && ctx->graph);
+}
+
+static int subgraph_dump(AVSubGraphContext *ctx)
+{
+    char* dump;
+
+    dump = avfilter_graph_dump(ctx->graph, NULL);
+    if (dump != NULL) {
+        av_log(NULL, AV_LOG_INFO, "Filter_graph: dump:\n%s\n", dump);
+        av_free(dump);
+    } else {
+        av_log(NULL, AV_LOG_ERROR, "Unable to dump filtergraph\n");
+        return AVERROR(ENOMEM);
+    }
+
+    return 0;
+}
+
+static int subgraph_copy_formats(AVSubGraphFormats *dest, AVFilterFormatsConfig *src)
+{
+    int ret;
+    int i;
+
+    if (!src || !dest)
+        return AVERROR(EINVAL);
+
+    if (src->samplerates &&
+        (dest->nb_sample_rates = src->samplerates->nb_formats) > 0) {
+        dest->sample_rates = av_mallocz(dest->nb_sample_rates * sizeof(*dest->sample_rates));
+        if (!dest->sample_rates) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        for (i = 0; i < dest->nb_sample_rates; i++)
+            dest->sample_rates[i] = src->samplerates->formats[i];
+    }
+
+    if (src->channel_layouts &&
+        (dest->nb_channel_layouts = src->channel_layouts->nb_channel_layouts) > 0) {
+        dest->channel_layouts = av_mallocz(dest->nb_channel_layouts * sizeof(*dest->channel_layouts));
+        if (!dest->channel_layouts) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        for (i = 0; i < dest->nb_channel_layouts; i++) {
+            if (ret = av_channel_layout_copy(&dest->channel_layouts[i],
+                                             &src->channel_layouts->channel_layouts[i]) < 0)
+                goto fail;
+        }
+    }
+
+    if (src->formats &&
+        (dest->nb_formats = src->formats->nb_formats) > 0) {
+        dest->formats = av_mallocz(dest->nb_formats * sizeof(*dest->formats));
+        if (!dest->formats) {
+            ret = AVERROR(ENOMEM);
+            goto fail;
+        }
+
+        for (i = 0; i < dest->nb_formats; i++)
+            dest->formats[i] = src->formats->formats[i];
+    }
+
+    return 0;
+
+fail:
+    if (dest->sample_rates)    av_free(dest->sample_rates);
+    if (dest->formats)         av_free(dest->formats);
+    if (dest->channel_layouts) av_free(dest->channel_layouts);
+    memset(dest, 0, sizeof(*dest));
+    return ret;
+}
+
+static int subgraph_process_cmd(AVSubGraphContext *ctx, const char *args,
+                                char *res, int res_len, int flags)
+{
+    char *p, *target, *sub_cmd, *sub_args;
+    char *saveptr = NULL;
+    int ret;
+    int i;
+
+    if (!args)
+        return AVERROR(EINVAL);
+
+    p = av_strdup(args);
+    if (!p)
+        return AVERROR(ENOMEM);
+
+    target = strtok_r(p, ":", &saveptr);
+    sub_cmd = target ? strtok_r(NULL, ":", &saveptr) : NULL;
+    sub_args = sub_cmd ? strtok_r(NULL, ":", &saveptr) : NULL;
+
+    if (!target || !sub_cmd || !sub_args) {
+        av_log(NULL, AV_LOG_ERROR, "Invalid format for av_subgraph command: %s\n", args);
+        ret = AVERROR(EINVAL);
+        goto end;
+    }
+
+    av_log(NULL, AV_LOG_INFO, "av_subgraph cmd: %s %s %s.\n", target, sub_cmd, sub_args);
+
+    for (i = 0; i < ctx->graph->nb_filters; i++) {
+        AVFilterContext *filter = ctx->graph->filters[i];
+        if ((filter->name && !strcmp(target, filter->name))
+            || !strcmp(target, filter->filter->name)) {
+            ret = avfilter_process_command(filter, sub_cmd, sub_args, res, res_len, flags);
+            if (ret < 0) {
+                av_log(NULL, AV_LOG_ERROR, "Error executing filter(%s) command %s %s %d\n",
+                       target, sub_cmd, args, ret);
+            }
+            goto end;
+        }
+    }
+
+    av_log(NULL, AV_LOG_ERROR, "filter %s not found\n", target);
+    ret = AVERROR(ENOENT);
+
+end:
+    av_freep(&p);
+    return ret;
+}
+
+void avfilter_asubgraph_free_formats(AVSubGraphFormats **cfgp)
+{
+    AVSubGraphFormats *cfg;
+    if (!cfgp || !*cfgp)
+        return;
+
+    cfg = *cfgp;
+    if (cfg->sample_rates)
+        av_free(cfg->sample_rates);
+    if (cfg->formats)
+        av_free(cfg->formats);
+    if (cfg->channel_layouts)
+        av_free(cfg->channel_layouts);
+
+    av_freep(cfgp);
+}
+
+int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats **cfg_in,
+                                     AVSubGraphFormats **cfg_out)
+{
+    AVFilterFormatsConfig *graph_cfg_in, *graph_cfg_out;
+    AVSubGraphContext *graph;
+    AVFilterContext *dest_filter;
+    AVChannelLayout ch_layout;
+    char args[64];
+    int ret;
+    int i;
+
+    if (!graph_desc || !*graph_desc) {
+        av_log(NULL, AV_LOG_ERROR, "Without graph_desc, can not query fromats.\n");
+        return AVERROR(EINVAL);
+    }
+
+    av_log(NULL, AV_LOG_INFO, "av_subgraph query_formats: %s.\n", graph_desc);
+
+    graph = av_mallocz(sizeof(AVSubGraphContext));
+    if (!graph)
+        return AVERROR(ENOMEM);
+
+    //Set tmp fmt without actually using it
+    av_channel_layout_default(&ch_layout, 1);
+    ret = subgraph_create_graph(graph, graph_desc, 16000, 16000,
+                                AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16,
+                                ch_layout, ch_layout);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create av_subgraph %d.\n", ret);
+        goto fail;
+    }
+
+    for (i = 0; i < graph->graph->nb_filters; i++) {
+        if (graph->graph->filters[i] != graph->src_filter &&
+            graph->graph->filters[i] != graph->sink_filter) {
+            dest_filter = graph->graph->filters[i];
+            if (dest_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
+                av_log(NULL, AV_LOG_ERROR, "filter %s not support query_formats.\n",
+                       dest_filter->name);
+                ret = AVERROR(EINVAL);
+                goto fail;
+            }
+
+            graph_cfg_out = &dest_filter->inputs[0]->outcfg;
+            graph_cfg_in  = &dest_filter->inputs[0]->incfg;
+            dest_filter->filter->formats.query_func2(dest_filter, &graph_cfg_in,
+                                                     &graph_cfg_out);
+            break;
+        }
+    }
+
+    *cfg_in = av_mallocz(sizeof(**cfg_in));
+    *cfg_out = av_mallocz(sizeof(**cfg_in));
+    if (!*cfg_in || !*cfg_out) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
+    ret = subgraph_copy_formats(*cfg_in, graph_cfg_in);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error copying input formats %d\n", ret);
+        goto fail;
+    }
+
+    ret = subgraph_copy_formats(*cfg_out, graph_cfg_out);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error copying output formats %d\n", ret);
+        goto fail;
+    }
+
+    avfilter_asubgraph_uninit(&graph);
+    return 0;
+
+fail:
+    avfilter_asubgraph_free_formats(cfg_in);
+    avfilter_asubgraph_free_formats(cfg_out);
+    avfilter_asubgraph_uninit(&graph);
+    return ret;
+}
+
+int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
+                            const char *graph_desc,
+                            int in_sample_rate,
+                            int out_sample_rate,
+                            enum AVSampleFormat in_format,
+                            enum AVSampleFormat out_format,
+                            AVChannelLayout in_ch_layout,
+                            AVChannelLayout out_ch_layout)
+{
+    AVSubGraphContext *ctx;
+    AVFilterLink *link;
+    char args[64];
+    int ret;
+    int i;
+
+    if (!graph_desc || !*graph_desc) {
+        av_log(NULL, AV_LOG_ERROR, "graph_desc is needed.\n");
+        return AVERROR(EINVAL);
+    }
+
+    av_log(NULL, AV_LOG_INFO, "av_subgraph init parms: %s %d %d %d %d %d %d.\n",
+           graph_desc, in_sample_rate, out_sample_rate,
+           in_format, out_format, in_ch_layout.nb_channels,
+           out_ch_layout.nb_channels);
+
+    // all format should be setted as vaild value
+    if (out_ch_layout.nb_channels <= 0 || in_ch_layout.nb_channels <= 0 ||
+        in_sample_rate <= 0 || out_sample_rate <= 0 ||
+        in_format < 0 || out_format < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Invalid parameters.\n");
+        return AVERROR(EINVAL);
+    }
+
+    ctx = av_mallocz(sizeof(AVSubGraphContext));
+    if (!ctx)
+        return AVERROR(ENOMEM);
+
+    ret = subgraph_create_graph(ctx, graph_desc, in_sample_rate, out_sample_rate,
+                                in_format, out_format,
+                                in_ch_layout, out_ch_layout);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create audio filter-graph ret %d.\n", ret);
+        goto fail;
+    }
+
+    ret = avfilter_graph_config(ctx->graph, NULL);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error while configuring filtergraph %d\n", ret);
+        goto fail;
+    }
+
+    *ctxp = ctx;
+    return 0;
+fail:
+    avfilter_asubgraph_uninit(&ctx);
+    return ret;
+}
+
+void avfilter_asubgraph_uninit(AVSubGraphContext **ctxp)
+{
+    if (!ctxp || !*ctxp)
+        return;
+
+    if ((*ctxp)->graph)
+        avfilter_graph_free(&(*ctxp)->graph);
+
+    av_freep(ctxp);
+}
+
+int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame)
+{
+    int ret;
+
+    if (!subgraph_is_inited(ctx)) {
+        av_log(NULL, AV_LOG_ERROR, "graph is not initialized.\n");
+        return AVERROR(EINVAL);
+    }
+
+    if ((ret = av_buffersrc_add_frame_flags(ctx->src_filter, frame,
+                                            AV_BUFFERSRC_FLAG_KEEP_REF)) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "submitt frame to buffersrc error %s\n",
+               av_err2str(ret));
+        return ret;
+    }
+
+    av_frame_unref(frame);
+
+    if ((ret = av_buffersink_get_frame(ctx->sink_filter, frame)) < 0) {
+        if (ret != AVERROR(EAGAIN))
+            av_log(NULL, AV_LOG_ERROR, "get frame from buffersink error%s\n",
+                   av_err2str(ret));
+        av_free(frame);
+        return ret;
+    }
+
+    return 0;
+}
+
+int avfilter_asubgraph_process_command(AVSubGraphContext *ctx, const char *cmd, const char *args,
+                                       char *res, int res_len, int flags)
+{
+
+    if (!subgraph_is_inited(ctx)) {
+        av_log(NULL, AV_LOG_ERROR, "av_subgraph is not initialized.\n");
+        return AVERROR(EINVAL);
+    }
+
+    if (!strcmp(cmd, "dump")) {
+        subgraph_dump(ctx);
+        return 0;
+    } else if (!strcmp(cmd, "sub_cmd")) {
+        return subgraph_process_cmd(ctx, args, res, res_len, flags);
+    } else {
+        av_log(NULL, AV_LOG_ERROR, "Unknown command %s\n", cmd);
+        return AVERROR(EINVAL);
+    }
+}

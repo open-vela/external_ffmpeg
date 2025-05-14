@@ -4,6 +4,7 @@ DESC = FFmpeg audio/video filtering library
 HEADERS = avfilter.h                                                    \
           buffersink.h                                                  \
           buffersrc.h                                                   \
+          subgraph.h                                                    \
           version.h                                                     \
           version_major.h                                               \
 
@@ -22,6 +23,7 @@ OBJS = allfilters.o                                                     \
        framequeue.o                                                     \
        graphdump.o                                                      \
        graphparser.o                                                    \
+       subgraph.o                                                       \
        version.o                                                        \
        video.o                                                          \
 
