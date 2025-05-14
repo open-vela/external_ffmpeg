@@ -330,7 +330,7 @@ bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
         else
             size = input->mix_size;
 
-        return (ff_outlink_get_status(input->link) != AVERROR_EOF && input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link) <= size);
+        return (ff_outlink_get_status(input->link) != AVERROR_EOF && (input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) <= size);
     }
 
     return true;
