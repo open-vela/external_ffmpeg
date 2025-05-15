@@ -91,7 +91,6 @@ static int tinycomprsink_subfmt_to_smpfmt(int subfmt)
 
 static int tinycomprsink_open_encoder(AVFilterContext *ctx)
 {
-    AVFilterLink *inlink = ctx->inputs[0];
     CompSinkPriv *priv = ctx->priv;
     const AVCodec *enc;
     int ret;
@@ -104,7 +103,7 @@ static int tinycomprsink_open_encoder(AVFilterContext *ctx)
     if (!priv->enc_ctx)
         return AVERROR(ENOMEM);
 
-    priv->enc_ctx->codec_type  = inlink->type;
+    priv->enc_ctx->codec_type  = AVMEDIA_TYPE_AUDIO;
     priv->enc_ctx->sample_fmt  = priv->sample_fmt;
     priv->enc_ctx->sample_rate = priv->sample_rate;
     av_channel_layout_copy(&priv->enc_ctx->ch_layout, &priv->ch_layout);
@@ -233,7 +232,8 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
     }
 
     if (ret == AVERROR_EOF) {
-        ff_inlink_set_status(ctx->inputs[0], AVERROR_EOF);
+        for (int i = 0; i < priv->nb_inputs; i++)
+            ff_inlink_set_status(ctx->inputs[i], AVERROR_EOF);
         tinycomprsink_stop(ctx);
     }
 
@@ -254,7 +254,6 @@ static int tinycomprsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
 
 static int tinycomprsink_activate(AVFilterContext *ctx)
 {
-    AVFilterLink *inlink = ctx->inputs[0];
     CompSinkPriv *priv = ctx->priv;
     int i, ret, empty_inputs = 0;
     AVFrame *frame = NULL;
