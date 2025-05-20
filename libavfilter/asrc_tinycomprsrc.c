@@ -139,6 +139,25 @@ error:
     return ret;
 }
 
+static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR void* extra)
+{
+    AVFilterContext *ctx = (AVFilterContext *)cookie;
+    TinyCompressContext *s = ctx->priv;
+    struct compress *h = s->compress;
+    int ret;
+
+    av_log(ctx, AV_LOG_INFO, "%s line %d event %d\n", __func__, __LINE__, event);
+
+    if (event == AUDIO_MSG_START) {
+        av_log(ctx, AV_LOG_INFO, "%s line %d event:%d\n", __func__, __LINE__, event);
+    }
+
+    if (event == AUDIO_MSG_STOP) {
+        av_log(ctx, AV_LOG_INFO, "%s line %d event:%d\n", __func__, __LINE__, event);
+    }
+    return;
+}
+
 static int tinycomprsrc_open(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
@@ -162,6 +181,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
         free(config.codec);
 
     compress_nonblock(s->compress, 1);
+    compress_set_event(s->compress, ctx, tinycomprsrc_control_callback);
 
     dec = avcodec_find_decoder(s->codec_id);
     if (!dec) {
