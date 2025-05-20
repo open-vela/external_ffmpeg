@@ -22,25 +22,26 @@
  */
 
 #include <libavcodec/avcodec.h>
-#include <libavutil/avstring.h>
 #include <libavformat/internal.h>
-#include <libavutil/opt.h>
-#include <libavutil/samplefmt.h>
+#include <libavutil/avstring.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/eval.h>
+#include <libavutil/mem.h>
+#include <libavutil/opt.h>
+#include <libavutil/samplefmt.h>
 
+#include "alsa.h"
+#include "aresample.h"
 #include "avfilter.h"
 #include "avfilter_internal.h"
-#include "aresample.h"
 #include "filters.h"
 #include "formats.h"
-#include "libavutil/mem.h"
-
-#include <tinycompress/tinycompress.h>
-#include <sound/compress_params.h>
-#include <poll.h>
-
 #include "volume.h"
+
+#include <nuttx/audio/audio.h>
+#include <poll.h>
+#include <sound/compress_params.h>
+#include <tinycompress/tinycompress.h>
 
 typedef struct TinyCompressContext {
     const AVClass *class;
@@ -64,48 +65,6 @@ typedef struct TinyCompressContext {
 
     VolumeContext vol_ctx;
 } TinyCompressContext;
-
-static int tinycompr_fmt_to_avcodec(int audio_fmt)
-{
-    switch (audio_fmt) {
-        case AUDIO_FMT_MP3:
-            return AV_CODEC_ID_MP3;
-        case AUDIO_FMT_AC3:
-            return AV_CODEC_ID_AC3;
-        case AUDIO_FMT_WMA:
-            return AV_CODEC_ID_WMAV2;
-        case AUDIO_FMT_DTS:
-            return AV_CODEC_ID_DTS;
-        case AUDIO_FMT_OGG_VORBIS:
-            return AV_CODEC_ID_VORBIS;
-        case AUDIO_FMT_FLAC:
-            return AV_CODEC_ID_FLAC;
-        case AUDIO_FMT_AMR:
-            return AV_CODEC_ID_AMR_NB; // Assuming AMR_NB as default
-        case AUDIO_FMT_OPUS:
-            return AV_CODEC_ID_OPUS;
-        case AUDIO_FMT_AAC:
-            return AV_CODEC_ID_AAC;
-    }
-
-    return AV_CODEC_ID_PCM_S16LE;
-}
-
-static int tinycompr_subfmt_to_smpfmt(int subfmt)
-{
-    switch (subfmt) {
-        case AUDIO_SUBFMT_PCM_U8:
-            return AV_SAMPLE_FMT_U8;
-        case AUDIO_SUBFMT_PCM_S16_LE:
-        case AUDIO_SUBFMT_PCM_S16_BE:
-            return AV_SAMPLE_FMT_S16;
-        case AUDIO_SUBFMT_PCM_S32_LE:
-        case AUDIO_SUBFMT_PCM_S32_BE:
-            return AV_SAMPLE_FMT_S32;
-    }
-
-    return AV_SAMPLE_FMT_NONE;
-}
 
 static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
 {
@@ -196,10 +155,6 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
 
     s->fragment_size = config.fragment_size;
     s->fragments = config.fragments;
-    s->sample_fmt = tinycompr_subfmt_to_smpfmt(config.codec->format);
-    s->sample_rate = config.codec->sample_rate;
-    av_channel_layout_default(&s->ch_layout, config.codec->ch_in);
-    s->codec_id = tinycompr_fmt_to_avcodec(config.codec->id);
 
     if (config.codec)
         free(config.codec);
@@ -394,9 +349,29 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
 }
 
+static int tinycomprsrc_query_cap(AVFilterContext *ctx, const char *format, int *out_value)
+{
+    TinyCompressContext *s = ctx->priv;
+    AVOptionRanges* ranges = NULL;
+    AVOptionRange* range = NULL;
+    int ret, range_idx;
+
+    ret = alsa_query_caps(&ranges, s->devname, format, false);
+    if (ret > 0) {
+        *out_value = ranges->range[0]->value_min;
+        av_opt_freep_ranges(&ranges);
+    } else {
+        av_log(ctx, AV_LOG_ERROR, "query fail:%s\n", format);
+        return AVERROR(EINVAL);
+    }
+
+    return 0;
+}
+
 static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     TinyCompressContext *s = ctx->priv;
+    int ret;
 
     if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", s->vol_ctx.volume);
@@ -404,6 +379,33 @@ static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, cha
         av_log(s, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
         return 0;
     } else if (!strcmp(key, "format")) {
+        int codec_id;
+        ret = tinycomprsrc_query_cap(ctx, "codec", &codec_id);
+        if (ret < 0)
+            return ret;
+
+        s->codec_id = codec_id;
+
+        if (s->codec_id != AV_CODEC_ID_PCM_S16LE) {
+            const AVCodec *dec;
+            dec = avcodec_find_decoder(s->codec_id);
+            if (!dec)
+                return AV_SAMPLE_FMT_NONE;
+            s->sample_fmt = dec->sample_fmts[0];
+        } else {
+            ret = tinycomprsrc_query_cap(ctx, "sample_fmts", &s->sample_fmt);
+            if (ret < 0)
+                return ret;
+        }
+
+        ret = tinycomprsrc_query_cap(ctx, "sample_rates", &s->sample_rate);
+        if (ret < 0)
+            return ret;
+
+        ret = tinycomprsrc_query_cap(ctx, "channels", &s->ch_layout.nb_channels);
+        if (ret < 0)
+            return ret;
+
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
                  s->sample_fmt, s->sample_rate, s->ch_layout.nb_channels);
         return 0;

@@ -21,6 +21,7 @@
  * alsa common handle
  */
 
+#include <libavcodec/avcodec.h>
 #include <libavutil/avassert.h>
 #include <libavutil/avconfig.h>
 #include <libavutil/channel_layout.h>
@@ -75,6 +76,49 @@ static enum AVSampleFormat alsafmt_to_smpfmt(snd_pcm_format_t pcmfmt)
     default:
         return AV_SAMPLE_FMT_NONE;
     }
+}
+
+static int alsa_get_format(int codec_id)
+{
+    if (codec_id & (1 << (AUDIO_FMT_PCM - 1))) {
+      return AUDIO_FMT_PCM;
+    } else if (codec_id & (1 << (AUDIO_FMT_MP3 - 1))) {
+      return AUDIO_FMT_MP3;
+    } else if (codec_id & (1 << (AUDIO_FMT_SBC -1))) {
+      return AUDIO_FMT_SBC;
+    } else if (codec_id & (1 << (AUDIO_FMT_AAC - 1))) {
+      return AUDIO_FMT_AAC;
+    } else {
+      return AUDIO_FMT_UNDEF;
+    }
+}
+
+static int alsa_fmt_to_avcodec(int audio_fmt)
+{
+    switch (audio_fmt) {
+        case AUDIO_FMT_MP3:
+            return AV_CODEC_ID_MP3;
+        case AUDIO_FMT_AC3:
+            return AV_CODEC_ID_AC3;
+        case AUDIO_FMT_WMA:
+            return AV_CODEC_ID_WMAV2;
+        case AUDIO_FMT_DTS:
+            return AV_CODEC_ID_DTS;
+        case AUDIO_FMT_OGG_VORBIS:
+            return AV_CODEC_ID_VORBIS;
+        case AUDIO_FMT_FLAC:
+            return AV_CODEC_ID_FLAC;
+        case AUDIO_FMT_AMR:
+            return AV_CODEC_ID_AMR_NB; // Assuming AMR_NB as default
+        case AUDIO_FMT_OPUS:
+            return AV_CODEC_ID_OPUS;
+        case AUDIO_FMT_AAC:
+            return AV_CODEC_ID_AAC;
+        case AUDIO_FMT_SBC:
+            return AV_CODEC_ID_SBC;
+    }
+
+    return AV_CODEC_ID_PCM_S16LE;
 }
 
 static int alsa_samplerate_convert(int samplerate, int *sample_rates, int num)
@@ -403,6 +447,14 @@ int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
 
             nb_ranges = ret;
         }
+    }  else if (!strcmp(key, "codec")) {
+        ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &formats);
+        if (ret < 0)
+            goto err;
+
+        values0[0] = alsa_fmt_to_avcodec(alsa_get_format(formats.ac_format.hw));
+
+        nb_ranges = 1;
     } else {
         ret = -EINVAL;
         goto err;
