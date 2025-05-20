@@ -240,6 +240,7 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
             sink->on_event_cb(sink->on_event_cb_udata, -1, 0);
 
         sink->frame_size = 0;
+        sink->next_pts = AV_NOPTS_VALUE;
         av_abufsink_set_event_cb(ctx, NULL, NULL);
         return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
