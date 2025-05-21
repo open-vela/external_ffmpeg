@@ -38,6 +38,9 @@ typedef struct AlsaHandle {
     int periods;
     int period_time;
     long resume_min;
+    int format;
+    uint32_t sample_rate;
+    AVChannelLayout ch_layout;
 } AlsaHandle;
 
 int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
