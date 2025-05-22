@@ -21,6 +21,8 @@
  * audio tinycompress sink
  */
 
+#include <poll.h>
+#include <nuttx/audio/audio.h>
 #include <libavutil/avstring.h>
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
@@ -29,7 +31,6 @@
 #include <libavcodec/codec_id.h>
 #include <sound/compress_params.h>
 #include <tinycompress/tinycompress.h>
-#include <poll.h>
 
 #include "amix.h"
 #include "filters.h"
@@ -50,9 +51,9 @@ typedef struct CompSinkPriv {
     FAR struct compress *compress;
 } CompSinkPriv;
 
-static int tinycomprsink_subfmt_to_avcodec(int subfmt)
+static int tinycomprsink_fmt_to_avcodec(int fmt)
 {
-    switch (subfmt) {
+    switch (fmt) {
         case AUDIO_FMT_PCM:
             return AV_CODEC_ID_PCM_S16LE;
         case AUDIO_FMT_MP3:
@@ -78,6 +79,7 @@ static int tinycomprsink_subfmt_to_smpfmt(int subfmt)
             return AV_SAMPLE_FMT_U8;
         case AUDIO_SUBFMT_PCM_S16_LE:
         case AUDIO_SUBFMT_PCM_S16_BE:
+        case AUDIO_SUBFMT_SBC:
             return AV_SAMPLE_FMT_S16;
         case AUDIO_SUBFMT_PCM_S32_LE:
         case AUDIO_SUBFMT_PCM_S32_BE:
@@ -127,6 +129,13 @@ static void tinycomprsink_close_encoder(AVFilterContext *ctx)
     avcodec_free_context(&priv->enc_ctx);
 }
 
+static void tinycomprsink_control_callback(FAR void* cookie, int event, const FAR void* extra)
+{
+    AVFilterContext *ctx = (AVFilterContext *)cookie;
+
+    av_log(ctx, AV_LOG_INFO, "tinycomprsink line %d event %d\n", __LINE__, event);
+}
+
 static int tinycomprsink_start(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
@@ -140,7 +149,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     av_channel_layout_default(&priv->ch_layout, config.codec->ch_in);
     priv->sample_fmt = tinycomprsink_subfmt_to_smpfmt(config.codec->format);
     priv->sample_rate = config.codec->sample_rate;
-    priv->codec_id = tinycomprsink_subfmt_to_avcodec(config.codec->id);
+    priv->codec_id = tinycomprsink_fmt_to_avcodec(config.codec->id);
     if (config.codec)
         free(config.codec);
 
@@ -151,6 +160,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     }
 
     compress_nonblock(priv->compress, 1);
+    compress_set_event(priv->compress, ctx, tinycomprsink_control_callback);
     priv->last_pkt = av_packet_alloc();
     if (!priv->last_pkt) {
         ret = -ENOMEM;
