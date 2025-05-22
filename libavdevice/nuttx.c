@@ -233,7 +233,7 @@ static int ff_nuttx_set_ranges(struct AVOptionRanges *ranges, int nb_ranges, int
 static int ff_nuttx_capbility_query_smpfmts(const char *device, int format, int values[])
 {
     struct audio_caps_s smpfmts;
-    int ret, x;
+    int ret, x, k = 0;
 
     if (((format & (1 << (AUDIO_FMT_PCM - 1))) == 0))
         return AVERROR(EPERM);
@@ -248,7 +248,7 @@ static int ff_nuttx_capbility_query_smpfmts(const char *device, int format, int 
 
         ret = ff_nuttx_subfmt_to_smpfmt(smpfmts.ac_controls.b[x]);
         if (ret >= 0)
-            values[x] = ret;
+            values[k++] = ret;
     }
 
     return x == 0 ? AVERROR(EPERM) : x;
