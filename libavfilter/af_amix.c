@@ -30,6 +30,7 @@
 
 #include <sys/timerfd.h>
 #include <poll.h>
+#include <unistd.h>
 
 #include "libavutil/attributes.h"
 #include "libavutil/audio_fifo.h"

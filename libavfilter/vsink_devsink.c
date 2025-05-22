@@ -22,6 +22,7 @@
  */
 
 #include <poll.h>
+#include <unistd.h>
 #include <sys/timerfd.h>
 
 #include <libavutil/opt.h>

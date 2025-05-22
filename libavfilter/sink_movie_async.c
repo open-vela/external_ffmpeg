@@ -25,6 +25,7 @@
 
 #include <unistd.h>
 #include <sys/queue.h>
+#include <pthread.h>
 
 #include <libavutil/opt.h>
 #include <libavutil/avassert.h>

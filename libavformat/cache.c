@@ -34,6 +34,7 @@
 #include "libavutil/tree.h"
 #include "libavutil/time.h"
 #include "avformat.h"
+#include <pthread.h>
 #include <fcntl.h>
 #if HAVE_IO_H
 #include <io.h>
