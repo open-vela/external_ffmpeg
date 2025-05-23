@@ -519,6 +519,7 @@ Developer options (useful when working on FFmpeg itself):
   --disable-large-tests    disable tests that use a large amount of memory
   --disable-ptx-compression don't compress CUDA PTX code even when possible
   --disable-version-tracking don't include the git/release version in the build
+  --tmpdir=PATH            location of tmp file to save
 
 NOTE: Object files are built at the place where configure is launched.
 EOF
@@ -2676,6 +2677,7 @@ PATHS_LIST="
     prefix
     shlibdir
     install_name_dir
+    tmpdir
 "
 
 CMDLINE_SET="
@@ -4092,6 +4094,9 @@ docdir_default='${prefix}/share/doc/ffmpeg'
 incdir_default='${prefix}/include'
 libdir_default='${prefix}/lib'
 mandir_default='${prefix}/share/man'
+
+# runtime path
+tmpdir_default='/tmp'
 
 # toolchain
 ar_default="ar"
@@ -8067,6 +8072,7 @@ DOCDIR=\$(DESTDIR)$docdir
 MANDIR=\$(DESTDIR)$mandir
 PKGCONFIGDIR=\$(DESTDIR)$pkgconfigdir
 INSTALL_NAME_DIR=$install_name_dir
+TMPDIR=$tmpdir
 SRC_PATH=$source_path
 SRC_LINK=$source_link
 ifndef MAIN_MAKEFILE
@@ -8215,6 +8221,7 @@ cat > $TMPH <<EOF
 #define CONFIG_THIS_YEAR 2024
 #define FFMPEG_DATADIR "$(eval c_escape $datadir)"
 #define AVCONV_DATADIR "$(eval c_escape $datadir)"
+#define FFMPEG_TMPDIR  "$(eval c_escape $tmpdir)"
 #define CC_IDENT "$(c_escape ${cc_ident:-Unknown compiler})"
 #define OS_NAME $target_os
 #define EXTERN_PREFIX "${extern_prefix}"
