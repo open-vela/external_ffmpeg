@@ -64,9 +64,15 @@ typedef struct AlsasrcPriv {
     AlsaHandle priv;
     char *devname;
 
-    int format;
+    // set by graph options
+    enum AVSampleFormat format;
     uint32_t sample_rate;
     AVChannelLayout ch_layout;
+
+    //set by set_parameter func
+    enum AVSampleFormat cmd_format;
+    uint32_t cmd_sample_rate;
+    AVChannelLayout cmd_ch_layout;
 
     int periods;
     int period_time;
@@ -292,6 +298,9 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     }
 
     ff_resample_init(&priv->resample);
+    priv->cmd_format = AV_SAMPLE_FMT_NONE;
+    priv->cmd_sample_rate = 0;
+    av_channel_layout_uninit(&priv->cmd_ch_layout);
 
     return 0;
 }
@@ -374,29 +383,52 @@ static int alsasrc_check_outlink_status(AVFilterContext *ctx)
 static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     AlsasrcPriv *priv = ctx->priv;
-    int ret;
 
     if (!strcmp(key, "format")) {
-        // return the default format of the alsasrc dev
-        ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
-                                                -1, &priv->format);
-        if (ret < 0)
-            return ret;
+        enum AVSampleFormat format;
+        uint32_t sample_rate;
+        int nb_channels;
+        int ret = 0;
 
-        ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
-                                                priv->sample_rate, &priv->sample_rate);
-        if (ret < 0)
-            return ret;
+        if (priv->cmd_format != AV_SAMPLE_FMT_NONE) {
+            format = priv->cmd_format;
+        } else if (priv->format != AV_SAMPLE_FMT_NONE) {
+            format = priv->format;
+        } else {
+            ret = alsasrc_get_device_support_format(ctx, priv->devname,
+                                                    "sample_fmts", -1, &format);
+            if (ret < 0)
+                goto format_end;
+        }
 
-        ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
-                                                0, &priv->ch_layout.nb_channels);
-        if (ret < 0)
-            return ret;
+        if (!priv->cmd_sample_rate || !priv->sample_rate) {
+            sample_rate = priv->cmd_sample_rate ?
+                          priv->cmd_sample_rate : priv->sample_rate;
+        } else {
+            ret = alsasrc_get_device_support_format(ctx, priv->devname,
+                                                    "sample_rates", -1, &sample_rate);
+            if (ret < 0)
+                goto format_end;
+        }
+
+        if (!priv->cmd_ch_layout.nb_channels || !priv->ch_layout.nb_channels) {
+            nb_channels = priv->cmd_ch_layout.nb_channels ?
+                          priv->cmd_ch_layout.nb_channels : priv->ch_layout.nb_channels;
+        } else {
+            ret = alsasrc_get_device_support_format(ctx, priv->devname,
+                                                    "channels", -1, &nb_channels);
+            if (ret < 0)
+                goto format_end;
+        }
 
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
-                 priv->format, priv->sample_rate, priv->ch_layout.nb_channels);
+                 format, sample_rate, nb_channels);
 
-        return 0;
+format_end:
+        av_channel_layout_uninit(&priv->cmd_ch_layout);
+        priv->cmd_format = AV_SAMPLE_FMT_NONE;
+        priv->cmd_sample_rate = 0;
+        return ret;
     } else if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", priv->vol_ctx.volume);
 
@@ -430,8 +462,14 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
         av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
 
         if (!strcmp(key, "sample_rate")) {
-            priv->sample_rate = atoi(value);
+            priv->cmd_sample_rate = atoi(value);
             av_log(ctx, AV_LOG_INFO, "Set sample_rate to %d\n", priv->sample_rate);
+        } else if (!strcmp(key, "format")) {
+            priv->cmd_format = av_get_sample_fmt(value);
+            av_log(ctx, AV_LOG_INFO, "Set format to %s\n", value);
+        } else if (!strcmp(key, "ch_layout")) {
+            ret = av_channel_layout_from_string(&priv->cmd_ch_layout, value);
+            av_log(ctx, AV_LOG_INFO, "Set ch_layout to %s\n", value);
         } else if (!strcmp(key, "volume")) {
             double volume;
 
@@ -720,6 +758,7 @@ out:
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasrc_options[] = {
     { "devname",           "", OFFSET(devname),           AV_OPT_TYPE_STRING,     .flags = A },
+    { "format",            "", OFFSET(format),            AV_OPT_TYPE_SAMPLE_FMT, {.i64 = AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
     { "sample_rate",       "", OFFSET(sample_rate),       AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX, R },
     { "ch_layout",         "", OFFSET(ch_layout),         AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
     { "periods",           "", OFFSET(periods),           AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX, R },
