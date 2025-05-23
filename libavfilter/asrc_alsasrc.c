@@ -241,6 +241,7 @@ static int alsasrc_subgraph_init(AVFilterContext *ctx)
     AVFilterContext *alg_filter = NULL;
     AVFilterContext *asrc = NULL;
     AVFilterContext *asink = NULL;
+    char channel_layout_str[16];
     AVFilterLink *link;
     char args[64];
     int ret;
@@ -250,10 +251,16 @@ static int alsasrc_subgraph_init(AVFilterContext *ctx)
         return AVERROR(ENOMEM);
 
     // create source filter
+    if ((ret = av_channel_layout_describe(&priv->af_inch_layout, channel_layout_str,
+                                          sizeof(channel_layout_str))) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to describe input channel layout.\n");
+        goto end;
+    }
+
     snprintf(args, sizeof(args),
              "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
              priv->af_insample_rate, av_get_sample_fmt_name(priv->af_informat),
-             priv->af_inch_layout.nb_channels == 1 ? "mono" : "stereo");
+             channel_layout_str);
 
     ret = avfilter_graph_create_filter(&asrc, avfilter_get_by_name("abuffer"),
                                        "abuffer", args, NULL, priv->agraph);
@@ -264,10 +271,17 @@ static int alsasrc_subgraph_init(AVFilterContext *ctx)
 
     // create sink filter
     memset(args, 0, sizeof(args));
+    memset(channel_layout_str, 0, sizeof(channel_layout_str));
+    if ((ret = av_channel_layout_describe(&priv->af_inch_layout, channel_layout_str,
+                                          sizeof(channel_layout_str))) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Failed to describe output channel layout.\n");
+        goto end;
+    }
+
     snprintf(args, sizeof(args),
              "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
              priv->af_outsample_rate, av_get_sample_fmt_name(priv->af_outformat),
-             priv->af_outch_layout.nb_channels == 1 ? "mono" : "stereo");
+             channel_layout_str);
 
     ret = avfilter_graph_create_filter(&asink, avfilter_get_by_name("abuffersink"),
                                        "abuffersink", NULL, NULL, priv->agraph);
