@@ -771,19 +771,6 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
         if (priv->playback) {
             /* Try to send the buffer containing the remaining data to the driver */
             ff_nuttx_drain_buffer(priv, false);
-            old = new;
-            new = dq_count(&priv->bufferq);
-            if (new >= old) {
-                /* No buffer is sent to the driver,execute pause */
-                av_log(priv, AV_LOG_WARNING, "[%s][%s] playback underflow! pause.\n",
-                       __func__, priv->devname);
-                ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-                priv->paused = true;
-            } else {
-                /* A buffer is sent to the driver,pause will be done next time */
-                av_log(priv, AV_LOG_INFO, "[%s][%s] enqueue remaining data\n",
-                       __func__, priv->devname);
-            }
         } else {
             av_log(priv, AV_LOG_WARNING, "[%s][%s] capture overflow!\n",
                    __func__, priv->devname);
