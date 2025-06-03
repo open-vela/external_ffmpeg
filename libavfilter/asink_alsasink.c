@@ -135,8 +135,13 @@ static int alsasink_write_frame(AVFilterContext *ctx, int pad, AVFrame *frame)
     }
 
     ret = alsa_write(sink, (void **)frame->data, frame->nb_samples);
-    if (ret < 0)
+    if (ret < 0) {
+        if (ret == -EAGAIN) {
+            sink->last_frame = frame;
+            return AVERROR(EAGAIN);
+        }
         goto exit;
+    }
 
     if (ret != frame->nb_samples) {
         alsasink_consume_frame(frame, ret, sink->frame_size,
