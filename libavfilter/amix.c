@@ -171,6 +171,7 @@ static AMixInput *amix_input_alloc(AMixContext *s, AVFilterLink *link)
         ff_resample_init(input->resample);
     }
     input->link = link;
+    input->mix_size = 1; // initialize the water level with a non-zero value to require data when there is no data in fifo or link.
 
     TAILQ_INSERT_TAIL(&s->inputs, input, entries);
     s->nb_inputs++;
@@ -330,7 +331,7 @@ bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
         else
             size = input->mix_size;
 
-        return (ff_outlink_get_status(input->link) != AVERROR_EOF && (input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) <= size);
+        return (ff_outlink_get_status(input->link) != AVERROR_EOF && (input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) < size);
     }
 
     return true;
@@ -419,7 +420,6 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     TAILQ_FOREACH(input, &s->inputs, entries){
         if (input->state & INPUT_ON) {
             int left_size;
-
             if (ff_amix_input_want(s, input->link)) //if input is not draining, we should continue to wait for more data.
                 continue;
 
@@ -485,7 +485,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
 
             av_frame_free(&in_buf);
 
-            input->mix_size =  out_buf->nb_samples;
+            input->mix_size = out_buf->nb_samples;
         }
         input_sync_state(input);
         if (!input->state & INPUT_ON)
