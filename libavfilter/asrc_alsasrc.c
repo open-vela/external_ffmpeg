@@ -750,6 +750,8 @@ static int alsasrc_activate(AVFilterContext *ctx)
     av_frame_free(&frame);
 out:
 
+    if (ret == AVERROR(EAGAIN))
+        return 0;
     return ret;
 }
 
