@@ -545,6 +545,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
     return 0;
 
 out:
+    av_dict_free(&opts);
     movie_async_close_demuxer(ctx);
     return ret;
 }
