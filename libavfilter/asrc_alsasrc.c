@@ -580,7 +580,7 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
     src->format = handle->format;
     src->sample_rate = handle->sample_rate;
     av_channel_layout_copy(&src->ch_layout, &handle->ch_layout);
-    src->nb_samples = priv->period_size / handle->ch_layout.nb_channels;
+    src->nb_samples = priv->period_size;
 
     ret = av_frame_get_buffer(src, 0);
     if (ret < 0) {
@@ -593,7 +593,7 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
         goto fail;
 
     src->pkt_size = ret * handle->frame_size;
-    src->nb_samples = ret / handle->ch_layout.nb_channels;
+    src->nb_samples = ret;
     src->linesize[0] = src->pkt_size;
     src->pts = av_rescale_q(priv->timestamp,
                             (AVRational){1, handle->sample_rate},
