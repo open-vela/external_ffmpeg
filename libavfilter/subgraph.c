@@ -23,6 +23,7 @@
 #include <libavutil/mem.h>
 
 #include "avfilter_internal.h"
+#include <libavutil/opt.h>
 #include "buffersink.h"
 #include "buffersrc.h"
 #include "subgraph.h"
@@ -272,6 +273,7 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
     AVSubGraphContext *graph;
     AVFilterContext *dest_filter;
     AVChannelLayout ch_layout;
+    int64_t period_time = 0;
     char args[64];
     int ret;
     int i;
@@ -299,7 +301,8 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
 
     for (i = 0; i < graph->graph->nb_filters; i++) {
         if (graph->graph->filters[i] != graph->src_filter &&
-            graph->graph->filters[i] != graph->sink_filter) {
+            graph->graph->filters[i] != graph->sink_filter &&
+            strncmp(graph->graph->filters[i]->name, "auto", 4) != 0) {
             dest_filter = graph->graph->filters[i];
             if (dest_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
                 av_log(NULL, AV_LOG_ERROR, "filter %s not support query_formats.\n",
@@ -333,6 +336,12 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error copying output formats %d\n", ret);
         goto fail;
+    }
+
+    if (!av_opt_get_int(dest_filter->priv, "period_time", 0, &period_time)) {
+        (*cfg_in)->period_time  = (int)period_time;
+        (*cfg_out)->period_time = (int)period_time;
+        av_log(NULL, AV_LOG_INFO, "subgraph need period_time = %d\n", (int)period_time);
     }
 
     avfilter_asubgraph_uninit(&graph);

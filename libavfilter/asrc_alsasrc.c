@@ -90,6 +90,7 @@ typedef struct AlsasrcPriv {
     int *sub_map;
     char *sub_map_str;
     char *sub_desc;
+    int subgraph_period_time;
     AVSubGraphContext *subgraph;
 } AlsasrcPriv;
 
@@ -167,6 +168,8 @@ static int alsasrc_config_formats(AVFilterLink *link, int pad, ConfigedFormats *
                           in->formats[0] : link->format;
         dst_chan_layout = in->nb_channel_layouts > 0 ?
                           in->channel_layouts[0] : link->ch_layout;
+
+        priv->subgraph_period_time = in->period_time;
 
         // find the best match formats for subgraph. if not found, use the first one.
         if (out->nb_sample_rates > 0) {
@@ -298,6 +301,7 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     ff_resample_init(&priv->resample);
     priv->cmd_format = AV_SAMPLE_FMT_NONE;
     priv->cmd_sample_rate = 0;
+    priv->subgraph_period_time = 0;
     av_channel_layout_uninit(&priv->cmd_ch_layout);
 
     return 0;
@@ -652,10 +656,11 @@ static int alsasrc_open(AVFilterContext *ctx)
            return ret;
        }
     }
-
-    priv->period_size = priv->period_time * config_fmts.device_sample_rate / 1000;
+    handle->period_time = priv->subgraph_period_time ?
+                          priv->subgraph_period_time : priv->period_time;
+    priv->period_size = handle->period_time * config_fmts.device_sample_rate / 1000;
     handle->periods = priv->periods;
-    handle->period_time = priv->period_time;
+    priv->subgraph_period_time = 0;
 
     ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE,
                     config_fmts.device_sample_rate,

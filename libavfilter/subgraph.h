@@ -47,6 +47,7 @@ struct AVSubGraphFormats {
     int nb_sample_rates;            ///< Number of supported sample rates
     int nb_formats;                 ///< Number of supported sample formats
     int nb_channel_layouts;         ///< Number of supported channel layouts
+    int period_time;
 
     int *sample_rates;              ///< Array of supported sample rates
     enum AVSampleFormat *formats;   ///< Array of supported sample formats
