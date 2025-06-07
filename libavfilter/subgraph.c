@@ -308,8 +308,8 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
                 goto fail;
             }
 
-            graph_cfg_out = &dest_filter->inputs[0]->outcfg;
-            graph_cfg_in  = &dest_filter->inputs[0]->incfg;
+            graph_cfg_in  = &dest_filter->inputs[0]->outcfg;
+            graph_cfg_out = &dest_filter->outputs[0]->incfg;
             dest_filter->filter->formats.query_func2(dest_filter, &graph_cfg_in,
                                                      &graph_cfg_out);
             break;
