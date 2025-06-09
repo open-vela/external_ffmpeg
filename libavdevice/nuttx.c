@@ -755,9 +755,16 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
             else
                 return AVERROR_EXIT;
         } else if (msg.msg_id == AUDIO_MSG_UNDERRUN) {
-            av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow! pause.\n", __func__, priv->devname);
-            ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
-            priv->paused = true;
+            if (priv->playback) {
+                av_log(priv, AV_LOG_WARNING, "[%s][%s] underflow! pause.\n", __func__, priv->devname);
+                ff_nuttx_ioctl(priv->fd, AUDIOIOC_PAUSE, 0);
+                priv->paused = true;
+            } else {
+                while (!dq_empty(&priv->bufferq)) {
+                    buf_desc.u.buffer = (struct ap_buffer_s *)dq_remfirst(&priv->bufferq);
+                    ff_nuttx_ioctl(priv->fd, AUDIOIOC_ENQUEUEBUFFER, &buf_desc);
+                }
+            }
         } else if (msg.msg_id == AUDIO_MSG_IOERR) {
             av_log(priv, AV_LOG_ERROR, "[%s][%s]io error occur\n", __func__, priv->devname);
             priv->ioerr = true;
