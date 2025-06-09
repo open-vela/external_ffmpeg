@@ -56,6 +56,7 @@ typedef struct BuffSrcPriv {
     /* nb_outputs needs to follow map because av_opt_get_array
        assumes the next address of map points to nb_outputs.*/
     int nb_outputs;
+    bool paused;
 
     int sample_rate;                /**< sample rate */
     AVChannelLayout ch_layout;      /**< channel layout */
@@ -275,7 +276,7 @@ static int abufsrc_activate(AVFilterContext *ctx)
         }
     }
 
-    if (!routed)
+    if (!routed || priv->paused)
         return 0;
 
     if (!priv->on_event_cb)
@@ -289,13 +290,22 @@ static int abufsrc_activate(AVFilterContext *ctx)
 
     if (priv->frame) {
         av_frame_move_ref(frame, priv->frame);
-        priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame);
+        if(priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
+           av_frame_free(&priv->frame);
+           priv->fade_type = FADE_OUT;
+        }
     } else {
         priv->frame = av_frame_alloc();
         if (!priv->frame)
             return AVERROR(ENOMEM);
 
-        priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame);
+        if (priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
+            av_frame_free(&priv->frame);
+            av_frame_free(&frame);
+            return 0;
+        }
+
+        priv->fade_type = FADE_IN;
         av_frame_free(&frame);
         ff_filter_set_ready(ctx, 100);
         return 0;
@@ -431,7 +441,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return AVERROR(EINVAL);
 
         priv->next_pts = 0;
-        priv->fade_type = FADE_IN;
+        priv->paused = false;
 
         priv->sample_fmt = format;
         priv->sample_rate = sample_rate;
@@ -505,6 +515,13 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return AVERROR(EINVAL);
 
         return abufsrc_set_parameter(ctx, args);
+    } else if (!av_strcasecmp(cmd, "pause")) {
+        priv->paused = true;
+        return 0;
+    } else if (!av_strcasecmp(cmd, "resume")) {
+        priv->paused = false;
+        ff_filter_set_ready(ctx, 100);
+        return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
