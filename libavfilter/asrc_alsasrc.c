@@ -401,7 +401,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
                 goto format_end;
         }
 
-        if (!priv->cmd_sample_rate || !priv->sample_rate) {
+        if (priv->cmd_sample_rate || priv->sample_rate) {
             sample_rate = priv->cmd_sample_rate ?
                           priv->cmd_sample_rate : priv->sample_rate;
         } else {
@@ -411,7 +411,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
                 goto format_end;
         }
 
-        if (!priv->cmd_ch_layout.nb_channels || !priv->ch_layout.nb_channels) {
+        if (priv->cmd_ch_layout.nb_channels || priv->ch_layout.nb_channels) {
             nb_channels = priv->cmd_ch_layout.nb_channels ?
                           priv->cmd_ch_layout.nb_channels : priv->ch_layout.nb_channels;
         } else {
@@ -643,7 +643,7 @@ static int alsasrc_open(AVFilterContext *ctx)
     }
 
     if (alsasrc_subgraph_avaliable(ctx, pad)) {
-        ret = avfilter_asubgraph_init(&priv->subgraph, priv->sub_desc, 
+        ret = avfilter_asubgraph_init(&priv->subgraph, priv->sub_desc,
                                       config_fmts.device_sample_rate,
                                       config_fmts.subgraph_sample_rate,
                                       config_fmts.device_format,
