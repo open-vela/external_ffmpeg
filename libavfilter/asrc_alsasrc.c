@@ -427,9 +427,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
                  format, sample_rate, nb_channels);
 
 format_end:
-        av_channel_layout_uninit(&priv->cmd_ch_layout);
-        priv->cmd_format = AV_SAMPLE_FMT_NONE;
-        priv->cmd_sample_rate = 0;
+        av_log(ctx, AV_LOG_ERROR, "get_parameter(%s) failed %d.\n", key, ret);
         return ret;
     } else if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", priv->vol_ctx.volume);
@@ -511,6 +509,9 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             alsasrc_set_eof(ctx);
         }
 
+        av_channel_layout_uninit(&priv->cmd_ch_layout);
+        priv->cmd_format = AV_SAMPLE_FMT_NONE;
+        priv->cmd_sample_rate = 0;
         return 0;
     } else if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
