@@ -83,8 +83,6 @@ typedef struct AlsasrcPriv {
     int *map;
     int nb_outputs;
 
-    int poll_available;
-
     int64_t timestamp;
     AResampleContext resample;
 
@@ -517,7 +515,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
         if (!res || res_len < sizeof(struct pollfd))
             return AVERROR(EINVAL);
 
-        if (!handle->h || priv->poll_available >= handle->periods)
+        if (!handle->h)
             return 0;
 
         ret = snd_pcm_poll_descriptors(handle->h, poll, 1);
@@ -527,8 +525,8 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         return 1;
     } else if (!strcmp(cmd, "poll_available")) {
+        snd_pcm_avail_update(handle->h);
         ff_filter_set_ready(ctx, 100);
-        priv->poll_available++;
         return 0;
     } else if (!strcmp(cmd, "map")) {
         ret = avfilter_parse_mapping(args, &priv->map, priv->nb_outputs);
@@ -600,7 +598,6 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
                             (AVRational){1, 1000000});
 
     priv->timestamp += ret;
-    priv->poll_available = 0;
 
     *frame = src;
     return ret;
