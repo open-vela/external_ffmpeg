@@ -399,6 +399,16 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         goto fail;
     }
 
+    // Temporary adaptation to aec_filter, while delete in the future
+    if (!strncmp(graph_desc, "aec", 3)) {
+        ret = avfilter_asubgraph_process_command(ctx, "sub_cmd",
+                "aec:set_parameter:scenario=netTalk", NULL, 0, 0);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Error to init aec_filter: %d\n", ret);
+            goto fail;
+        }
+    }
+
     ret = avfilter_graph_config(ctx->graph, NULL);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "Error while configuring filtergraph %d\n", ret);
