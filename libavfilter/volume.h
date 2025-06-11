@@ -21,8 +21,8 @@
  * audio volume for src filter
  */
 
-#ifndef LIBAVFILTER_VOLUME_H
-#define LIBAVFILTER_VOLUME_H
+#ifndef AVFILTER_VOLUME_H
+#define AVFILTER_VOLUME_H
 
 #include <stdint.h>
 
@@ -48,4 +48,4 @@ void volume_scale(VolumeContext *vol, AVFrame *frame);
 void volume_set(VolumeContext *vol, double volume);
 void volume_uninit(VolumeContext *vol);
 
-#endif /* LIBAVFILTER_VOLUME_H */
+#endif /* AVFILTER_VOLUME_H */
