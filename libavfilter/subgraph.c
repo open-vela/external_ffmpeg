@@ -21,9 +21,9 @@
  * AVfilter graph
  */
 #include <libavutil/mem.h>
+#include <libavutil/opt.h>
 
 #include "avfilter_internal.h"
-#include <libavutil/opt.h>
 #include "buffersink.h"
 #include "buffersrc.h"
 #include "subgraph.h"
@@ -128,9 +128,60 @@ static inline int subgraph_is_inited(AVSubGraphContext *ctx)
     return (ctx && ctx->graph);
 }
 
+static void subgraph_free_cmd(AVSubCmd **cmd)
+{
+    if (!cmd || !*cmd)
+        return;
+
+    if ((*cmd)->cmd)  av_free((*cmd)->cmd);
+    av_freep(cmd);
+}
+
+static void subgraph_clear_cmdq(struct AVSubCmdQueue *cmd_queue)
+{
+    AVSubCmd *cmd;
+
+    while ((cmd = SIMPLEQ_FIRST(cmd_queue)) != NULL) {
+        SIMPLEQ_REMOVE_HEAD(cmd_queue, entry);
+        subgraph_free_cmd(&cmd);
+    }
+}
+
+static struct AVSubCmdQueue *subgraph_init_cmdq(void)
+{
+    struct AVSubCmdQueue *ret = av_mallocz(sizeof(*ret));
+
+    if (!ret)
+        return NULL;
+
+    SIMPLEQ_INIT(ret);
+    return ret;
+}
+
+static int subgraph_enqueue_cmd(struct AVSubCmdQueue *cmd_queue, const char *cmd)
+{
+    AVSubCmd *new_cmd;
+
+    new_cmd = av_mallocz(sizeof(AVSubCmd));
+    if (!new_cmd)
+        return AVERROR(ENOMEM);
+
+    new_cmd->cmd = av_strdup(cmd);
+    if (!new_cmd->cmd) {
+        av_free(new_cmd);
+        return AVERROR(ENOMEM);
+    }
+
+    SIMPLEQ_INSERT_TAIL(cmd_queue, new_cmd, entry);
+    return 0;
+}
+
 static int subgraph_dump(AVSubGraphContext *ctx)
 {
     char* dump;
+
+    if (!subgraph_is_inited(ctx))
+        return AVERROR(EINVAL);
 
     dump = avfilter_graph_dump(ctx->graph, NULL);
     if (dump != NULL) {
@@ -212,6 +263,24 @@ static int subgraph_process_cmd(AVSubGraphContext *ctx, const char *args,
     if (!args)
         return AVERROR(EINVAL);
 
+    // when subgraph is not initialized, enqueue the cmd to cmd_queue
+    if (!subgraph_is_inited(ctx)) {
+        if (!ctx)
+            return AVERROR(EINVAL);
+
+        if (!ctx->cmd_queue && !(ctx->cmd_queue = subgraph_init_cmdq()))
+            return AVERROR(ENOMEM);
+
+        av_log(NULL, AV_LOG_INFO, "subgraph is not init, pending sub_cmd: %s\n", args);
+        ret = subgraph_enqueue_cmd(ctx->cmd_queue, args);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "enqueue_cmd error %d\n", ret);
+            return ret;
+        }
+
+        return 0;
+    }
+
     p = av_strdup(args);
     if (!p)
         return AVERROR(ENOMEM);
@@ -226,7 +295,7 @@ static int subgraph_process_cmd(AVSubGraphContext *ctx, const char *args,
         goto end;
     }
 
-    av_log(NULL, AV_LOG_INFO, "av_subgraph cmd: %s %s %s.\n", target, sub_cmd, sub_args);
+    av_log(NULL, AV_LOG_INFO, "process sub_cmd: %s %s %s.\n", target, sub_cmd, sub_args);
 
     for (i = 0; i < ctx->graph->nb_filters; i++) {
         AVFilterContext *filter = ctx->graph->filters[i];
@@ -363,8 +432,9 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
                             AVChannelLayout in_ch_layout,
                             AVChannelLayout out_ch_layout)
 {
-    AVSubGraphContext *ctx;
+    AVSubGraphContext *ctx = *ctxp;
     AVFilterLink *link;
+    AVSubCmd *cmd;
     char args[64];
     int ret;
     int i;
@@ -373,6 +443,9 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         av_log(NULL, AV_LOG_ERROR, "graph_desc is needed.\n");
         return AVERROR(EINVAL);
     }
+
+    if (!ctx && !(ctx = av_mallocz(sizeof(*ctx))))
+        return AVERROR(ENOMEM);
 
     av_log(NULL, AV_LOG_INFO, "av_subgraph init parms: %s %d %d %d %d %d %d.\n",
            graph_desc, in_sample_rate, out_sample_rate,
@@ -387,10 +460,6 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         return AVERROR(EINVAL);
     }
 
-    ctx = av_mallocz(sizeof(AVSubGraphContext));
-    if (!ctx)
-        return AVERROR(ENOMEM);
-
     ret = subgraph_create_graph(ctx, graph_desc, in_sample_rate, out_sample_rate,
                                 in_format, out_format,
                                 in_ch_layout, out_ch_layout);
@@ -399,14 +468,13 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         goto fail;
     }
 
-    // Temporary adaptation to aec_filter, while delete in the future
-    if (!strncmp(graph_desc, "aec", 3)) {
-        ret = avfilter_asubgraph_process_command(ctx, "sub_cmd",
-                "aec:set_parameter:scenario=netTalk", NULL, 0, 0);
-        if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR, "Error to init aec_filter: %d\n", ret);
-            goto fail;
-        }
+    while (ctx->cmd_queue && (cmd = SIMPLEQ_FIRST(ctx->cmd_queue)) != NULL) {
+        ret = subgraph_process_cmd(ctx, cmd->cmd, NULL, 0, 0);
+        if (ret < 0)
+            av_log(NULL, AV_LOG_ERROR, "Error processing sub_cmd: %s, ret=%d\n", cmd->cmd, ret);
+
+        SIMPLEQ_REMOVE_HEAD(ctx->cmd_queue, entry);
+        subgraph_free_cmd(&cmd);
     }
 
     ret = avfilter_graph_config(ctx->graph, NULL);
@@ -415,7 +483,6 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         goto fail;
     }
 
-    *ctxp = ctx;
     return 0;
 fail:
     avfilter_asubgraph_uninit(&ctx);
@@ -429,6 +496,11 @@ void avfilter_asubgraph_uninit(AVSubGraphContext **ctxp)
 
     if ((*ctxp)->graph)
         avfilter_graph_free(&(*ctxp)->graph);
+
+    if ((*ctxp)->cmd_queue) {
+        subgraph_clear_cmdq((*ctxp)->cmd_queue);
+        av_free((*ctxp)->cmd_queue);
+    }
 
     av_freep(ctxp);
 }
@@ -465,12 +537,6 @@ int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame)
 int avfilter_asubgraph_process_command(AVSubGraphContext *ctx, const char *cmd, const char *args,
                                        char *res, int res_len, int flags)
 {
-
-    if (!subgraph_is_inited(ctx)) {
-        av_log(NULL, AV_LOG_ERROR, "av_subgraph is not initialized.\n");
-        return AVERROR(EINVAL);
-    }
-
     if (!strcmp(cmd, "dump")) {
         subgraph_dump(ctx);
         return 0;

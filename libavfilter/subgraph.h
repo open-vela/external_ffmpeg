@@ -29,14 +29,24 @@
 
 #include "avfilter.h"
 
+#include <sys/queue.h>
+
+typedef struct AVSubCmd {
+    SIMPLEQ_ENTRY(AVSubCmd) entry;
+    char                  *cmd;
+} AVSubCmd;
+
+SIMPLEQ_HEAD(AVSubCmdQueue, AVSubCmd);
+
 /**
  * @struct AVSubGraphContext
  * Main context for managing filter graph instances
  */
 struct AVSubGraphContext {
-    AVFilterGraph *graph;          ///< Filter graph container
+    AVFilterGraph *graph;           ///< Filter graph container
     AVFilterContext *src_filter;    ///< Source filter for input
     AVFilterContext *sink_filter;   ///< Sink filter for output
+    struct AVSubCmdQueue *cmd_queue; ///< cache cmd sent when subgraph is not init
 };
 
 /**

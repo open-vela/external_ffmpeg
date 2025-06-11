@@ -562,6 +562,9 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         return alsasrc_set_parameter(ctx, args);
     } else if (!strcmp(cmd, "dump") || !strcmp(cmd, "sub_cmd")) {
+        if (!priv->subgraph && !(priv->subgraph = av_mallocz(sizeof(*priv->subgraph))))
+            return AVERROR(ENOMEM);
+
         return avfilter_asubgraph_process_command(priv->subgraph, cmd, args, res, res_len, flags);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
