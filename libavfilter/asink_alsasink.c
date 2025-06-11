@@ -29,6 +29,7 @@
 
 #include "alsa.h"
 #include "avfilter.h"
+#include "avfilter_internal.h"
 #include "filters.h"
 #include "formats.h"
 
@@ -195,6 +196,7 @@ static void alsasink_uninit(AVFilterContext *ctx)
 static int alsasink_activate(AVFilterContext *ctx)
 {
     AlsaSinkPriv *priv = ctx->priv;
+    FilterLinkInternal *li;
     AVFilterLink *inlink;
     AVFrame *frame;
     int64_t pts;
@@ -203,6 +205,10 @@ static int alsasink_activate(AVFilterContext *ctx)
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         inlink = ctx->inputs[i];
+        li = ff_link_internal(inlink);
+
+        if (li->status_out)
+            continue;
 
         ret = alsasink_write_lastframe(ctx, i);
         if (ret < 0)
