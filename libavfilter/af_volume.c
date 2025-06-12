@@ -171,7 +171,7 @@ static inline void fade_samples_u8(uint8_t *dst, const uint8_t *src,
     int64_t sample;
     int64_t step;
 
-    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) * 256) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
             sample = (int64_t)(src[k] - 128) * (src_volume + (step * i) >> 8) + 128;
@@ -195,7 +195,7 @@ static inline void fade_samples_u8_small(uint8_t *dst, const uint8_t *src,
     int sample;
     int step;
 
-    step = ((dst_volume - src_volume) << 8) / nb_samples;
+    step = ((dst_volume - src_volume) * 256) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
             sample = (src[k] - 128) * (src_volume + (step * i >> 8)) + 128;
@@ -220,7 +220,7 @@ static inline void fade_samples_s16(uint8_t *dst, const uint8_t *src,
     int i, j, k = 0;
     int64_t step;
 
-    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) * 256) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
             smp_dst[k] = av_clip_int16((int64_t)(smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
@@ -246,10 +246,10 @@ static inline void fade_samples_s16_small(uint8_t *dst, const uint8_t *src,
     int i, j, k = 0;
     int step;
 
-    step = ((dst_volume - src_volume) << 8) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume) * 256) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
-            smp_dst[k] = av_clip_int16((smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
+            smp_dst[k] = av_clip_int16((int64_t)(smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
         }
     }
 }
@@ -272,7 +272,7 @@ static inline void fade_samples_s32(uint8_t *dst, const uint8_t *src,
     int i, j, k = 0;
     int64_t step;
 
-    step = (((int64_t)dst_volume - src_volume) << 8) / nb_samples;
+    step = (((int64_t)dst_volume - src_volume)  * 256) / nb_samples;
     for (i = 0; i < nb_samples; i++) {
         for (j = 0; j < chs; j++, k++) {
             smp_dst[k] = av_clipl_int32((int64_t)(smp_src[k] * (src_volume + (step * i >> 8)) + 128) >> 8);
