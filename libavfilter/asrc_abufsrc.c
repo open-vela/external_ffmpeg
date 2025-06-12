@@ -229,58 +229,39 @@ static av_cold void abufsrc_uninit(AVFilterContext *ctx)
     av_freep(&priv->map);
 }
 
-static int abufsrc_query_formats(const AVFilterContext *ctx,
-                         AVFilterFormatsConfig **cfg_in,
-                         AVFilterFormatsConfig **cfg_out)
-{
-    AVFilterChannelLayouts *layouts = NULL;
-    AVFilterFormats *formats = NULL;
-    int ret, i;
-
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
-        ff_formats_unref(&cfg_out[i]->formats);
-        ret = ff_formats_ref(formats, &cfg_out[i]->formats);
-        if (ret < 0)
-            goto out;
-
-
-        formats = ff_all_samplerates();
-        ff_formats_unref(&cfg_out[i]->samplerates);
-        ret = ff_formats_ref(formats, &cfg_out[i]->samplerates);
-        if (ret < 0)
-            goto out;
-
-        layouts = ff_all_channel_counts();
-        ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
-        ret = ff_channel_layouts_ref(layouts, &cfg_out[i]->channel_layouts);
-        if (ret < 0)
-            goto out;
-    }
-
-out:
-    return ret;
-}
-
 static int abufsrc_activate(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
+    int i, ret, routed = 0;
     AVFrame *frame;
-    int i, routed = 0;
+
+    if (!priv->on_event_cb)
+        return FFERROR_NOT_READY;
 
     for (i = 0; i < priv->nb_outputs; i++) {
         if (priv->map && priv->map[i] == ROUTE_ON) {
-            routed = 1;
-            if (!ff_outlink_frame_wanted(ctx->outputs[i]))
-                return 0;
+            if (ff_outlink_frame_wanted(ctx->outputs[i]))
+                routed = 1;
         }
     }
 
     if (!routed || priv->paused)
         return 0;
 
-    if (!priv->on_event_cb)
+    if (!priv->frame) {
+        priv->frame = av_frame_alloc();
+        if (!priv->frame)
+            return AVERROR(ENOMEM);
+
+        if (ret = priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
+            av_frame_free(&priv->frame);
+            return ret;
+        }
+
+        priv->fade_type = FADE_IN;
+        ff_filter_set_ready(ctx, 100);
         return 0;
+    }
 
     frame = av_frame_alloc();
     if (!frame)
@@ -288,27 +269,10 @@ static int abufsrc_activate(AVFilterContext *ctx)
 
     frame->nb_samples = SUGGESTED_NB_SAMPLES;
 
-    if (priv->frame) {
-        av_frame_move_ref(frame, priv->frame);
-        if(priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
-           av_frame_free(&priv->frame);
-           priv->fade_type = FADE_OUT;
-        }
-    } else {
-        priv->frame = av_frame_alloc();
-        if (!priv->frame)
-            return AVERROR(ENOMEM);
-
-        if (priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
-            av_frame_free(&priv->frame);
-            av_frame_free(&frame);
-            return 0;
-        }
-
-        priv->fade_type = FADE_IN;
-        av_frame_free(&frame);
-        ff_filter_set_ready(ctx, 100);
-        return 0;
+    av_frame_move_ref(frame, priv->frame);
+    if (priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
+       av_frame_free(&priv->frame);
+       priv->fade_type = FADE_OUT;
     }
 
     if (priv->next_pts == frame->pts && priv->fade_type == FADE_NONE) { //should not set fade again, when in fade process.
@@ -550,7 +514,6 @@ const AVFilter ff_asrc_abufsrc = {
     .init            = abufsrc_init_dict,
     .uninit          = abufsrc_uninit,
     .activate        = abufsrc_activate,
-    FILTER_QUERY_FUNC2(abufsrc_query_formats),
     .process_command = abufsrc_proccess_command,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };
