@@ -539,7 +539,7 @@ static int movie_async_open_demuxer(AVFilterContext *ctx, const char *filename)
 
     av_opt_set_dict(movie, &opts);
     av_dict_free(&opts);
-    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%lld live_stream:%d datqmax:%d datqcnt:%d\n",
+    av_log(ctx, AV_LOG_INFO, "DEBUG: url %s open decode DONE start_time:%"PRId64" live_stream:%d datqmax:%d datqcnt:%d\n",
            name, movie->streams[0].start_time, movie->live_stream, movie->dat_max, movie->dat_cnt);
 
     return 0;
