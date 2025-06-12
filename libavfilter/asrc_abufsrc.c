@@ -517,6 +517,8 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         return abufsrc_set_parameter(ctx, args);
     } else if (!av_strcasecmp(cmd, "pause")) {
         priv->paused = true;
+        if (priv->frame)
+            ret = abufsrc_fadeout_last_frame(ctx);
         return 0;
     } else if (!av_strcasecmp(cmd, "resume")) {
         priv->paused = false;
