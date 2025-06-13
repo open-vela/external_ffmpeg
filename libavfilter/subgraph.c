@@ -444,7 +444,7 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         return AVERROR(EINVAL);
     }
 
-    if (!ctx && !(ctx = av_mallocz(sizeof(*ctx))))
+    if (!ctx && !(*ctxp = ctx = av_mallocz(sizeof(*ctx))))
         return AVERROR(ENOMEM);
 
     av_log(NULL, AV_LOG_INFO, "av_subgraph init parms: %s %d %d %d %d %d %d.\n",
