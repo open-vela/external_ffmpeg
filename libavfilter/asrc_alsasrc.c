@@ -425,6 +425,8 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
 
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
                  format, sample_rate, nb_channels);
+        av_log(ctx, AV_LOG_INFO, "get_parameter: %s = %s\n", key, value);
+        return 0;
 
 format_end:
         av_log(ctx, AV_LOG_ERROR, "get_parameter(%s) failed %d.\n", key, ret);
