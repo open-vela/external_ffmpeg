@@ -28,6 +28,9 @@
  * output.
  */
 
+#include <unistd.h>
+
+
 #include "libavutil/attributes.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/avassert.h"

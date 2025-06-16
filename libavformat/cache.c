@@ -43,6 +43,7 @@
 #endif
 #include <sys/stat.h>
 #include <stdlib.h>
+#include <pthread.h>
 #include "os_support.h"
 #include "url.h"
 
