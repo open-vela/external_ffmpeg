@@ -561,6 +561,14 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             return AVERROR(EINVAL);
 
         return alsasrc_get_parameter(ctx, args, res, res_len);
+    }else if (!strcmp(cmd, "sub_map")) {
+        ret = avfilter_parse_mapping(args, &priv->sub_map, priv->nb_outputs);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Failed to parse sub_map: %s ret:%d\n", args, ret);
+            return ret;
+        }
+
+        return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
         if (!args)
             return AVERROR(EINVAL);
