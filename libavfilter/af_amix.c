@@ -29,6 +29,7 @@
  */
 
 #include <sys/timerfd.h>
+#include <unistd.h>
 #include <poll.h>
 #include <unistd.h>
 

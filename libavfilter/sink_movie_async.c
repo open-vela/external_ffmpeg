@@ -24,6 +24,7 @@
 #include "config_components.h"
 
 #include <unistd.h>
+#include <pthread.h>
 #include <sys/queue.h>
 #include <pthread.h>
 

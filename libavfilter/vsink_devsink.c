@@ -21,6 +21,7 @@
  * video device sink
  */
 
+#include <unistd.h>
 #include <poll.h>
 #include <unistd.h>
 #include <sys/timerfd.h>
