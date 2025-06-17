@@ -126,7 +126,7 @@ static int get_output_samples(AMixContext *s)
     }
 
     if (s->frame_size && !amix_is_draining(s)) { //if the last active inputs is draining, we can mix with the actual size left in the input as last frame.
-        if (nb_samples >= s->frame_size)
+        if (nb_samples != INT_MAX && nb_samples >= s->frame_size)
             return s->frame_size;
         else // if all activate inputs samples are smaller than the frame size and mix is not draining, we should wait for more samples.
             return 0;

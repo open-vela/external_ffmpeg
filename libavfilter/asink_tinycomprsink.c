@@ -285,7 +285,8 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         ret = tinycomprsink_send_frame(ctx, frame);
         if (frame)
             av_frame_free(&frame);
-        ff_filter_set_ready(ctx, 100);
+        if (ret >= 0)
+            ff_filter_set_ready(ctx, 100);
         return ret;
     }
 
