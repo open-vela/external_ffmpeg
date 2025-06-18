@@ -361,8 +361,10 @@ int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
                 return ret;
 
             ret = ff_resample_frame(input->resample, s->out, frame, &rframe);
-            if (ret <= 0)
+            if (ret < 0) {
+                av_frame_free(&frame);
                 return ret;
+            }
 
             ret = av_audio_fifo_write(input->fifo, (void **)rframe->extended_data, rframe->nb_samples);
             if (ret < 0) {

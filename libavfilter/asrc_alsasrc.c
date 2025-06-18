@@ -754,10 +754,13 @@ static int alsasrc_activate(AVFilterContext *ctx)
 
         link = ctx->outputs[i];
         ret = ff_resample_frame(&priv->resample, link, iframe, &oframe);
-        if (ret == 0)
-            oframe = iframe;
-        else
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "resample frame failed %d.\n", ret);
             av_frame_free(&iframe);
+            continue;
+        }
+
+        av_frame_free(&iframe);
 
         ret = ff_filter_frame(link, oframe);
         if (ret < 0)

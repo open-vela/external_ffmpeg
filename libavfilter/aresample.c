@@ -54,6 +54,8 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
         link->format == iframe->format &&
         link->sample_rate == iframe->sample_rate)
     {
+        *poframe = av_frame_alloc();
+        av_frame_ref(*poframe, iframe);
         return 0;
     }
 

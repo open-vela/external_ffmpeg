@@ -283,12 +283,9 @@ static int activate(AVFilterContext *ctx)
             continue;
 
         ret = ff_resample_frame(&s->resampler, link, frame, &resampled);
-        if (ret <= 0) {
-            resampled = av_frame_clone(frame);
-            if (!resampled) {
-                ret = AVERROR(ENOMEM);
-                goto out;
-            }
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Failed to resample frame ret:%d\n", ret);
+            continue;
         }
 
         volume_scale(&s->vol_ctx, resampled);
