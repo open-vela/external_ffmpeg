@@ -141,12 +141,12 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
     return 0;
 }
 
-static int alsasrc_config_formats(AVFilterLink *link, int pad, ConfigedFormats *fmts)
+static int alsasrc_config_formats(AVFilterContext *ctx, int pad, ConfigedFormats *fmts)
 {
-    AVFilterContext *ctx = link->src;
     AlsasrcPriv *priv = ctx->priv;
     AVSubGraphFormats *in = NULL, *out = NULL;
     AVChannelLayout dst_chan_layout;
+    AVFilterLink *link = ctx->outputs[pad];
     int dst_sample_rate;
     int dst_format;
     int found_fmt;
@@ -621,7 +621,6 @@ static int alsasrc_open(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
-    AVFilterLink *outlink = NULL;
     ConfigedFormats config_fmts = { 0 };
     int ret;
     int pad;
@@ -635,15 +634,11 @@ static int alsasrc_open(AVFilterContext *ctx)
             continue;
 
         pad = i;
-        outlink = ctx->outputs[i];
         if (priv->sub_map && priv->sub_map[i])
             break;
     }
 
-    if (!outlink)
-        return AVERROR(EINVAL);
-
-    ret = alsasrc_config_formats(outlink, pad, &config_fmts);
+    ret = alsasrc_config_formats(ctx, pad, &config_fmts);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "config formats failed %d.\n", ret);
         return ret;
