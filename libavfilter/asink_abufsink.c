@@ -50,6 +50,7 @@ typedef struct ABufSinkPriv {
     int sample_rate;                /**< sample rate */
     AVChannelLayout ch_layout;      /**< channel layout */
     enum AVSampleFormat sample_fmt; /**< sample format */
+    bool paused;                    /**< whether the recording is paused */
 
     AMixContext *mix;               /**< mix module context */
     int frame_size;                 /**< frame size */
@@ -128,15 +129,16 @@ static int output_frame(AVFilterContext *ctx)
     if (ret <= 0)
         return ret;
 
-    if (s->next_pts == AV_NOPTS_VALUE)
-        s->next_pts = 0;
+    if (s->on_event_cb && !s->paused) {
+        if (s->next_pts == AV_NOPTS_VALUE)
+            s->next_pts = 0;
 
-    frame->pts = s->next_pts;
-    frame->duration = av_rescale_q(frame->nb_samples, av_make_q(1, frame->sample_rate), AV_TIME_BASE_Q);
-    s->next_pts += frame->duration;
+        frame->pts = s->next_pts;
+        frame->duration = av_rescale_q(frame->nb_samples, av_make_q(1, frame->sample_rate), AV_TIME_BASE_Q);
+        s->next_pts += frame->duration;
 
-    if (s->on_event_cb)
         s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
+    }
     av_frame_free(&frame);
 
     return 0;
@@ -234,6 +236,7 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
 
         if (!sink->on_event_cb)
             av_abufsink_set_event_cb(ctx, on_event_cb, udata);
+        sink->paused = false;
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
         if (sink->on_event_cb)
@@ -248,6 +251,13 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
             return AVERROR(EINVAL);
 
         return abufsink_set_parameter(ctx, args);
+    } else if (!av_strcasecmp(cmd, "pause")) {
+        sink->paused = true;
+        return 0;
+    } else if (!av_strcasecmp(cmd, "resume")) {
+        sink->paused = false;
+        ff_filter_set_ready(ctx, 100);
+        return 0;
     }
 
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
