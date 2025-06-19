@@ -200,7 +200,7 @@ static int alsasink_activate(AVFilterContext *ctx)
     AVFilterLink *inlink;
     AVFrame *frame;
     int64_t pts;
-    int ret;
+    int ret = 0;
     int i;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
