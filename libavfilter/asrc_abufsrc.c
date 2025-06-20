@@ -73,7 +73,7 @@ typedef struct BuffSrcPriv {
     void *on_event_cb_udata;
     VolumeContext vol_ctx;
     double player_volume;
-    double stream_volume;
+    double volume;
 } BuffSrcPriv;
 
 static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
@@ -212,7 +212,7 @@ static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
     }
 
     priv->player_volume = 1.0f;
-    priv->stream_volume = 1.0f;
+    priv->volume = 1.0f;
 
     if (priv->map_str) {
         ret = avfilter_parse_mapping(priv->map_str, &priv->map, priv->nb_outputs);
@@ -341,10 +341,10 @@ static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
         if (*p)
             p++;
         av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
-        if (!strcmp(key, "volume")) {
+        if (!strcmp(key, "player_volume")) {
             priv->player_volume = strtof(value, NULL);
-            volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
-        } else if (!strcmp(key, "stream_volume")) {
+            volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
+        } else if (!strcmp(key, "volume")) {
             double volume;
             ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL,
                                          NULL, NULL, NULL, 0, NULL);
@@ -353,8 +353,8 @@ static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
                        ctx->name, value);
                 goto end;
             }
-            priv->stream_volume = volume;
-            volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
+            priv->volume = volume;
+            volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
@@ -416,7 +416,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return ret;
 
         ret = volume_init(&priv->vol_ctx, format);
-        volume_set(&priv->vol_ctx, priv->player_volume * priv->stream_volume);
+        volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
         return ret;
     } else if (!av_strcasecmp(cmd, "unlink")) {
         int i;
