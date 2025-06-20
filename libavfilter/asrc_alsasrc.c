@@ -87,6 +87,8 @@ typedef struct AlsasrcPriv {
     AResampleContext resample;
 
     VolumeContext vol_ctx;
+    bool mute;
+
     int *sub_map;
     char *sub_map_str;
     char *sub_desc;
@@ -302,6 +304,7 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     priv->cmd_format = AV_SAMPLE_FMT_NONE;
     priv->cmd_sample_rate = 0;
     priv->subgraph_period_time = 0;
+    priv->mute = false;
     av_channel_layout_uninit(&priv->cmd_ch_layout);
 
     return 0;
@@ -568,6 +571,14 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             return AVERROR(ENOMEM);
 
         return avfilter_asubgraph_process_command(priv->subgraph, cmd, args, res, res_len, flags);
+    } else if (!strcmp(cmd, "mute") ) {
+        priv->mute = true;
+        av_log(ctx, AV_LOG_INFO, "set %s mute.", ctx->name);
+        return 0;
+    } else if (!strcmp(cmd, "unmute") ) {
+        priv->mute = false;
+        av_log(ctx, AV_LOG_INFO, "set %s unmute.", ctx->name);
+        return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
@@ -608,6 +619,9 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
                             (AVRational){1, 1000000});
 
     priv->timestamp += ret;
+
+    if (priv->mute)
+        memset(src->data[0], 0x00, src->pkt_size);
 
     *frame = src;
     return ret;
