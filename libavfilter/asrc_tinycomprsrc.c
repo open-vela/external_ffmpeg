@@ -116,15 +116,17 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
             goto error;
 
         ret = compress_read(s->compress, pkt->data, s->fragment_size);
-        if (ret < 0)
+        if (ret > 0 && ret != s->fragment_size)
+            av_log(ctx, AV_LOG_ERROR, "Not read enough data fragment_size:%d ret:%d", s->fragment_size, ret);
+        else if (ret < 0)
             goto error;
 
         pkt->size = ret;
         pkt->pts = s->next_pts;
+        pkt->time_base =  (AVRational) { 1, s->sample_rate };
         s->next_pts += ret / av_get_bytes_per_sample(s->sample_fmt);
 
         ret = avcodec_send_packet(s->dec_ctx, pkt);
-
         if (ret < 0)
             goto error;
     }
@@ -254,7 +256,7 @@ static int tinycomprsrc_check_outlink_status(AVFilterContext *ctx) {
 static int activate(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
-    AVFrame *frame;
+    AVFrame *frame = NULL;
     int ret, i;
 
     ret = tinycomprsrc_check_outlink_status(ctx);
@@ -266,7 +268,7 @@ static int activate(AVFilterContext *ctx)
             break;
     }
     if (i == ctx->nb_outputs)
-        return AVERROR(EAGAIN);
+        return FFERROR_NOT_READY;
 
     ret = tinycomprsrc_open(ctx);
     if (ret < 0)
@@ -295,14 +297,10 @@ static int activate(AVFilterContext *ctx)
             goto out;
     }
 
-    av_frame_free(&frame);
-
-    return ret;
-
 out:
-    if (ret < 0 && ret != AVERROR(EAGAIN))
-        ff_filter_set_ready(ctx, 100);
-
+    av_frame_free(&frame);
+    if (ret == AVERROR(EAGAIN))
+        return 0;
     return ret;
 }
 
@@ -468,7 +466,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         if (s->compress) {
             poll_fd[0].fd = compress_get_file_descriptor(s->compress);
             poll_fd[0].events = POLLIN;
-            ret = 1;
+            return 1;
         }
     } else if (!strcmp(cmd, "poll_available")) {
         compress_poll_available(s->compress);
@@ -503,7 +501,6 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
                 need_close = 0;
         }
 
-        ff_filter_set_ready(ctx, 100);
         if (need_close)
             tinycomprsrc_close(ctx);
         return ret;
