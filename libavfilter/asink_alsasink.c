@@ -78,7 +78,7 @@ static int alsasink_close(AVFilterContext *ctx, int pad)
     return 0;
 }
 
-static void alsasink_consume_frame(AVFrame *frame, int consumed, int frame_size, int ch)
+static void alsasink_consume_samples(AVFrame *frame, int consumed, int frame_size, int ch)
 {
     int step = frame_size;
     int i;
@@ -106,8 +106,8 @@ static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
     if (ret < 0)
         return ret;
 
-    alsasink_consume_frame(sink->last_frame, ret, sink->frame_size,
-                           inlink->ch_layout.nb_channels);
+    alsasink_consume_samples(sink->last_frame, ret, sink->frame_size,
+                             inlink->ch_layout.nb_channels);
 
     if (sink->last_frame->nb_samples)
         return AVERROR(EAGAIN);
@@ -145,8 +145,8 @@ static int alsasink_write_frame(AVFilterContext *ctx, int pad, AVFrame *frame)
     }
 
     if (ret != frame->nb_samples) {
-        alsasink_consume_frame(frame, ret, sink->frame_size,
-                               inlink->ch_layout.nb_channels);
+        alsasink_consume_samples(frame, ret, sink->frame_size,
+                                 inlink->ch_layout.nb_channels);
         sink->last_frame = frame;
         return AVERROR(EAGAIN);
     }
@@ -317,14 +317,6 @@ static int alsasink_process_command(AVFilterContext *ctx,
         return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
         alsa_set_parameter(priv->devname, args);
-        return 0;
-    } else if (!strcmp(cmd, "dump")) {
-
-        for (i = 0; i < ctx->nb_inputs && res_len > ret; i++) {
-            sink = &priv->handles[i];
-            ret += snprintf(res + ret, res_len - ret, "|%d: %p %d", i,
-                            sink->h, sink->h ? snd_pcm_state(sink->h) : -1);
-        }
         return 0;
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
