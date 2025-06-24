@@ -48,6 +48,7 @@ typedef struct ABufSinkPriv {
     int sample_rate;                /**< sample rate */
     AVChannelLayout ch_layout;      /**< channel layout */
     enum AVSampleFormat sample_fmt; /**< sample format */
+
     bool paused;                    /**< whether the recording is paused */
 
     AMixContext *mix;               /**< mix module context */
@@ -60,16 +61,9 @@ typedef struct ABufSinkPriv {
 #define OFFSET(x) offsetof(ABufSinkPriv, x)
 #define A AV_OPT_FLAG_AUDIO_PARAM
 #define F AV_OPT_FLAG_FILTERING_PARAM
-#define T AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption abufsink_options[] = {
     { "inputs", "Number of inputs.",
             OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT16_MAX, A|F },
-    { "sample_rate", "sample_rate",
-            OFFSET(sample_rate), AV_OPT_TYPE_INT, {.i64 = 0}, -1, INT32_MAX, A|F },
-    { "ch_layout", "ch_layout",
-            OFFSET(ch_layout), AV_OPT_TYPE_CHLAYOUT, {.str = NULL}, 0, 0, A|F },
-    { "sample_fmt", "sample_fmt",
-            OFFSET(sample_fmt), AV_OPT_TYPE_SAMPLE_FMT, {.i64 = AV_SAMPLE_FMT_NONE}, -1, INT_MAX, A|F },
     { NULL }
 };
 
@@ -86,39 +80,40 @@ static void av_abufsink_set_event_cb(AVFilterContext *ctx,
     ff_filter_set_ready(ctx, 100);
 }
 
-static void request_frame(AVFilterContext *ctx, int pad)
+static void request_frame(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
-    AVFilterLink *link = ctx->inputs[pad];
+    bool activate = true;
+    AVFilterLink *link;
+    int ret, pad, count = 0;
     int64_t pts;
-    int i, ret;
 
-    ff_inlink_acknowledge_status(link, &ret, &pts);
-    if (ret < 0)
-        return;
+    for (pad = 0; pad < ctx->nb_inputs; pad++) {
+        link = ctx->inputs[pad];
 
-    if (s->on_event_cb && (!ff_inlink_queued_samples(link) || ff_amix_input_want(s->mix, link)))
-        ff_inlink_request_frame(link);
-    else if (!s->on_event_cb){
-        ff_inlink_set_status(link, AVERROR_EOF);
-        for (i = 0; i < s->nb_inputs; i++) {
-            if (!ff_amix_input_empty(s->mix, ctx->inputs[i])) {
-                ff_filter_set_ready(ctx, 100);
-                break;
-            }
+        ff_inlink_acknowledge_status(link, &ret, &pts);
+        if (ret < 0){
+            /* In case that all inputs are in EOF, but there is data remains in link. */
+            if (ff_amix_input_empty(s->mix, link))
+                count++;
+            continue;
         }
-        if (i == s->nb_inputs) {
-            ff_amix_free(s->mix);
-            s->mix = NULL;
+
+        if (!s->mix || ff_amix_input_want(s->mix, link)) {
+            ff_inlink_request_frame(link);
+            activate = false;
         }
     }
+
+    if (activate && count < ctx->nb_inputs)
+        ff_filter_set_ready(ctx, 100);
 }
 
 static int output_frame(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
     AVFrame *frame = NULL;
-    int i, ret;
+    int ret;
 
     if (!s->mix)
         return AVERROR(EINVAL);
@@ -137,6 +132,7 @@ static int output_frame(AVFilterContext *ctx)
 
         s->on_event_cb(s->on_event_cb_udata, 0, (intptr_t)frame);
     }
+
     av_frame_free(&frame);
 
     return 0;
@@ -145,7 +141,6 @@ static int output_frame(AVFilterContext *ctx)
 static int abufsink_activate(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
-    bool need_activate = true;
     AVFilterLink *link;
     int i, ret = 0;
     int64_t pts;
@@ -172,17 +167,23 @@ static int abufsink_activate(AVFilterContext *ctx)
 
     output_frame(ctx);
 
-    for (i = 0; i < s->nb_inputs; i++) {
-        link = ctx->inputs[i];
+    if (s->on_event_cb)
+        request_frame(ctx);
+    else {
+        for (i = 0; i < s->nb_inputs; i++) {
+            link = ctx->inputs[i];
+            ff_inlink_set_status(link, AVERROR_EOF);
+            if (!ff_amix_input_empty(s->mix, ctx->inputs[i])) {
+                ff_filter_set_ready(ctx, 100);
+                break;
+            }
+        }
 
-        request_frame(ctx, i);
-
-        if (!s->mix || ff_outlink_frame_wanted(link))
-            need_activate = false;
+        if (i == s->nb_inputs) {
+            ff_amix_free(s->mix);
+            s->mix = NULL;
+        }
     }
-
-    if (s->on_event_cb && need_activate) //in case that all links are samples enough, no need to request frame
-        ff_filter_set_ready(ctx, 100);
 
     return 0;
 }
