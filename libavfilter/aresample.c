@@ -45,7 +45,7 @@ av_cold void ff_resample_uninit(AResampleContext *ar)
 
 int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe, AVFrame **poframe)
 {
-    int n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate;
+    int n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate + 32; // add extra size to avoid overflow
     int64_t delay;
     AVFrame *oframe;
     int ret;
