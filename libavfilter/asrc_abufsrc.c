@@ -39,8 +39,6 @@
 #include "aresample.h"
 #include "volume.h"
 
-#define SUGGESTED_NB_SAMPLES 1024
-
 #define ROUTE_ON 1
 #define ROUTE_OFF 0
 
@@ -267,8 +265,6 @@ static int abufsrc_activate(AVFilterContext *ctx)
     if (!frame)
         return AVERROR(ENOMEM);
 
-    frame->nb_samples = SUGGESTED_NB_SAMPLES;
-
     av_frame_move_ref(frame, priv->frame);
     if (priv->on_event_cb(priv->on_event_cb_udata, 0, (intptr_t)priv->frame) < 0) {
        av_frame_free(&priv->frame);
@@ -431,6 +427,10 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             if (priv->map && priv->map[i] == ROUTE_ON)
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
         }
+
+        priv->sample_fmt = AV_SAMPLE_FMT_NONE;
+        priv->sample_rate = 0;
+        av_channel_layout_uninit(&priv->ch_layout);
 
         abufsrc_set_event_cb(ctx, NULL, NULL);
 
