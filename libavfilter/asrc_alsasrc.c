@@ -622,6 +622,7 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
     src->pkt_size = ret * handle->frame_size;
     src->nb_samples = ret;
     src->linesize[0] = src->pkt_size;
+    src->time_base =  (AVRational){1, 1000000};
     src->pts = av_rescale_q(priv->timestamp,
                             (AVRational){1, handle->sample_rate},
                             (AVRational){1, 1000000});
