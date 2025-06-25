@@ -93,7 +93,7 @@ typedef struct AlsasrcPriv {
     char *sub_map_str;
     char *sub_desc;
     int subgraph_period_time;
-    AVSubGraphContext *subgraph;
+    AVSubGraphContext subgraph;
 } AlsasrcPriv;
 
 static inline int alsasrc_subgraph_avaliable(AVFilterContext *ctx, int pad)
@@ -315,9 +315,7 @@ static void alsasrc_uninit(AVFilterContext *ctx)
     AlsasrcPriv *priv = ctx->priv;
     int i;
 
-    if (priv->subgraph)
-        avfilter_asubgraph_uninit(&priv->subgraph);
-
+    avfilter_asubgraph_uninit(&priv->subgraph);
     ff_resample_uninit(&priv->resample);
 
     av_freep(&priv->map);
@@ -575,10 +573,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 
         return alsasrc_set_parameter(ctx, args);
     } else if (!strcmp(cmd, "dump") || !strcmp(cmd, "sub_cmd")) {
-        if (!priv->subgraph && !(priv->subgraph = av_mallocz(sizeof(*priv->subgraph))))
-            return AVERROR(ENOMEM);
-
-        return avfilter_asubgraph_process_command(priv->subgraph, cmd, args, res, res_len, flags);
+        return avfilter_asubgraph_process_command(&priv->subgraph, cmd, args, res, res_len, flags);
     } else if (!strcmp(cmd, "mute") ) {
         priv->mute = true;
         av_log(ctx, AV_LOG_INFO, "set %s mute.", ctx->name);
@@ -756,7 +751,7 @@ static int alsasrc_activate(AVFilterContext *ctx)
         volume_scale(&priv->vol_ctx, iframe);
 
         if (alsasrc_subgraph_avaliable(ctx, i)) {
-            ret = avfilter_asubgraph_process(priv->subgraph, iframe);
+            ret = avfilter_asubgraph_process(&priv->subgraph, iframe);
             if (ret < 0)
                 continue;
         }

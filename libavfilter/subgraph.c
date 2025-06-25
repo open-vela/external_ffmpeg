@@ -22,6 +22,7 @@
  */
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
+#include <libavutil/avstring.h>
 
 #include "avfilter_internal.h"
 #include "buffersink.h"
@@ -334,11 +335,12 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
                                      AVSubGraphFormats **cfg_out)
 {
     AVFilterFormatsConfig *graph_cfg_in, *graph_cfg_out;
-    AVSubGraphContext *graph;
-    AVFilterContext *dest_filter;
+    AVFilterContext *dest_filter = NULL;
+    AVSubGraphContext subgraph = { 0 };
     AVChannelLayout ch_layout;
     int64_t period_time = 0;
-    char args[64];
+    char *dest_name;
+    char tmp[64];
     int ret;
     int i;
 
@@ -349,13 +351,9 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
 
     av_log(NULL, AV_LOG_INFO, "subgraph query_formats: %s.\n", graph_desc);
 
-    graph = av_mallocz(sizeof(AVSubGraphContext));
-    if (!graph)
-        return AVERROR(ENOMEM);
-
     //Set tmp fmt without actually using it
     av_channel_layout_default(&ch_layout, 1);
-    ret = subgraph_create_graph(graph, graph_desc, 16000, 16000,
+    ret = subgraph_create_graph(&subgraph, graph_desc, 16000, 16000,
                                 AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16,
                                 ch_layout, ch_layout);
     if (ret < 0) {
@@ -363,11 +361,18 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
         goto fail;
     }
 
-    for (i = 0; i < graph->graph->nb_filters; i++) {
-        if (graph->graph->filters[i] != graph->src_filter &&
-            graph->graph->filters[i] != graph->sink_filter &&
-            strncmp(graph->graph->filters[i]->name, "auto", 4) != 0) {
-            dest_filter = graph->graph->filters[i];
+    av_strlcpy(tmp, graph_desc, sizeof(tmp));
+    dest_name = strtok_r(tmp, "=", NULL);
+    if (!dest_name) {
+        av_log(NULL, AV_LOG_ERROR, "find dest_filter failed.\n");
+        goto fail;
+    }
+
+    for (i = 0; i < subgraph.graph->nb_filters; i++) {
+        AVFilterContext *filter = subgraph.graph->filters[i];
+        if ((filter->name && !strcmp(dest_name, filter->name))
+            || !strcmp(dest_name, filter->filter->name)) {
+            dest_filter = subgraph.graph->filters[i];
             if (dest_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
                 av_log(NULL, AV_LOG_ERROR, "filter %s not support query_formats.\n",
                        dest_filter->name);
@@ -383,42 +388,44 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats *
         }
     }
 
-    *cfg_in = av_mallocz(sizeof(**cfg_in));
-    *cfg_out = av_mallocz(sizeof(**cfg_in));
-    if (!*cfg_in || !*cfg_out) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (dest_filter)
+        av_opt_get_int(dest_filter->priv, "period_time", 0, &period_time);
 
-    ret = subgraph_copy_formats(*cfg_in, graph_cfg_in);
-    if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "copy input formats error %d\n", ret);
-        goto fail;
-    }
+    if (cfg_in) {
+        if (!*cfg_in && !(*cfg_in = av_mallocz(sizeof(**cfg_in))))
+            goto fail;
 
-    ret = subgraph_copy_formats(*cfg_out, graph_cfg_out);
-    if (ret < 0) {
-        av_log(NULL, AV_LOG_ERROR, "copy output formats error %d\n", ret);
-        goto fail;
-    }
-
-    if (!av_opt_get_int(dest_filter->priv, "period_time", 0, &period_time)) {
         (*cfg_in)->period_time  = (int)period_time;
-        (*cfg_out)->period_time = (int)period_time;
-        av_log(NULL, AV_LOG_INFO, "subgraph need period_time = %d\n", (int)period_time);
+        ret = subgraph_copy_formats(*cfg_in, graph_cfg_in);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "copy input formats error %d\n", ret);
+            goto fail;
+        }
     }
 
-    avfilter_asubgraph_uninit(&graph);
+    if (cfg_out) {
+        if (!*cfg_out && !(*cfg_out = av_mallocz(sizeof(**cfg_out))))
+            goto fail;
+
+        (*cfg_out)->period_time = (int)period_time;
+        ret = subgraph_copy_formats(*cfg_out, graph_cfg_out);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "copy output formats error %d\n", ret);
+            goto fail;
+        }
+    }
+
+    avfilter_asubgraph_uninit(&subgraph);
     return 0;
 
 fail:
     avfilter_asubgraph_free_formats(cfg_in);
     avfilter_asubgraph_free_formats(cfg_out);
-    avfilter_asubgraph_uninit(&graph);
+    avfilter_asubgraph_uninit(&subgraph);
     return ret;
 }
 
-int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
+int avfilter_asubgraph_init(AVSubGraphContext *ctx,
                             const char *graph_desc,
                             int in_sample_rate,
                             int out_sample_rate,
@@ -427,7 +434,6 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
                             AVChannelLayout in_ch_layout,
                             AVChannelLayout out_ch_layout)
 {
-    AVSubGraphContext *ctx = *ctxp;
     AVSubCmd *cmd;
     int ret;
 
@@ -435,9 +441,6 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
         av_log(NULL, AV_LOG_ERROR, "graph_desc is needed.\n");
         return AVERROR(EINVAL);
     }
-
-    if (!ctx && !(*ctxp = ctx = av_mallocz(sizeof(*ctx))))
-        return AVERROR(ENOMEM);
 
     av_log(NULL, AV_LOG_INFO, "subgraph init parms: %s %d %d %d %d %d %d.\n",
            graph_desc, in_sample_rate, out_sample_rate,
@@ -477,24 +480,22 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
 
     return 0;
 fail:
-    avfilter_asubgraph_uninit(&ctx);
+    avfilter_asubgraph_uninit(ctx);
     return ret;
 }
 
-void avfilter_asubgraph_uninit(AVSubGraphContext **ctxp)
+void avfilter_asubgraph_uninit(AVSubGraphContext *ctx)
 {
-    if (!ctxp || !*ctxp)
+    if (!ctx)
         return;
 
-    if ((*ctxp)->graph)
-        avfilter_graph_free(&(*ctxp)->graph);
+    if (ctx->graph)
+        avfilter_graph_free(&ctx->graph);
 
-    if ((*ctxp)->cmd_queue) {
-        subgraph_clear_cmdq((*ctxp)->cmd_queue);
-        av_free((*ctxp)->cmd_queue);
+    if (ctx->cmd_queue) {
+        subgraph_clear_cmdq(ctx->cmd_queue);
+        av_freep(ctx->cmd_queue);
     }
-
-    av_freep(ctxp);
 }
 
 int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame)

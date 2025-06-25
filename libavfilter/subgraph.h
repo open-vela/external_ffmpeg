@@ -40,10 +40,10 @@ SIMPLEQ_HEAD(AVSubCmdQueue, AVSubCmd);
 
 /**
  * @struct AVSubGraphContext
- * Main context for managing filter graph instances
+ * Main context for managing subgraph instances
  */
 struct AVSubGraphContext {
-    AVFilterGraph *graph;           ///< Filter graph container
+    AVFilterGraph *graph;           ///< subgraph container
     AVFilterContext *src_filter;    ///< Source filter for input
     AVFilterContext *sink_filter;   ///< Sink filter for output
     struct AVSubCmdQueue *cmd_queue; ///< cache cmd sent when subgraph is not init
@@ -51,7 +51,7 @@ struct AVSubGraphContext {
 
 /**
  * @struct AVSubGraphFormats
- * Configuration for supported audio formats in filter graph
+ * Configuration for supported audio formats in subgraph
  */
 struct AVSubGraphFormats {
     int nb_sample_rates;            ///< Number of supported sample rates
@@ -68,11 +68,10 @@ typedef struct AVSubGraphContext   AVSubGraphContext;
 typedef struct AVSubGraphFormats   AVSubGraphFormats;
 
 /**
- * @brief Alloc and initialize the AVFilter GraphContext context,
- *        and then build the filter graph
+ * @brief initialize and build the the subgraph.
  *
- * @param[in,out] ctx           Pointer to the filter graph context pointer.
- * @param[in]     graph_desc   Filter graph description string (syntax matches
+ * @param[in,out] ctx           Pointer to the subgraph context pointer.
+ * @param[in]     graph_desc    subgraph description string (syntax matches
  *                              avfilter_graph_desc2()).
  * @param[in]     in_sample_rate    Input sample rate in Hz.
  * @param[in]     out_sample_rate   Output sample rate in Hz.
@@ -86,7 +85,7 @@ typedef struct AVSubGraphFormats   AVSubGraphFormats;
  * @note All parameters must be specified, and the format
  *       parameters must be deterministic values
  */
-int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
+int avfilter_asubgraph_init(AVSubGraphContext *ctx,
                             const char *graph_desc,
                             int in_sample_rate,
                             int out_sample_rate,
@@ -96,22 +95,22 @@ int avfilter_asubgraph_init(AVSubGraphContext **ctxp,
                             AVChannelLayout out_ch_layout);
 
 /**
- * @brief Release filter graph resources and AVSubGraphContext
- * @param[in] ctx  Pointer to the filter graph context pointer.
+ * @brief Release subgraph resources
+ * @param[in] ctx  Pointer to the subgraph context pointer.
  */
-void avfilter_asubgraph_uninit(AVSubGraphContext **ctxp);
+void avfilter_asubgraph_uninit(AVSubGraphContext *ctx);
 
 /**
- * @brief Process an audio frame through the filter graph
- * @param[in] ctx    Initialized filter graph context
+ * @brief Process an audio frame through the subgraph
+ * @param[in] ctx    Initialized subgraph context
  * @param[in] frame  Input audio frame to process
  * @return 0 on success, negative error code on failure
  */
 int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame);
 
 /**
- * @brief Send a command to the filter graph
- * @param[in] ctx      Initialized filter graph context
+ * @brief Send a command to the subgraph
+ * @param[in] ctx      Subgraph context
  * @param[in] cmd      Command string to execute
  * @param[in] args     Command arguments
  * @param[out] res     Buffer for command response
@@ -123,8 +122,8 @@ int avfilter_asubgraph_process_command(AVSubGraphContext *ctx, const char *cmd, 
                                        char *res, int res_len, int flags);
 
 /**
- * @brief Configure supported formats for the filter graph
- * @param[in]  ctx      Filter graph context
+ * @brief Configure supported formats for the subgraph
+ * @param[in]  ctx      Subgraph context
  * @param[out] cfg_in   Receives input format configuration (auto-allocated)
  * @param[out] cfg_out  Receives output format configuration (auto-allocated)
  * @note Caller must free configurations with avfilter_asubgraph_fmtconfig_free()
