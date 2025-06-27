@@ -80,12 +80,12 @@ static int subgraph_create_graph(AVSubGraphContext *ctx,
     }
 
     snprintf(args, sizeof(args),
-             "sample_rate=%d:sample_fmt=%s:channel_layout=%s",
+             "samplerates=%d:sample_formats=%s:channel_layouts=%s",
              out_sample_rate, av_get_sample_fmt_name(out_format),
              channel_layout_str);
 
     ret = avfilter_graph_create_filter(&sink_filter, avfilter_get_by_name("abuffersink"),
-                                       "abuffersink", NULL, NULL, graph);
+                                       "abuffersink", args, NULL, graph);
     if (ret < 0) {
         av_log(NULL, AV_LOG_ERROR, "cannot create audio sink filter ret %d.\n", ret);
         goto fail;
