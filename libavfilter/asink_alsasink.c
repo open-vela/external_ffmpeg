@@ -91,6 +91,15 @@ static void alsasink_consume_samples(AVFrame *frame, int consumed, int frame_siz
     frame->nb_samples -= consumed;
 }
 
+static void alsasink_check_resume(AlsaHandle *sink, AVFrame *frame)
+{
+    if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED) {
+        sink->resume_min -= frame->nb_samples;
+        if (sink->resume_min <= 0)
+            snd_pcm_pause(sink->h, 0);
+    }
+}
+
 static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
 {
     AVFilterLink *inlink = ctx->inputs[pad];
@@ -101,6 +110,7 @@ static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
     if (!sink->h || !sink->last_frame)
         return 0;
 
+    alsasink_check_resume(sink, sink->last_frame);
     ret = alsa_write(sink, (void **)sink->last_frame->data,
                      sink->last_frame->nb_samples);
     if (ret < 0)
@@ -129,12 +139,7 @@ static int alsasink_write_frame(AVFilterContext *ctx, int pad, AVFrame *frame)
     if (!frame || !frame->nb_samples)
         goto exit;
 
-    if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED) {
-        sink->resume_min -= frame->nb_samples;
-        if (sink->resume_min <= 0)
-            snd_pcm_pause(sink->h, 0);
-    }
-
+    alsasink_check_resume(sink, frame);
     ret = alsa_write(sink, (void **)frame->data, frame->nb_samples);
     if (ret < 0) {
         if (ret == -EAGAIN) {
