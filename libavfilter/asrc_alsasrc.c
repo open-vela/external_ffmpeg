@@ -46,18 +46,6 @@
 #define ROUTE_OFF 0
 #define ROUTE_ON 1
 
-typedef struct ConfigedFormats {
-    //formats for asla device
-    int device_format;
-    uint32_t device_sample_rate;
-    AVChannelLayout device_ch_layout;
-
-    //formats for subgraph
-    int subgraph_format;
-    uint32_t subgraph_sample_rate;
-    AVChannelLayout subgraph_ch_layout;
-} ConfigedFormats;
-
 typedef struct AlsasrcPriv {
     const AVClass *class;
 
@@ -87,7 +75,6 @@ typedef struct AlsasrcPriv {
     int *sub_map;
     char *sub_map_str;
     char *sub_desc;
-    int subgraph_period_time;
     AVSubGraphContext subgraph;
 } AlsasrcPriv;
 
@@ -138,119 +125,56 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
     return 0;
 }
 
-static int alsasrc_config_formats(AVFilterContext *ctx, int pad, ConfigedFormats *fmts)
+static int alsasrc_config_formats(AVFilterContext *ctx, int pad, AVAudioFormats *dev_fmt,
+                                  AVAudioFormats *sub_fmt)
 {
     AlsasrcPriv *priv = ctx->priv;
-    AVSubGraphFormats *in = NULL, *out = NULL;
-    AVChannelLayout dst_chan_layout;
     AVFilterLink *link = ctx->outputs[pad];
-    int dst_sample_rate;
-    int dst_format;
-    int found_fmt;
-    int ret;
-    int i;
+    AVAudioFormats suggest_fmt;
+    int ret, nb_channels = 0;
+
+    if (!dev_fmt)
+        return AVERROR(EINVAL);
 
     /* if subgragh is enable, use the subgraph input format to negotiate with alsasrc dev,
        or use out link format to negotiate with alsasrc dev */
     if (alsasrc_subgraph_avaliable(ctx, pad)) {
-        ret = avfilter_asubgraph_query_formats(priv->sub_desc, &in, &out);
+        suggest_fmt.format      = link->format;
+        suggest_fmt.sample_rate = link->sample_rate;
+        suggest_fmt.ch_layout   = link->ch_layout;
+
+        ret = avfilter_asubgraph_query_formats(priv->sub_desc, &suggest_fmt, dev_fmt, sub_fmt);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "Unable to query subgraph formats ret %d\n", ret);
             return ret;
         }
-
-        dst_sample_rate = in->nb_sample_rates > 0 ?
-                          in->sample_rates[0] : link->sample_rate;
-        dst_format      = in->nb_formats > 0 ?
-                          in->formats[0] : link->format;
-        dst_chan_layout = in->nb_channel_layouts > 0 ?
-                          in->channel_layouts[0] : link->ch_layout;
-
-        priv->subgraph_period_time = in->period_time;
-
-        // find the best match formats for subgraph. if not found, use the first one.
-        if (out->nb_sample_rates > 0) {
-            found_fmt = 0;
-            for (i = 0; i < out->nb_sample_rates; i++) {
-                if (out->sample_rates[i] == link->sample_rate) {
-                    found_fmt = 1;
-                    break;
-                }
-            }
-
-            if (found_fmt)
-                fmts->subgraph_sample_rate = out->sample_rates[i];
-            else
-                fmts->subgraph_sample_rate = out->sample_rates[0];
-        } else {
-            fmts->subgraph_sample_rate = link->sample_rate;
-        }
-
-        if (out->nb_formats > 0) {
-            found_fmt = 0;
-            for (i = 0; i < out->nb_formats; i++) {
-                if (out->formats[i] == link->format) {
-                    found_fmt = 1;
-                    break;
-                }
-            }
-
-            if (found_fmt)
-                fmts->subgraph_format = out->formats[i];
-            else
-                fmts->subgraph_format = out->formats[0];
-        } else {
-            fmts->subgraph_format = link->format;
-        }
-
-        if (out->nb_channel_layouts > 0) {
-            found_fmt = 0;
-            for (i = 0; i < out->nb_channel_layouts; i++) {
-                if (!av_channel_layout_compare(&out->channel_layouts[i], &link->ch_layout)) {
-                    found_fmt = 1;
-                    break;
-                }
-            }
-            if (found_fmt)
-                av_channel_layout_copy(&fmts->subgraph_ch_layout, &out->channel_layouts[i]);
-            else
-                av_channel_layout_copy(&fmts->subgraph_ch_layout, &out->channel_layouts[0]);
-        } else {
-            av_channel_layout_copy(&fmts->subgraph_ch_layout, &link->ch_layout);
-        }
     } else {
-        dst_sample_rate = link->sample_rate;
-        dst_chan_layout = link->ch_layout;
-        dst_format      = link->format;
+        dev_fmt->period_time = 0;
+        dev_fmt->format      = link->format;
+        dev_fmt->sample_rate = link->sample_rate;
+        dev_fmt->ch_layout   = link->ch_layout;
     }
 
     ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
-                                            dst_format, &fmts->device_format);
+                                            dev_fmt->format, &dev_fmt->format);
     if (ret < 0)
         goto end;
 
     ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
-                                            dst_sample_rate,
-                                            &fmts->device_sample_rate);
+                                            dev_fmt->sample_rate, &dev_fmt->sample_rate);
     if (ret < 0)
         goto end;
 
     ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
-                                            dst_chan_layout.nb_channels,
-                                            &fmts->device_ch_layout.nb_channels);
+                                            dev_fmt->ch_layout.nb_channels, &nb_channels);
     if (ret < 0)
         goto end;
 
-    if (fmts->device_ch_layout.nb_channels == dst_chan_layout.nb_channels)
-        av_channel_layout_copy(&fmts->device_ch_layout, &dst_chan_layout);
-    else
-        av_channel_layout_default(&fmts->device_ch_layout,
-                                  fmts->device_ch_layout.nb_channels);
+    if (nb_channels != dev_fmt->ch_layout.nb_channels)
+        av_channel_layout_default(&dev_fmt->ch_layout, nb_channels);
 
 end:
-    avfilter_asubgraph_free_formats(&in);
-    avfilter_asubgraph_free_formats(&out);
-    return ret < 0 ? ret : 0;
+    return ret;
 }
 
 static void alsasrc_close(AVFilterContext *ctx)
@@ -298,7 +222,6 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     ff_resample_init(&priv->resample);
     priv->format = AV_SAMPLE_FMT_NONE;
     priv->sample_rate = 0;
-    priv->subgraph_period_time = 0;
     priv->volume = -1.0f;
     priv->mute = false;
     av_channel_layout_uninit(&priv->ch_layout);
@@ -627,9 +550,9 @@ fail:
 
 static int alsasrc_open(AVFilterContext *ctx)
 {
+    AVAudioFormats dev_fmt, sub_fmt;
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
-    ConfigedFormats config_fmts = { 0 };
     int ret;
     int pad;
     int i;
@@ -646,45 +569,38 @@ static int alsasrc_open(AVFilterContext *ctx)
             break;
     }
 
-    ret = alsasrc_config_formats(ctx, pad, &config_fmts);
+    ret = alsasrc_config_formats(ctx, pad, &dev_fmt, &sub_fmt);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "config formats failed %d.\n", ret);
         return ret;
     }
 
     if (alsasrc_subgraph_avaliable(ctx, pad)) {
-        ret = avfilter_asubgraph_init(&priv->subgraph, priv->sub_desc,
-                                      config_fmts.device_sample_rate,
-                                      config_fmts.subgraph_sample_rate,
-                                      config_fmts.device_format,
-                                      config_fmts.subgraph_format,
-                                      config_fmts.device_ch_layout,
-                                      config_fmts.subgraph_ch_layout);
+        ret = avfilter_asubgraph_init(&priv->subgraph, priv->sub_desc, dev_fmt, sub_fmt);
         if (ret < 0) {
            av_log(ctx, AV_LOG_ERROR, "subgraph(%s) init failed %d.\n", priv->sub_desc, ret);
            return ret;
        }
     }
-    handle->period_time = priv->subgraph_period_time ?
-                          priv->subgraph_period_time : priv->period_time;
-    priv->period_size = handle->period_time * config_fmts.device_sample_rate / 1000;
+    handle->period_time = dev_fmt.period_time ?
+                          dev_fmt.period_time : priv->period_time;
+    priv->period_size = handle->period_time * dev_fmt.sample_rate / 1000;
     handle->periods = priv->periods;
-    priv->subgraph_period_time = 0;
 
     ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE,
-                    config_fmts.device_sample_rate,
-                    config_fmts.device_ch_layout.nb_channels,
-                    config_fmts.device_format);
+                    dev_fmt.sample_rate,
+                    dev_fmt.ch_layout.nb_channels,
+                    dev_fmt.format);
     if (ret < 0)
         return ret;
 
-    handle->format = config_fmts.device_format;
-    handle->sample_rate = config_fmts.device_sample_rate;
-    av_channel_layout_copy(&handle->ch_layout, &config_fmts.device_ch_layout);
+    handle->format = dev_fmt.format;
+    handle->sample_rate = dev_fmt.sample_rate;
+    av_channel_layout_copy(&handle->ch_layout, &dev_fmt.ch_layout);
 
     priv->timestamp = 0;
 
-    ret = volume_init(&priv->vol_ctx, config_fmts.device_format);
+    ret = volume_init(&priv->vol_ctx, dev_fmt.format);
     if (ret < 0)
         goto error;
 

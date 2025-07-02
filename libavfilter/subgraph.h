@@ -50,22 +50,18 @@ struct AVSubGraphContext {
 };
 
 /**
- * @struct AVSubGraphFormats
+ * @struct AVAudioFormats
  * Configuration for supported audio formats in subgraph
  */
-struct AVSubGraphFormats {
-    int nb_sample_rates;            ///< Number of supported sample rates
-    int nb_formats;                 ///< Number of supported sample formats
-    int nb_channel_layouts;         ///< Number of supported channel layouts
+struct AVAudioFormats {
+    int sample_rate;
+    enum AVSampleFormat format;
+    AVChannelLayout ch_layout;
     int period_time;
-
-    int *sample_rates;              ///< Array of supported sample rates
-    enum AVSampleFormat *formats;   ///< Array of supported sample formats
-    AVChannelLayout *channel_layouts; ///< Array of supported channel layouts
 };
 
 typedef struct AVSubGraphContext   AVSubGraphContext;
-typedef struct AVSubGraphFormats   AVSubGraphFormats;
+typedef struct AVAudioFormats      AVAudioFormats;
 
 /**
  * @brief initialize and build the the subgraph.
@@ -73,12 +69,8 @@ typedef struct AVSubGraphFormats   AVSubGraphFormats;
  * @param[in,out] ctx           Pointer to the subgraph context pointer.
  * @param[in]     graph_desc    subgraph description string (syntax matches
  *                              avfilter_graph_desc2()).
- * @param[in]     in_sample_rate    Input sample rate in Hz.
- * @param[in]     out_sample_rate   Output sample rate in Hz.
- * @param[in]     in_format         Input sample format.
- * @param[in]     out_format        Output sample format.
- * @param[in]     in_ch_layout      Input channel layout.
- * @param[in]     out_ch_layout     Output channel layout.
+ * @param[in]     src_fmt       The formats of src_filter in subgraph.
+ * @param[in]     sink_fmt      The formats of sink_filter in subgraph.
  *
  * @return 0 on success, negative error code on failure
  *
@@ -87,12 +79,8 @@ typedef struct AVSubGraphFormats   AVSubGraphFormats;
  */
 int avfilter_asubgraph_init(AVSubGraphContext *ctx,
                             const char *graph_desc,
-                            int in_sample_rate,
-                            int out_sample_rate,
-                            enum AVSampleFormat in_format,
-                            enum AVSampleFormat out_format,
-                            AVChannelLayout in_ch_layout,
-                            AVChannelLayout out_ch_layout);
+                            const AVAudioFormats src_fmt,
+                            const AVAudioFormats sink_fmt);
 
 /**
  * @brief Release subgraph resources
@@ -123,19 +111,23 @@ int avfilter_asubgraph_process_command(AVSubGraphContext *ctx, const char *cmd, 
 
 /**
  * @brief Configure supported formats for the subgraph
- * @param[in]  ctx      Subgraph context
- * @param[out] cfg_in   Receives input format configuration (auto-allocated)
- * @param[out] cfg_out  Receives output format configuration (auto-allocated)
- * @note Caller must free configurations with avfilter_asubgraph_fmtconfig_free()
- * @return 0 on success, negative error code on failure
+ * @param[in]  ctx        Subgraph context
+ * @param[in]  sug_fmt    Caller suggest formats to dest_filter.
+ * @param[out] conf_src   Subgraph returns the best matching in_format of dest_filter.
+ * @param[out] conf_sink  Subgraph returns the best matching out_format of dest_filter.
+ *
+ * @return 0 on success, negative error code on failure.
+ *
+ * @note the conf_src and conf_sink are formats supported by dest_filter, not subgraph.
+ *       Subgraphs theoretically support any explicit input/output format.
  */
-int avfilter_asubgraph_query_formats(const char *graph_desc, AVSubGraphFormats **cfg_in,
-                                     AVSubGraphFormats **cfg_out);
+int avfilter_asubgraph_query_formats(const char *graph_desc, const AVAudioFormats *sug_fmt,
+                                     AVAudioFormats *src_fmt, AVAudioFormats *sink_fmt);
 
 /**
- * @brief Free a format configuration structure
- * @param[in,out] cfg  Double pointer to configuration to free
+ * @brief init/reset a AVAudioFormats structure to default values.
+ * @param[in,out] cfg  Pointer to AVAudioFormats structure.
  */
-void avfilter_asubgraph_free_formats(AVSubGraphFormats **cfg);
+void avfilter_asubgraph_reinit_formats(AVAudioFormats *cfg);
 
 #endif /* AVFILTER_SUBGRAPH_H */
