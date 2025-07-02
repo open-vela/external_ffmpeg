@@ -69,33 +69,14 @@ typedef struct TinyCompressContext {
 static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
+    FilterLinkInternal *li;
     for (int i = 0; i < ctx->nb_outputs; i++) {
         if (s->map && s->map[i] == 0)
             continue;
-        FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+        li = ff_link_internal(ctx->outputs[i]);
         li->frame_wanted_out = 1;
     }
     ff_filter_set_ready(ctx, 100);
-}
-
-static int query_formats(const AVFilterContext *ctx,
-                        AVFilterFormatsConfig **cfg_in,
-                        AVFilterFormatsConfig **cfg_out)
-{
-    int sample_rates[] = { 44100, -1 };
-    AVChannelLayout layout[] = { AV_CHANNEL_LAYOUT_STEREO, { 0 } };
-    enum AVSampleFormat sample_fmts[] = { AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE };
-    int ret;
-
-    ret = ff_set_common_formats_from_list2(ctx, cfg_in, cfg_out, sample_fmts);
-    if (ret < 0)
-        return ret;
-
-    ret = ff_set_common_channel_layouts_from_list2(ctx, cfg_in, cfg_out, layout);
-    if (ret < 0)
-        return ret;
-
-    return ff_set_common_samplerates_from_list2(ctx, cfg_in, cfg_out, sample_rates);
 }
 
 static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
@@ -171,7 +152,8 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     s->compress = compress_open_by_name(s->devname, COMPRESS_OUT, &config);
     if (!s->compress || !is_compress_ready(s->compress)) {
         av_log(ctx, AV_LOG_ERROR, "Failed to open device node: %s\n", s->devname);
-        return AVERROR(EIO);
+        ret = AVERROR(EIO);
+        goto error;
     }
 
     s->fragment_size = config.fragment_size;
@@ -232,6 +214,10 @@ error:
         compress_close(s->compress);
         s->compress = NULL;
     }
+
+    if (config.codec)
+        free(config.codec);
+
     av_packet_free(&s->pkt);
     s->dec_ctx = NULL;
 
@@ -569,7 +555,6 @@ const AVFilter ff_asrc_tinycomprsrc = {
     .description   = NULL_IF_CONFIG_SMALL("Read audio data using tinycompress."),
     .priv_size     = sizeof(TinyCompressContext),
     .priv_class    = &tinycomprsrc_class,
-    FILTER_QUERY_FUNC2(query_formats),
     .activate      = activate,
     .init          = init,
     .uninit        = uninit,
