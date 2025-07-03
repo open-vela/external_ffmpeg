@@ -124,8 +124,7 @@ static int adevsrc_open(AVFilterContext *ctx)
     if (!avcodec_is_pcm_lossless(link->codec))
        goto reconfig;
 
-    st = priv->fmt_ctx->streams[0];
-    if (!st)
+    if (priv->fmt_ctx->nb_streams <= 0 || !(st = priv->fmt_ctx->streams[0]))
         goto out;
 
     st->time_base = (AVRational){ 1, st->codecpar->sample_rate };
