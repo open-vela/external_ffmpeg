@@ -4255,9 +4255,16 @@ find_filters_extern(){
     file=$source_path/$1
     sed -n 's/^extern const AVFilter ff_[avfsinkrc]\{2,5\}_\([[:alnum:]_]\{1,\}\);/\1_filter/p' $file
 }
+
 if [ -z "$FILTER_LIST" ]; then
     FILTER_LIST=$(find_filters_extern libavfilter/allfilters.c)
+fi
+
+if [ -z "$ENCODER_LIST" ]; then
     ENCODER_LIST=$(find_things_extern encoder FFCodec libavcodec/allcodecs.c)
+fi
+
+if [ -z "$DECODER_LIST" ]; then
     DECODER_LIST=$(find_things_extern decoder FFCodec libavcodec/allcodecs.c)
 fi
 OUTDEV_LIST=$(find_things_extern muxer FFOutputFormat libavdevice/alldevices.c outdev)
