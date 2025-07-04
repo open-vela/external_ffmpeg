@@ -87,6 +87,7 @@ typedef struct AlsasrcPriv {
     AResampleContext resample;
 
     VolumeContext vol_ctx;
+    double volume;
     bool mute;
 
     int *sub_map;
@@ -474,15 +475,13 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
             ret = av_channel_layout_from_string(&priv->cmd_ch_layout, value);
             av_log(ctx, AV_LOG_INFO, "Set ch_layout to %s\n", value);
         } else if (!strcmp(key, "volume")) {
-            double volume;
-
-            ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+            ret = av_expr_parse_and_eval(&priv->volume, value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
             if (ret < 0) {
                 av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n", ctx->name, value);
                 goto end;
             }
 
-            volume_set(&priv->vol_ctx, volume);
+            volume_set(&priv->vol_ctx, priv->volume);
 
             av_log(priv, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, priv->vol_ctx.volume);
         } else
@@ -698,6 +697,7 @@ static int alsasrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto error;
 
+    priv->vol_ctx.volume = priv->volume;
     return 0;
 
 error:
