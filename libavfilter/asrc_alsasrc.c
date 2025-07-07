@@ -299,6 +299,7 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     priv->format = AV_SAMPLE_FMT_NONE;
     priv->sample_rate = 0;
     priv->subgraph_period_time = 0;
+    priv->volume = -1.0f;
     priv->mute = false;
     av_channel_layout_uninit(&priv->ch_layout);
 
@@ -687,7 +688,8 @@ static int alsasrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto error;
 
-    priv->vol_ctx.volume = priv->volume;
+    if (priv->volume != -1.0f)
+        priv->vol_ctx.volume = priv->volume;
     return 0;
 
 error:
