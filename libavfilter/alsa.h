@@ -33,6 +33,7 @@
 
 typedef struct AlsaHandle {
     snd_pcm_t *h;
+    bool draining;
     int frame_size;
     AVFrame *last_frame;
     int periods;

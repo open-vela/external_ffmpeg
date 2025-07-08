@@ -289,9 +289,6 @@ fail:
 
 int alsa_close(AlsaHandle *s)
 {
-    if (snd_pcm_stream(s->h) == SND_PCM_STREAM_PLAYBACK)
-        snd_pcm_drain(s->h);
-
     snd_pcm_close(s->h);
     av_frame_free(&s->last_frame);
     s->h = NULL;

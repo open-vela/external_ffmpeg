@@ -66,16 +66,28 @@ static int alsasink_open(AVFilterContext *ctx, int pad)
 
 }
 
-static int alsasink_close(AVFilterContext *ctx, int pad)
+static void alsasink_drain(AVFilterContext *ctx, int pad)
 {
     AlsaSinkPriv *priv = ctx->priv;
     AlsaHandle *sink = &priv->handles[pad];
 
     if (!sink->h)
-        return 0;
+        return;
 
+    sink->draining = true;
+    snd_pcm_drain(sink->h);
+}
+
+static void alsasink_close(AVFilterContext *ctx, int pad)
+{
+    AlsaSinkPriv *priv = ctx->priv;
+    AlsaHandle *sink = &priv->handles[pad];
+
+    if (!sink->h)
+        return;
+
+    sink->draining = false;
     alsa_close(sink);
-    return 0;
 }
 
 static void alsasink_consume_samples(AVFrame *frame, int consumed, int frame_size, int ch)
@@ -239,7 +251,7 @@ static int alsasink_activate(AVFilterContext *ctx)
         if (ret >= 0)
             ff_inlink_request_frame(inlink);
         else if (ret == AVERROR_EOF) {
-            alsasink_close(ctx, i);
+            alsasink_drain(ctx, i);
             ret = 0;
         }
     }
@@ -304,17 +316,26 @@ static int alsasink_process_command(AVFilterContext *ctx,
         return ret;
     } else if (!strcmp(cmd, "poll_available")) {
         snd_pcm_sw_params_t *sw_params;
+        snd_pcm_state_t state;
 
         for (i = 0; i < ctx->nb_inputs; i++) {
             sink = &priv->handles[i];
-            if (sink->h) {
-                ret = snd_pcm_avail_update(sink->h);
-                if (ret == -EPIPE) {
-                    snd_pcm_pause(sink->h, 1);
-                    snd_pcm_sw_params_alloca(&sw_params);
-                    snd_pcm_sw_params_current(sink->h, sw_params);
-                    sink->resume_min = sw_params->avail_min;
-                }
+            if (!sink->h)
+                continue;
+
+            if (sink->draining)
+                snd_pcm_drain(sink->h);
+
+            snd_pcm_avail_update(sink->h);
+            state = snd_pcm_state(sink->h);
+            if (state == SND_PCM_STATE_XRUN) {
+                snd_pcm_pause(sink->h, 1);
+                snd_pcm_sw_params_alloca(&sw_params);
+                snd_pcm_sw_params_current(sink->h, sw_params);
+                sink->resume_min = sw_params->avail_min;
+            } else if (state == SND_PCM_STATE_SETUP) {
+                if (sink->draining)
+                    alsasink_close(ctx, i);
             }
         }
 
