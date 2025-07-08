@@ -241,9 +241,9 @@ static int alsasink_activate(AVFilterContext *ctx)
                 continue;
             else if (ret > 0) {
                 ret = alsasink_write_frame(ctx, i, frame);
-                if (ret > 0)
-                    ff_filter_set_ready(ctx, 100);
-                continue;
+                if (ret <= 0)
+                    continue;
+                ff_filter_set_ready(ctx, 100);
             }
         }
 
