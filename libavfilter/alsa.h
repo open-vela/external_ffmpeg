@@ -40,6 +40,7 @@ typedef struct AlsaHandle {
     int period_time;
     long resume_min;
     int format;
+    int poll_available;
     uint32_t sample_rate;
     AVChannelLayout ch_layout;
 } AlsaHandle;
