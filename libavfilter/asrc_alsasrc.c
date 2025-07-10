@@ -307,31 +307,45 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
     AlsasrcPriv *priv = ctx->priv;
 
     if (!strcmp(key, "format")) {
-        enum AVSampleFormat format;
-        uint32_t sample_rate;
-        int nb_channels;
-        int ret = 0;
+        AVAudioFormats formats;
+        int nb_channels = 0;
+        int pad, ret = 0;
+
+        // Only use the first ROUTE_ON pad to match sub_map
+        for (pad = 0 ; pad < ctx->nb_outputs; pad++) {
+            if (priv->map && priv->map[pad] == ROUTE_ON)
+                break;
+        }
+
+        avfilter_asubgraph_reinit_formats(&formats);
+        if (pad < ctx->nb_outputs && alsasrc_subgraph_avaliable(ctx, pad)) {
+            ret = avfilter_asubgraph_query_formats(priv->sub_desc, NULL, NULL, &formats);
+            if (ret < 0)
+                goto format_end;
+        }
 
         if (priv->format != AV_SAMPLE_FMT_NONE) {
-            format = priv->format;
-        } else {
+            formats.format = priv->format;
+        } else if (formats.format == AV_SAMPLE_FMT_NONE) {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "sample_fmts", -1, &format);
+                                                    "sample_fmts", -1, &formats.format);
             if (ret < 0)
                 goto format_end;
         }
 
         if (priv->sample_rate) {
-            sample_rate = priv->sample_rate;
-        } else {
+            formats.sample_rate = priv->sample_rate;
+        } else if (!formats.sample_rate) {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "sample_rates", -1, &sample_rate);
+                                                    "sample_rates", -1, &formats.sample_rate);
             if (ret < 0)
                 goto format_end;
         }
 
         if (priv->ch_layout.nb_channels) {
             nb_channels = priv->ch_layout.nb_channels;
+        } else if (formats.ch_layout.nb_channels) {
+            nb_channels = formats.ch_layout.nb_channels;
         } else {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
                                                     "channels", -1, &nb_channels);
@@ -340,7 +354,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
         }
 
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
-                 format, sample_rate, nb_channels);
+                 formats.format, formats.sample_rate, nb_channels);
         av_log(ctx, AV_LOG_INFO, "get_parameter: %s = %s\n", key, value);
         return 0;
 
