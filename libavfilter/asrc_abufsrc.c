@@ -232,14 +232,20 @@ static int abufsrc_activate(AVFilterContext *ctx)
     BuffSrcPriv *priv = ctx->priv;
     int i, ret, routed = 0;
     AVFrame *frame;
+    FilterLinkInternal *li;
 
     if (!priv->on_event_cb)
         return FFERROR_NOT_READY;
 
     for (i = 0; i < priv->nb_outputs; i++) {
         if (priv->map && priv->map[i] == ROUTE_ON) {
-            if (ff_outlink_frame_wanted(ctx->outputs[i]))
+            li = ff_link_internal(ctx->outputs[i]);
+            if (li->frame_wanted_out) {
+                if (priv->paused)
+                    li->frame_blocked_in = 1;
+
                 routed = 1;
+            }
         }
     }
 

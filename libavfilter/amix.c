@@ -255,6 +255,7 @@ static void input_sync_state(AMixInput *input)
 {
     AMixContext *s = input->parent;
     AVFilterLink *link = input->link;
+    FilterLinkInternal *li;
 
     if (input->state & INPUT_EOF && ff_amix_input_empty(s, link)) {
         input->state &= ~INPUT_ON;
@@ -263,6 +264,11 @@ static void input_sync_state(AMixInput *input)
 
     if (ff_outlink_get_status(link) == AVERROR_EOF)
         input->state |= INPUT_EOF;
+    else {
+        li = ff_link_internal(input->link);
+        if (li->frame_blocked_in)
+            input->state |= INPUT_EOF;
+    }
 }
 
 AMixContext *ff_amix_alloc(int sample_rate, int format, int channels)
@@ -333,7 +339,7 @@ bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
 
     input = amix_find_input(s, link);
     if (!input)
-        return false;
+        return true;
 
     if (input->state & INPUT_EOF)
         return false;
