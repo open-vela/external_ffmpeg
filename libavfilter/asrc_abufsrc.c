@@ -230,9 +230,9 @@ static av_cold void abufsrc_uninit(AVFilterContext *ctx)
 static int abufsrc_activate(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
-    int i, ret, routed = 0;
-    AVFrame *frame;
+    int i, ret, routed = 1;
     FilterLinkInternal *li;
+    AVFrame *frame;
 
     if (!priv->on_event_cb)
         return FFERROR_NOT_READY;
@@ -243,9 +243,8 @@ static int abufsrc_activate(AVFilterContext *ctx)
             if (li->frame_wanted_out) {
                 if (priv->paused)
                     li->frame_blocked_in = 1;
-
-                routed = 1;
-            }
+            } else
+                routed = 0;
         }
     }
 
