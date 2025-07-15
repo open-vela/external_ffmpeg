@@ -74,7 +74,7 @@ typedef struct BuffSrcPriv {
     double volume;
 } BuffSrcPriv;
 
-static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
+static void abufsrc_set_event_cb(AVFilterContext *ctx,
     int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
 {
     BuffSrcPriv *priv = ctx->priv;
@@ -91,11 +91,9 @@ static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
 
         ff_filter_set_ready(ctx, 100);
     }
-
-    return 0;
 }
 
-static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
+static int abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     BuffSrcPriv *priv = ctx->priv;
     int i, ret, first = 1;
@@ -404,9 +402,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         priv->sample_rate = sample_rate;
         av_channel_layout_default(&priv->ch_layout, channels);
 
-        ret = abufsrc_set_event_cb(ctx, on_event_cb, udata);
-        if (ret < 0)
-            return ret;
+        abufsrc_set_event_cb(ctx, on_event_cb, udata);
 
         ret = volume_init(&priv->vol_ctx, format);
         volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
