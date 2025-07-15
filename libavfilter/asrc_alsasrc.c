@@ -475,7 +475,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             if (priv->map && priv->map[i] == ROUTE_OFF)
             {
                 av_log(ctx, AV_LOG_INFO, "disable output%d\n", i);
-                ff_inlink_set_status(link, AVERROR_EOF);
+                ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
             }
         }
 

@@ -486,7 +486,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             AVFilterLink *link = ctx->outputs[i];
             if (s->map && s->map[i] == 0)
                 continue;
-            ff_inlink_set_status(link, AVERROR_EOF);
+            ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
         }
         s->next_pts = 0;
         tinycomprsrc_close(ctx);
@@ -502,7 +502,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         for (int i = 0; i < ctx->nb_outputs; i++) {
             AVFilterLink *link = ctx->outputs[i];
             if (s->map && s->map[i] == 0)
-                ff_inlink_set_status(link, AVERROR_EOF);
+                ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
             else if (s->map && s->map[i] == 1)
                 need_close = 0;
         }
