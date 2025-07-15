@@ -78,7 +78,7 @@ static int av_cold abufsrc_set_event_cb(AVFilterContext *ctx,
     int (*on_event_cb)(void *udata, int evt, int64_t args), void *udata)
 {
     BuffSrcPriv *priv = ctx->priv;
-    int i, ret;
+    int i;
 
     priv->on_event_cb = on_event_cb;
     priv->on_event_cb_udata = udata;
@@ -122,11 +122,6 @@ static int attribute_align_arg abufsrc_send_frame(AVFilterContext *ctx, AVFrame 
         }
     }
 
-    return 0;
-}
-
-static int config_props(AVFilterLink *link)
-{
     return 0;
 }
 
@@ -188,7 +183,6 @@ static void fade_frame(BuffSrcPriv* priv, int fade_type, AVFrame *dst, AVFrame *
     priv->fade_samples(dst->extended_data, src->extended_data, src->nb_samples,
                       src->ch_layout.nb_channels, fade_type > 1 ? -1 : 1,
                       fade_type > 1 ? src->nb_samples : 0, src->nb_samples);
-
 }
 
 static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
@@ -204,7 +198,6 @@ static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
         if (!pad.name)
             return AVERROR(ENOMEM);
 
-        pad.config_props = config_props;
         if ((ret = ff_append_outpad_free_name(ctx, &pad)) < 0)
             return ret;
     }
@@ -325,7 +318,6 @@ static int abufsrc_fadeout_last_frame(AVFilterContext *ctx)
 
 static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
 {
-
     BuffSrcPriv *priv = ctx->priv;
     char *key = NULL, *value = NULL;
     const char *p = args;
