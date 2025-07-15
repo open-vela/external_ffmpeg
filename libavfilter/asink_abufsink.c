@@ -44,9 +44,7 @@ typedef struct ABufSinkPriv {
     int nb_inputs;                  /**< number of inputs */
 
     int64_t next_pts;               /**< calculated pts for next output frame */
-    int64_t output_duration;        /**< last output frame duration to determin to take a new frame from input or not. */
 
-    int planar;
     int sample_rate;                /**< sample rate */
     AVChannelLayout ch_layout;      /**< channel layout */
     enum AVSampleFormat sample_fmt; /**< sample format */
@@ -147,8 +145,8 @@ static int output_frame(AVFilterContext *ctx)
 static int abufsink_activate(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
-    AVFilterLink *link;
     bool need_activate = true;
+    AVFilterLink *link;
     int i, ret = 0;
     int64_t pts;
 
@@ -263,46 +261,6 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
 }
 
-static int abufsink_query_formats(const AVFilterContext *ctx,
-                                AVFilterFormatsConfig **cfg_in,
-                                AVFilterFormatsConfig **cfg_out)
-{
-    AVFilterChannelLayouts *layouts = NULL;
-    AVFilterFormats *formats = NULL;
-    ABufSinkPriv *sink = ctx->priv;
-    AVChannelLayout layout;
-    int ret;
-
-    if (sink->sample_fmt != AV_SAMPLE_FMT_NONE) {
-        ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_formats_list_singleton(sink->sample_fmt));
-        if (ret < 0)
-            return ret;
-    } else {
-        const enum AVSampleFormat sample_fmts[] = {AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_NONE};
-        ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_format_list(sample_fmts));
-        if (ret < 0)
-            return ret;
-    }
-
-    if (sink->sample_rate) {
-        int sample_rates[] = { sink->sample_rate, -1 };
-        ret = ff_set_common_samplerates2(ctx, cfg_in, cfg_out, ff_make_format_list(sample_rates));
-        if (ret < 0)
-            return ret;
-    } else {
-        ret = ff_set_common_samplerates2(ctx, cfg_in, cfg_out, ff_all_samplerates());
-        if (ret < 0)
-            return ret;
-    }
-
-    if (sink->ch_layout.nb_channels) {
-        const AVChannelLayout layout_list[] = { sink->ch_layout, { 0 } };
-        return ff_set_common_channel_layouts2(ctx, cfg_in, cfg_out, ff_make_channel_layout_list(layout_list));
-    } else {
-        return ff_set_common_channel_layouts2(ctx, cfg_in, cfg_out, ff_all_channel_counts());
-    }
-}
-
 static int abufsink_init(AVFilterContext *ctx)
 {
     ABufSinkPriv *s = ctx->priv;
@@ -331,7 +289,6 @@ const AVFilter ff_asink_abufsink = {
     .priv_size       = sizeof(ABufSinkPriv),
     .priv_class      = &abufsink_class,
     .init            = abufsink_init,
-    FILTER_QUERY_FUNC2(abufsink_query_formats),
     .activate        = abufsink_activate,
     .process_command = abufsink_process_command,
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
