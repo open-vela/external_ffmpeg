@@ -57,7 +57,6 @@ struct AVAudioFormats {
     int sample_rate;
     enum AVSampleFormat format;
     AVChannelLayout ch_layout;
-    int period_time;
 };
 
 typedef struct AVSubGraphContext   AVSubGraphContext;
@@ -90,11 +89,12 @@ void avfilter_asubgraph_uninit(AVSubGraphContext *ctx);
 
 /**
  * @brief Process an audio frame through the subgraph
- * @param[in] ctx    Initialized subgraph context
- * @param[in] frame  Input audio frame to process
+ * @param[in]  ctx     Initialized subgraph context
+ * @param[in]  iframe  Input audio frame to process
+ * @param[out] poframe The processed output audio frame of subgraph allocation.
  * @return 0 on success, negative error code on failure
  */
-int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame);
+int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *iframe, AVFrame **poframe);
 
 /**
  * @brief Send a command to the subgraph

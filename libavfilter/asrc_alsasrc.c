@@ -148,7 +148,6 @@ static int alsasrc_config_formats(AVFilterContext *ctx, int pad, AVAudioFormats 
             return ret;
         }
     } else {
-        dev_fmt->period_time = 0;
         dev_fmt->format      = link->format;
         dev_fmt->sample_rate = link->sample_rate;
         dev_fmt->ch_layout   = link->ch_layout;
@@ -595,8 +594,7 @@ static int alsasrc_open(AVFilterContext *ctx)
            return ret;
        }
     }
-    handle->period_time = dev_fmt.period_time ?
-                          dev_fmt.period_time : priv->period_time;
+    handle->period_time = priv->period_time;
     priv->period_size = handle->period_time * dev_fmt.sample_rate / 1000;
     handle->periods = priv->periods;
 
@@ -651,7 +649,7 @@ static int alsasrc_activate(AVFilterContext *ctx)
        return FFERROR_NOT_READY;
 
     ret = alsasrc_read_frame(priv, &frame);
-    if (ret < 0)
+    if (ret < 0 && ret != AVERROR(EAGAIN))
         goto out;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -662,20 +660,19 @@ static int alsasrc_activate(AVFilterContext *ctx)
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        iframe = av_frame_clone(frame);
-        if (!iframe) {
-            av_frame_free(&frame);
+        if (alsasrc_subgraph_avaliable(ctx, i)) {
+            ret = avfilter_asubgraph_process(&priv->subgraph, frame, &iframe);
+            if (ret < 0)
+                continue;
+        } else if (frame && !(iframe = av_frame_clone(frame))) {
             ret = AVERROR(ENOMEM);
             goto out;
         }
 
-        volume_scale(&priv->vol_ctx, iframe);
+        if (!iframe)
+            continue;
 
-        if (alsasrc_subgraph_avaliable(ctx, i)) {
-            ret = avfilter_asubgraph_process(&priv->subgraph, iframe);
-            if (ret < 0)
-                continue;
-        }
+        volume_scale(&priv->vol_ctx, iframe);
 
         link = ctx->outputs[i];
         ret = ff_resample_frame(&priv->resample, link, iframe, &oframe);
@@ -692,9 +689,8 @@ static int alsasrc_activate(AVFilterContext *ctx)
             goto out;
     }
 
-    av_frame_free(&frame);
 out:
-
+    av_frame_free(&frame);
     if (ret == AVERROR(EAGAIN))
         return 0;
     return ret;

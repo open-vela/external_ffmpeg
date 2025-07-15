@@ -261,7 +261,6 @@ void avfilter_asubgraph_reinit_formats(AVAudioFormats *cfg)
     av_channel_layout_uninit(&cfg->ch_layout);
     cfg->format = AV_SAMPLE_FMT_NONE;
     cfg->sample_rate = 0;
-    cfg->period_time = 0;
 }
 
 int avfilter_asubgraph_query_formats(const char *graph_desc, const AVAudioFormats *sug_fmt,
@@ -272,7 +271,6 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, const AVAudioFormat
     AVFilterContext *dest_filter = NULL;
     AVSubGraphContext subgraph = { 0 };
     AVAudioFormats default_fmt;
-    int64_t period_time = 0;
     char *dest_name;
     char tmp[64];
     int ret;
@@ -339,10 +337,7 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, const AVAudioFormat
         goto fail;
     }
 
-    av_opt_get_int(dest_filter->priv, "period_time", 0, &period_time);
-
     if (src_fmt) {
-        src_fmt->period_time = (int)period_time;
         src_fmt->sample_rate = in_link->sample_rate;
         src_fmt->format = in_link->format;
         ret = av_channel_layout_copy(&src_fmt->ch_layout, &in_link->ch_layout);
@@ -351,7 +346,6 @@ int avfilter_asubgraph_query_formats(const char *graph_desc, const AVAudioFormat
     }
 
     if (sink_fmt) {
-        sink_fmt->period_time = (int)period_time;
         sink_fmt->sample_rate = out_link->sample_rate;
         sink_fmt->format = out_link->format;
         ret = av_channel_layout_copy(&sink_fmt->ch_layout, &out_link->ch_layout);
@@ -435,32 +429,41 @@ void avfilter_asubgraph_uninit(AVSubGraphContext *ctx)
     }
 }
 
-int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *frame)
+int avfilter_asubgraph_process(AVSubGraphContext *ctx, AVFrame *iframe, AVFrame **poframe)
 {
+    AVFrame *oframe;
     int ret;
+
+    if (!poframe)
+        return AVERROR(EINVAL);
 
     if (!subgraph_is_inited(ctx)) {
         av_log(NULL, AV_LOG_ERROR, "subgraph is not initialized.\n");
         return AVERROR(EINVAL);
     }
 
-    if ((ret = av_buffersrc_add_frame_flags(ctx->src_filter, frame,
-                                            AV_BUFFERSRC_FLAG_KEEP_REF)) < 0) {
-        av_log(NULL, AV_LOG_ERROR, "submitt frame to buffersrc error %s\n",
-               av_err2str(ret));
-        return ret;
+    if (iframe) {
+        ret = av_buffersrc_add_frame_flags(ctx->src_filter, iframe, AV_BUFFERSRC_FLAG_KEEP_REF);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "submitt frame to buffersrc error %s\n",
+                av_err2str(ret));
+            return ret;
+        }
     }
 
-    av_frame_unref(frame);
+    oframe = av_frame_alloc();
+    if (!oframe)
+        return AVERROR(ENOMEM);
 
-    if ((ret = av_buffersink_get_frame(ctx->sink_filter, frame)) < 0) {
+    if ((ret = av_buffersink_get_frame(ctx->sink_filter, oframe)) < 0) {
         if (ret != AVERROR(EAGAIN))
             av_log(NULL, AV_LOG_ERROR, "get frame from buffersink error%s\n",
                    av_err2str(ret));
-        av_free(frame);
+        av_frame_free(&oframe);
         return ret;
     }
 
+    *poframe = oframe;
     return 0;
 }
 
