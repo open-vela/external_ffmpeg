@@ -232,8 +232,11 @@ static int abufsrc_activate(AVFilterContext *ctx)
         if (priv->map && priv->map[i] == ROUTE_ON) {
             li = ff_link_internal(ctx->outputs[i]);
             if (li->frame_wanted_out) {
-                if (priv->paused)
+                if (priv->paused && li->frame_blocked_in == 0) {
                     li->frame_blocked_in = 1;
+                    av_log(ctx, AV_LOG_INFO, "%s xrun\n", ctx->name);
+                    ff_filter_set_ready(ctx->outputs[i]->dst, 300);
+                }
             } else
                 routed = 0;
         }

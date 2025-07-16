@@ -277,11 +277,10 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
-    ret = ff_amix_read(priv->mix, &frame);
-    if (ret != 0) {
+    ff_amix_read(priv->mix, &frame);
+    if (frame) {
         ret = tinycomprsink_send_frame(ctx, frame);
-        if (frame)
-            av_frame_free(&frame);
+        av_frame_free(&frame);
         if (ret >= 0)
             ff_filter_set_ready(ctx, 100);
         return ret;

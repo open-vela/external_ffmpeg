@@ -442,9 +442,12 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     TAILQ_FOREACH_SAFE(input, &s->inputs, entries, tinput) {
         if (input->state & INPUT_ON) {
             int left_size;
-
             left_size = input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link);
-            if (ff_outlink_get_status(input->link) == AVERROR_EOF && left_size < nb_samples) {
+
+            if (left_size == 0)
+                continue;
+
+            if ((input->state & INPUT_EOF) && left_size < nb_samples) {
                 in_buf = ff_default_get_audio_buffer(s->out, nb_samples);
                 if (!in_buf) {
                     ret = AVERROR(ENOMEM);
