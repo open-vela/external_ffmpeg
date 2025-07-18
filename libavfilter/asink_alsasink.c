@@ -56,8 +56,8 @@ static int alsasink_open(AVFilterContext *ctx, int pad)
         return 0;
 
     ret = alsa_open(sink, priv->devname, SND_PCM_STREAM_PLAYBACK,
-                    link->sample_rate, link->ch_layout.nb_channels,
-                    link->format);
+                    link->sample_rate, link->ch_layout, link->format,
+                    priv->periods, priv->period_time);
     if (ret < 0)
         return ret;
 
@@ -194,11 +194,6 @@ static int alsasink_init(AVFilterContext *ctx)
     priv->handles = av_calloc(priv->nb_inputs, sizeof(*priv->handles));
     if (!priv->handles)
         return AVERROR(ENOMEM);
-
-    for (i = 0; i < priv->nb_inputs; i++) {
-        priv->handles[i].periods = priv->periods;
-        priv->handles[i].period_time = priv->period_time;
-    }
 
     priv->volume = 1.0f;
 

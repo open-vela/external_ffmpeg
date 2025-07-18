@@ -210,7 +210,8 @@ static int alsa_get_capabilities(const char *device, int ac_type,
 }
 
 int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
-              int rate, int channels, enum AVSampleFormat smpfmt)
+              int rate, AVChannelLayout ch_layout, enum AVSampleFormat smpfmt,
+              int periods, int period_time)
 {
     snd_pcm_access_t access = SND_PCM_ACCESS_RW_INTERLEAVED;
     snd_pcm_hw_params_t *hw_params;
@@ -223,7 +224,7 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         av_log(NULL, AV_LOG_ERROR, "sample format %d is not supported\n", smpfmt);
         return AVERROR(ENOSYS);
     }
-    s->frame_size = snd_pcm_get_sample_bits(format) / 8 * channels;
+    s->frame_size = snd_pcm_get_sample_bits(format) / 8 * ch_layout.nb_channels;
 
     res = snd_pcm_open(&h, device, mode, SND_PCM_NONBLOCK);
     if (res < 0) {
@@ -262,10 +263,10 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         goto fail;
     }
 
-    res = snd_pcm_hw_params_set_channels(h, hw_params, channels);
+    res = snd_pcm_hw_params_set_channels(h, hw_params, ch_layout.nb_channels);
     if (res < 0) {
         av_log(NULL, AV_LOG_ERROR, "cannot set channel count to %d (%s)\n",
-               channels, snd_strerror(res));
+               ch_layout.nb_channels, snd_strerror(res));
         goto fail;
     }
 
@@ -279,7 +280,12 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         goto fail;
     }
 
-    s->h = h;
+    s->h           = h;
+    s->ch_layout   = ch_layout;
+    s->format      = smpfmt;
+    s->sample_rate = rate;
+    s->period_time = period_time;
+    s->periods     = periods;
     return 0;
 
 fail:
@@ -291,7 +297,12 @@ int alsa_close(AlsaHandle *s)
 {
     snd_pcm_close(s->h);
     av_frame_free(&s->last_frame);
-    s->h = NULL;
+    av_channel_layout_uninit(&s->ch_layout);
+    s->sample_rate = 0;
+    s->period_time = 0;
+    s->periods     = 0;
+    s->h           = NULL;
+    s->format      = AV_SAMPLE_FMT_NONE;
 
     return 0;
 }

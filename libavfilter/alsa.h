@@ -39,14 +39,15 @@ typedef struct AlsaHandle {
     int periods;
     int period_time;
     long resume_min;
-    int format;
+    enum AVSampleFormat format;
     int poll_available;
     uint32_t sample_rate;
     AVChannelLayout ch_layout;
 } AlsaHandle;
 
 int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
-              int rate, int channels, enum AVSampleFormat smpfmt);
+              int rate, AVChannelLayout ch_layout, enum AVSampleFormat smpfmt,
+              int periods, int period_time);
 int alsa_close(AlsaHandle *s);
 int alsa_write(AlsaHandle *s, void **bufs, int size);
 int alsa_read(AlsaHandle *s, void *buffer, int size);

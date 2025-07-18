@@ -594,21 +594,14 @@ static int alsasrc_open(AVFilterContext *ctx)
            return ret;
        }
     }
-    handle->period_time = priv->period_time;
-    priv->period_size = handle->period_time * dev_fmt.sample_rate / 1000;
-    handle->periods = priv->periods;
 
     ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE,
-                    dev_fmt.sample_rate,
-                    dev_fmt.ch_layout.nb_channels,
-                    dev_fmt.format);
+                    dev_fmt.sample_rate, dev_fmt.ch_layout, dev_fmt.format,
+                    priv->periods, priv->period_time);
     if (ret < 0)
         return ret;
 
-    handle->format = dev_fmt.format;
-    handle->sample_rate = dev_fmt.sample_rate;
-    av_channel_layout_copy(&handle->ch_layout, &dev_fmt.ch_layout);
-
+    priv->period_size = handle->period_time * handle->sample_rate / 1000;
     priv->timestamp = 0;
 
     ret = volume_init(&priv->vol_ctx, dev_fmt.format);
