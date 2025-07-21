@@ -35,8 +35,6 @@
 #include "avfilter.h"
 #include "aresample.h"
 #include "avfilter_internal.h"
-#include "buffersink.h"
-#include "buffersrc.h"
 #include "filters.h"
 #include "formats.h"
 #include "internal.h"
