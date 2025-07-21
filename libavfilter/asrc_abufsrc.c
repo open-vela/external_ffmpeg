@@ -25,18 +25,12 @@
 
 #include "libavutil/eval.h"
 #include "libavutil/avstring.h"
-#include "libavutil/channel_layout.h"
 #include "libavutil/frame.h"
 #include "libavutil/internal.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
-#include "libavutil/samplefmt.h"
-#include "audio.h"
 #include "avfilter.h"
 #include "avfilter_internal.h"
-#include "filters.h"
-#include "formats.h"
-#include "aresample.h"
 #include "volume.h"
 
 #define ROUTE_ON 1
