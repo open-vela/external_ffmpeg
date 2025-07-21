@@ -40,6 +40,7 @@
 #include "internal.h"
 #include "volume.h"
 #include "subgraph.h"
+#include "mapping.h"
 
 #define ROUTE_OFF 0
 #define ROUTE_ON 1

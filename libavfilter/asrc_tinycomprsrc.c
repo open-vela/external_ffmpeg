@@ -37,6 +37,7 @@
 #include "filters.h"
 #include "formats.h"
 #include "volume.h"
+#include "mapping.h"
 
 #include <nuttx/audio/audio.h>
 #include <poll.h>

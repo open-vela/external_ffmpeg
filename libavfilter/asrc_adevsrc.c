@@ -39,6 +39,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "libavutil/mem.h"
+#include "mapping.h"
 
 #define AVFMT_FLAG_CODEC_READY    0x20000
 

@@ -32,6 +32,7 @@
 #include "avfilter.h"
 #include "avfilter_internal.h"
 #include "volume.h"
+#include "mapping.h"
 
 #define ROUTE_ON 1
 #define ROUTE_OFF 0

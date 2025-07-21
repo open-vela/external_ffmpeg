@@ -48,6 +48,7 @@
 #include "formats.h"
 #include <pthread.h>
 #include "aresample.h"
+#include "mapping.h"
 
 enum MixInputState {
     INPUT_ON  = 1,    /**< input is active */

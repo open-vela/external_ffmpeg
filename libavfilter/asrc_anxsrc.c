@@ -38,6 +38,7 @@
 #include "internal.h"
 #include "formats.h"
 #include "aresample.h"
+#include "mapping.h"
 
 #define ROUTE_ON 0
 #define ROUTE_OFF -1

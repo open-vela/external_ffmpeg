@@ -181,26 +181,26 @@ OBJS-$(CONFIG_VOLUME_FILTER)                 += af_volume.o
 OBJS-$(CONFIG_VOLUMEDETECT_FILTER)           += af_volumedetect.o
 
 OBJS-$(CONFIG_AEVALSRC_FILTER)               += aeval.o
-OBJS-$(CONFIG_ABUFSRC_FILTER)                += asrc_abufsrc.o volume.o
+OBJS-$(CONFIG_ABUFSRC_FILTER)                += asrc_abufsrc.o volume.o mapping.o
 OBJS-$(CONFIG_ABUFSINK_FILTER)               += asink_abufsink.o amix.o
 OBJS-$(CONFIG_AFDELAYSRC_FILTER)             += asrc_afdelaysrc.o
 OBJS-$(CONFIG_AFIREQSRC_FILTER)              += asrc_afirsrc.o
 OBJS-$(CONFIG_AFIRSRC_FILTER)                += asrc_afirsrc.o
-OBJS-$(CONFIG_AMIXSRC_FILTER)                += asrc_amixsrc.o
+OBJS-$(CONFIG_AMIXSRC_FILTER)                += asrc_amixsrc.o mapping.o
 OBJS-$(CONFIG_ANOISESRC_FILTER)              += asrc_anoisesrc.o
 OBJS-$(CONFIG_ANULLSRC_FILTER)               += asrc_anullsrc.o
-OBJS-$(CONFIG_ANXSRC_FILTER)                 += asrc_anxsrc.o
+OBJS-$(CONFIG_ANXSRC_FILTER)                 += asrc_anxsrc.o mapping.o
 OBJS-$(CONFIG_FLITE_FILTER)                  += asrc_flite.o
 OBJS-$(CONFIG_HILBERT_FILTER)                += asrc_hilbert.o
 OBJS-$(CONFIG_SINC_FILTER)                   += asrc_sinc.o
 OBJS-$(CONFIG_SINE_FILTER)                   += asrc_sine.o
 
-OBJS-$(CONFIG_TINYCOMPRSRC_FILTER)           += asrc_tinycomprsrc.o volume.o
+OBJS-$(CONFIG_TINYCOMPRSRC_FILTER)           += asrc_tinycomprsrc.o volume.o mapping.o
 OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
-OBJS-$(CONFIG_ADEVSRC_FILTER)                += asrc_adevsrc.o
+OBJS-$(CONFIG_ADEVSRC_FILTER)                += asrc_adevsrc.o mapping.o
 OBJS-$(CONFIG_ALSASINK_FILTER)               += asink_alsasink.o alsa.o
 OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
-OBJS-$(CONFIG_ALSASRC_FILTER)                += asrc_alsasrc.o alsa.o volume.o
+OBJS-$(CONFIG_ALSASRC_FILTER)                += asrc_alsasrc.o alsa.o volume.o mapping.o
 OBJS-$(CONFIG_TINYCOMPRSINK_FILTER)         += asink_tinycomprsink.o amix.o
 
 # video filters
