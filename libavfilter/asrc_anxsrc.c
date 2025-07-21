@@ -446,12 +446,6 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         if (ret < 0)
             av_log(ctx, AV_LOG_ERROR, "send empty frame failed:%d\n", ret);
 
-        for (i = 0; i < ctx->nb_outputs; i++) {
-            link = ctx->outputs[i];
-            if (link && avfilter_link_is_active(link))
-                break;
-        }
-
         if (i == ctx->nb_outputs && priv->running) {
             ff_nuttx_close(priv);
             src->running = false;
@@ -489,7 +483,6 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         return 0;
     } else if (!av_strcasecmp(cmd, "map")) {
         int *old_map = NULL;
-        int active_outputs = 0;
         int i;
 
         if (src->map) {
@@ -514,16 +507,11 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
                 }
             }
 
-            if (old_map[i] == ROUTE_OFF && src->map[i] == ROUTE_ON) {
-                if (!avfilter_link_is_active(ctx->outputs[i]))
-                    active_outputs++;
-            }
-
             if (old_map[i] != src->map[i])
                 ff_filter_set_ready(ctx, 100);
         }
 
-        if (i == src->nb_outputs && !active_outputs) {
+        if (i == src->nb_outputs) {
             ff_nuttx_close(priv);
             src->running = false;
         }

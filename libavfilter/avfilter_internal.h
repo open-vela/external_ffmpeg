@@ -85,13 +85,6 @@ typedef struct FilterLinkInternal {
         AVLINK_STARTINIT,       ///< started, but incomplete
         AVLINK_INIT             ///< complete
     } init_state;
-
-    /**
-     * Indicates whether the link is active.
-     * - 0: No data flow (link is closed).
-     * - 1: Data flow is present (link is active).
-     */
-    int is_active;
 } FilterLinkInternal;
 
 static inline FilterLinkInternal *ff_link_internal(AVFilterLink *link)
