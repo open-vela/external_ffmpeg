@@ -677,7 +677,7 @@ const FFOutputFormat ff_vc1_muxer = {
 #endif
 
 #if CONFIG_OPUSRAW_MUXER
-AVOutputFormat ff_opusraw_muxer = {
+const FFOutputFormat ff_opusraw_muxer = {
     .p.name              = "opusraw",
     .p.long_name         = NULL_IF_CONFIG_SMALL("raw opus raw audio"),
     .p.extensions        = "opus",
