@@ -25,6 +25,10 @@
 
 #include "avcodec.h"
 #include "internal.h"
+#include "codec_internal.h"
+#include "libavutil/mem.h"
+#include "libavutil/channel_layout.h"
+#include "libavutil/mem.h"
 
 #include <SKP_Silk_SDK_API.h>
 
@@ -75,7 +79,7 @@ static int silk_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     if (av_frame->nb_samples < avctx->frame_size)
         return 0;
 
-    ret = ff_alloc_packet2(avctx, avpkt, MAX_BYTES_PER_FRAME * MAX_INPUT_FRAMES , 0);
+    ret = av_new_packet(avpkt, MAX_BYTES_PER_FRAME * MAX_INPUT_FRAMES);
     if (ret < 0)
         return ret;
 
@@ -107,19 +111,23 @@ static int silk_encode_close(AVCodecContext *avctx)
     return 0;
 }
 
+static const AVChannelLayout silk_ch_layouts[] = {
+    AV_CHANNEL_LAYOUT_MONO,
+    { 0 }
+};
+
 const FFCodec ff_silk_encoder = {
     .p.name                  = "silk",
     .p.long_name             = NULL_IF_CONFIG_SMALL("Silk V3 Audio Encoder"),
     .p.type                  = AVMEDIA_TYPE_AUDIO,
     .p.id                    = AV_CODEC_ID_SILK,
     .p.capabilities          = AV_CODEC_CAP_SMALL_LAST_FRAME,
-    .p.ch_layouts            = (const uint64_t[]) { AV_CH_LAYOUT_MONO, 0},
+    .p.ch_layouts            = silk_ch_layouts,
     .p.sample_fmts           = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_S16,
                                                              AV_SAMPLE_FMT_NONE },
     .p.supported_samplerates = (const int[]) { 16000, 0 },
-    .caps_internal           = FF_CODEC_CAP_INIT_THREADSAFE,
     .priv_data_size          = sizeof(SilkEncContext),
     .init                    = silk_encode_init,
-    .encode2                 = silk_encode_frame,
+    FF_CODEC_ENCODE_CB(silk_encode_frame),
     .close                   = silk_encode_close,
 };

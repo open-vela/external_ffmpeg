@@ -52,7 +52,7 @@ static int silk_read_header(AVFormatContext *s)
 
     st->codecpar->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id    = AV_CODEC_ID_SILK;
-    st->codecpar->channels    = 1;
+    av_channel_layout_default(&st->codecpar->ch_layout, 1);
     st->codecpar->sample_rate = 16000;
 
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
