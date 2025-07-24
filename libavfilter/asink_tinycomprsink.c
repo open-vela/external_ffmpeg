@@ -36,6 +36,9 @@
 #include "filters.h"
 #include "avfilter.h"
 #include "formats.h"
+#include "avfilter_internal.h"
+
+#define TINYCOMPRSINK_SILENCE_FRAME_DURATION 20
 
 typedef struct CompSinkPriv {
     const AVClass *class;
@@ -48,6 +51,9 @@ typedef struct CompSinkPriv {
     enum AVCodecID codec_id;
     AVPacket *last_pkt;
     AMixContext *mix;
+    int frame_count; /**< number of silent frames before pause */
+    int timeout; /**< time tolerance for silence frame before pause */
+    bool started;
     FAR struct compress *compress;
 } CompSinkPriv;
 
@@ -228,6 +234,9 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    priv->started = true;
+    priv->frame_count = 0;
+
     return 0;
 
 out:
@@ -259,6 +268,8 @@ static void tinycomprsink_stop(AVFilterContext *ctx)
     compress_drain(priv->compress);
     compress_close(priv->compress);
     priv->compress = NULL;
+    priv->started = false;
+    priv->frame_count = 0;
 }
 
 static int tinycomprsink_output_packet(AVFilterContext *ctx)
@@ -295,6 +306,71 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
         tinycomprsink_stop(ctx);
 
     return ret;
+}
+
+static AVFrame* tinycomprsink_generate_silence_frame(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    int64_t duration;
+    int nb_samples;
+    AVFrame *frame;
+
+    nb_samples = priv->enc_ctx->frame_size;
+    duration = (nb_samples ?
+                (av_rescale_q(nb_samples,
+                             (AVRational){1, priv->sample_rate},
+                             AV_TIME_BASE_Q)) :
+                TINYCOMPRSINK_SILENCE_FRAME_DURATION * 1000ll) *
+                priv->frame_count;
+
+    if (duration >= priv->timeout * 1000ll)
+        return NULL;
+
+    frame = av_frame_alloc();
+    if (frame) {
+        frame->sample_rate = priv->sample_rate;
+        frame->format = priv->sample_fmt;
+        frame->ch_layout = priv->ch_layout;
+        if (priv->enc_ctx->frame_size)
+            frame->nb_samples = priv->enc_ctx->frame_size;
+        else
+            frame->nb_samples = frame->sample_rate * av_get_bytes_per_sample(frame->format) *
+                                TINYCOMPRSINK_SILENCE_FRAME_DURATION / 1000;
+
+        if (av_frame_get_buffer(frame, 0) < 0) {
+            av_frame_free(&frame);
+            return NULL;
+        }
+
+        av_samples_set_silence((uint8_t **)frame->extended_data, 0, frame->nb_samples,
+                               frame->ch_layout.nb_channels, frame->format);
+        priv->frame_count++;
+    }
+
+    return frame;
+}
+
+static bool tinycomprsink_need_pause(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    FilterLinkInternal *li;
+    bool blocked = true;
+    AVFilterLink *link;
+    int64_t pts;
+    int ret, i;
+
+    if ((priv->compress && !priv->started))
+       return false;
+
+    for (i = 0; i < priv->nb_inputs; i++) {
+        link = ctx->inputs[i];
+        li = ff_link_internal(link);
+        ff_inlink_acknowledge_status(link, &ret, &pts);
+        if (ret >= 0 && !li->frame_blocked_in)
+            blocked = false;
+    }
+
+    return blocked;
 }
 
 static int tinycomprsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
@@ -338,6 +414,29 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     }
 
     ff_amix_read(priv->mix, &frame);
+    if (!frame && tinycomprsink_need_pause(ctx)) {
+        frame = tinycomprsink_generate_silence_frame(ctx);
+        if (!frame) {
+            ret = compress_pause(priv->compress);
+            if (ret < 0)
+                return ret;
+
+            av_log(ctx, AV_LOG_INFO, "[%s:%d] %s pause.\n", __func__, __LINE__, ctx->name);
+            priv->started = false;
+            priv->frame_count = 0;
+        }
+    } else if (frame) {
+        if (priv->compress && !priv->started) {
+            ret = compress_resume(priv->compress);
+            if (ret < 0)
+                return ret;
+
+            priv->started = true;
+            av_log(ctx, AV_LOG_INFO, "[%s:%d] %s resume.\n", __func__, __LINE__, ctx->name);
+        }
+        priv->frame_count = 0;
+    }
+
     if (frame) {
         ret = tinycomprsink_send_frame(ctx, frame);
         av_frame_free(&frame);
@@ -421,9 +520,10 @@ static int tinycomprsink_init(AVFilterContext *ctx)
 #define FLAGS  AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption tinycomprsink_options[] = {
-    { "inputs",      "", OFFSET(nb_inputs),   AV_OPT_TYPE_INT,    {.i64 = 1},       1, INT16_MAX, FLAGS },
-    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,     .flags = FLAGS },
-    { NULL },
+    {"inputs", "", OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT16_MAX, FLAGS},
+    {"devname", "", OFFSET(devname), AV_OPT_TYPE_STRING, .flags = FLAGS},
+    {"timeout", "timeout for force output", OFFSET(timeout), AV_OPT_TYPE_INT, {.i64 = 1000}, 0, INT32_MAX, FLAGS},
+    {NULL},
 };
 
 AVFILTER_DEFINE_CLASS(tinycomprsink);
