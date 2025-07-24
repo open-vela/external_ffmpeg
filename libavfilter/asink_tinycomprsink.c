@@ -54,6 +54,7 @@ typedef struct CompSinkPriv {
     int frame_count; /**< number of silent frames before pause */
     int timeout; /**< time tolerance for silence frame before pause */
     bool started;
+    bool unlinked;
     FAR struct compress *compress;
 } CompSinkPriv;
 
@@ -263,13 +264,56 @@ static void tinycomprsink_stop(AVFilterContext *ctx)
     if (!priv->compress)
         return;
 
+    if (priv->mix) {
+        ff_amix_free(priv->mix);
+        priv->mix = NULL;
+    }
+
     av_packet_free(&priv->last_pkt);
     tinycomprsink_close_encoder(ctx);
     compress_drain(priv->compress);
     compress_close(priv->compress);
     priv->compress = NULL;
     priv->started = false;
+    priv->unlinked = false;
     priv->frame_count = 0;
+}
+
+static int tinycomprsink_pause(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    int ret;
+
+    if (!priv->compress || !priv->started)
+        return 0;
+
+    ret = compress_pause(priv->compress);
+    if (ret < 0)
+        return ret;
+
+    av_log(ctx, AV_LOG_INFO, "[%s:%d] %s pause.\n", __func__, __LINE__, ctx->name);
+    priv->started = false;
+    priv->frame_count = 0;
+
+    return 0;
+}
+
+static int tinycomprsink_resume(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    int ret;
+
+    if (!priv->compress || priv->started)
+        return 0;
+
+    ret = compress_resume(priv->compress);
+    if (ret < 0)
+        return ret;
+
+    av_log(ctx, AV_LOG_INFO, "[%s:%d] %s resume.\n", __func__, __LINE__, ctx->name);
+    priv->started = true;
+    priv->frame_count = 0;
+    return 0;
 }
 
 static int tinycomprsink_output_packet(AVFilterContext *ctx)
@@ -315,6 +359,9 @@ static AVFrame* tinycomprsink_generate_silence_frame(AVFilterContext *ctx)
     int nb_samples;
     AVFrame *frame;
 
+    if (!priv->enc_ctx)
+        return 0;
+
     nb_samples = priv->enc_ctx->frame_size;
     duration = (nb_samples ?
                 (av_rescale_q(nb_samples,
@@ -359,7 +406,7 @@ static bool tinycomprsink_need_pause(AVFilterContext *ctx)
     int64_t pts;
     int ret, i;
 
-    if ((priv->compress && !priv->started))
+    if ((priv->compress && !priv->started) || priv->unlinked)
        return false;
 
     for (i = 0; i < priv->nb_inputs; i++) {
@@ -417,25 +464,15 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     if (!frame && tinycomprsink_need_pause(ctx)) {
         frame = tinycomprsink_generate_silence_frame(ctx);
         if (!frame) {
-            ret = compress_pause(priv->compress);
-            if (ret < 0)
-                return ret;
-
-            av_log(ctx, AV_LOG_INFO, "[%s:%d] %s pause.\n", __func__, __LINE__, ctx->name);
-            priv->started = false;
-            priv->frame_count = 0;
+            ret = tinycomprsink_pause(ctx);
         }
     } else if (frame) {
-        if (priv->compress && !priv->started) {
-            ret = compress_resume(priv->compress);
-            if (ret < 0)
-                return ret;
-
-            priv->started = true;
-            av_log(ctx, AV_LOG_INFO, "[%s:%d] %s resume.\n", __func__, __LINE__, ctx->name);
-        }
+        ret = tinycomprsink_resume(ctx);
         priv->frame_count = 0;
     }
+
+    if (ret < 0)
+        return ret;
 
     if (frame) {
         ret = tinycomprsink_send_frame(ctx, frame);
@@ -461,11 +498,10 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     }
 
     if (empty_inputs == priv->nb_inputs) { /* notify encoder there is no more data to handle */
-        if (priv->mix) {
-            ff_amix_free(priv->mix);
-            priv->mix = NULL;
-        }
-        return tinycomprsink_send_frame(ctx, NULL);
+        if (!priv->unlinked)
+            tinycomprsink_pause(ctx);
+        else
+            tinycomprsink_send_frame(ctx, NULL);
     }
 
     return 0;
@@ -488,6 +524,12 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
     } else if (!strcmp(cmd, "poll_available")) {
         if (priv->compress) {
             compress_poll_available(priv->compress);
+            ff_filter_set_ready(ctx, 100);
+        }
+        return 0;
+    } else if (!strcmp(cmd, "unlink")) {
+        if (priv->compress) {
+            priv->unlinked = true;
             ff_filter_set_ready(ctx, 100);
         }
         return 0;
