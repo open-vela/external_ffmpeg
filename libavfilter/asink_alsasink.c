@@ -74,6 +74,7 @@ static void alsasink_drain(AVFilterContext *ctx, int pad)
     if (!sink->h)
         return;
 
+    sink->poll_available = 0;
     sink->draining = true;
     snd_pcm_drain(sink->h);
 }
