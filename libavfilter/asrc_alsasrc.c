@@ -581,6 +581,8 @@ static int alsasrc_open(AVFilterContext *ctx)
             break;
     }
 
+    avfilter_asubgraph_reinit_formats(&dev_fmt);
+    avfilter_asubgraph_reinit_formats(&sub_fmt);
     ret = alsasrc_config_formats(ctx, pad, &dev_fmt, &sub_fmt);
     if (ret < 0) {
         av_log(ctx, AV_LOG_ERROR, "config formats failed %d.\n", ret);
