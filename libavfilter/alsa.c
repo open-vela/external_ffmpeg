@@ -78,16 +78,60 @@ static enum AVSampleFormat alsafmt_to_smpfmt(snd_pcm_format_t pcmfmt)
     }
 }
 
+static int alsa_subfmt_to_avcodec(int subfmt)
+{
+    switch (subfmt) {
+        case AUDIO_SUBFMT_SBC:
+            return AV_CODEC_ID_SBC;
+        case AUDIO_SUBFMT_AAC:
+            return AV_CODEC_ID_AAC;
+        case AUDIO_SUBFMT_SBC_PACKED:
+            return AV_CODEC_ID_SBC_PACKED_A2DP;
+        case AUDIO_SUBFMT_AAC_LATM:
+            return AV_CODEC_ID_AAC_LATM_A2DP;
+        case AUDIO_SUBFMT_AMRNB:
+            return AV_CODEC_ID_AMR_NB;
+        case AUDIO_SUBFMT_AMRWB:
+            return AV_CODEC_ID_AMR_WB;
+        default:
+            return AV_CODEC_ID_NONE;
+    }
+}
+
 static int alsa_get_format(int codec_id)
 {
     if (codec_id & (1 << (AUDIO_FMT_PCM - 1))) {
       return AUDIO_FMT_PCM;
     } else if (codec_id & (1 << (AUDIO_FMT_MP3 - 1))) {
       return AUDIO_FMT_MP3;
+    } else if (codec_id & (1 << (AUDIO_FMT_MPEG - 1))) {
+      return AUDIO_FMT_MPEG;
+    } else if (codec_id & (1 << (AUDIO_FMT_AC3 - 1))) {
+      return AUDIO_FMT_AC3;
+    } else if (codec_id & (1 << (AUDIO_FMT_WMA - 1))) {
+      return AUDIO_FMT_WMA;
+    } else if (codec_id & (1 << (AUDIO_FMT_DTS - 1))) {
+      return AUDIO_FMT_DTS;
+    } else if (codec_id & (1 << (AUDIO_FMT_WAV - 1))) {
+      return AUDIO_FMT_WAV;
+    } else if (codec_id & (1 << (AUDIO_FMT_FLAC - 1))) {
+      return AUDIO_FMT_FLAC;
+    } else if (codec_id & (1 << (AUDIO_FMT_AMR - 1))) {
+      return AUDIO_FMT_AMR;
+    } else if (codec_id & (1 << (AUDIO_FMT_OPUS - 1))) {
+      return AUDIO_FMT_OPUS;
+    } else if (codec_id & (1 << (AUDIO_FMT_MSBC - 1))) {
+      return AUDIO_FMT_MSBC;
+    } else if (codec_id & (1 << (AUDIO_FMT_CVSD - 1))) {
+      return AUDIO_FMT_CVSD;
+    } else if (codec_id & (1 << (AUDIO_FMT_MIDI - 1))) {
+      return AUDIO_FMT_MIDI;
     } else if (codec_id & (1 << (AUDIO_FMT_SBC -1))) {
       return AUDIO_FMT_SBC;
     } else if (codec_id & (1 << (AUDIO_FMT_AAC - 1))) {
       return AUDIO_FMT_AAC;
+    } else if (codec_id & (1 << (AUDIO_FMT_OGG_VORBIS - 1))) {
+      return AUDIO_FMT_OGG_VORBIS;
     } else {
       return AUDIO_FMT_UNDEF;
     }
@@ -108,8 +152,6 @@ static int alsa_fmt_to_avcodec(int audio_fmt)
             return AV_CODEC_ID_VORBIS;
         case AUDIO_FMT_FLAC:
             return AV_CODEC_ID_FLAC;
-        case AUDIO_FMT_AMR:
-            return AV_CODEC_ID_AMR_NB; // Assuming AMR_NB as default
         case AUDIO_FMT_OPUS:
             return AV_CODEC_ID_OPUS;
         case AUDIO_FMT_AAC:
@@ -456,11 +498,24 @@ int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
             nb_ranges = ret;
         }
     }  else if (!strcmp(key, "codec")) {
+        int fmt = 0;
         ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &formats);
         if (ret < 0)
             goto err;
 
-        values0[0] = alsa_fmt_to_avcodec(alsa_get_format(formats.ac_format.hw));
+        fmt = alsa_get_format(formats.ac_format.hw);
+        if (fmt == AUDIO_FMT_UNDEF) {
+            ret = AVERROR(EPERM);
+            goto err;
+        }
+
+        ret = alsa_get_capabilities(device, ac_type, fmt, &formats);
+        if (ret < 0)
+            goto err;
+
+        values0[0] = alsa_subfmt_to_avcodec(formats.ac_controls.b[0]);
+        if (values0[0] == AV_CODEC_ID_NONE)
+            values0[0] = alsa_fmt_to_avcodec(fmt);
 
         nb_ranges = 1;
     } else {
