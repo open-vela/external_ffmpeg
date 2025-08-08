@@ -3445,6 +3445,14 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
     {
+        .id        = AV_CODEC_ID_AAC_LATM_A2DP,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "aac_latm_a2dp",
+        .long_name = NULL_IF_CONFIG_SMALL("AAC LATM a2dp (Advanced Audio Coding LATM syntax)"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+        .profiles  = NULL_IF_CONFIG_SMALL(ff_aac_profiles),
+    },
+    {
         .id        = AV_CODEC_ID_LDAC,
         .type      = AVMEDIA_TYPE_AUDIO,
         .name      = "ldac",
