@@ -305,7 +305,7 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
     AlsasrcPriv *priv = ctx->priv;
 
     if (!strcmp(key, "format")) {
-        AVAudioFormats formats;
+        AVAudioFormats formats = {0};
         int nb_channels = 0;
         int pad, ret = 0;
 
@@ -562,7 +562,7 @@ fail:
 
 static int alsasrc_open(AVFilterContext *ctx)
 {
-    AVAudioFormats dev_fmt, sub_fmt;
+    AVAudioFormats dev_fmt = {0}, sub_fmt = {0};
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
     int ret;
