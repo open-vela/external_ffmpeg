@@ -69,14 +69,14 @@ struct AMixContext {
  * volume transitions when EOF is encountered on an input but mixing continues
  * with the remaining inputs.
  */
-static void calculate_scales(AMixContext *s)
+static int calculate_scales(AMixContext *s)
 {
     int activate_inputs = 0;
     AMixInput *input;
     int i;
 
     if (TAILQ_EMPTY(&s->inputs))
-        return;
+        return 0;
 
     TAILQ_FOREACH(input, &s->inputs, entries) {
         if (input->state & INPUT_ON)
@@ -88,6 +88,8 @@ static void calculate_scales(AMixContext *s)
             input->scale = 1.0 / activate_inputs;
         }
     }
+
+    return activate_inputs;
 }
 
 static int calc_active_inputs(AMixContext *s)
@@ -488,22 +490,30 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
                 }
             }
 
-            planar = av_sample_fmt_is_planar(out_buf->format);
-            planes = planar ? out_buf->ch_layout.nb_channels : 1;
-            plane_size = nb_samples * (planar ? 1 : out_buf->ch_layout.nb_channels);
-            plane_size = FFALIGN(plane_size, 16);
-
-            if (out_buf->format == AV_SAMPLE_FMT_S16 ||
-                out_buf->format == AV_SAMPLE_FMT_S16P) {
-                for (p = 0; p < planes; p++) {
-                    vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
-                                         (int16_t *) in_buf->extended_data[p],
-                                         input->scale * INT16_MAX, plane_size);
+            if (calculate_scales(s) == 1)
+            {
+                if (av_frame_copy(out_buf, in_buf) < 0) {
+                    av_frame_free(&out_buf);
+                    return AVERROR(EINVAL);
                 }
             } else {
-                av_log(input->link->dst, AV_LOG_ERROR, "Unsupported sample format\n");
-                ret = AVERROR(ENOSYS);
-                goto err;
+                planar = av_sample_fmt_is_planar(out_buf->format);
+                planes = planar ? out_buf->ch_layout.nb_channels : 1;
+                plane_size = nb_samples * (planar ? 1 : out_buf->ch_layout.nb_channels);
+                plane_size = FFALIGN(plane_size, 16);
+
+                if (out_buf->format == AV_SAMPLE_FMT_S16 ||
+                    out_buf->format == AV_SAMPLE_FMT_S16P) {
+                    for (p = 0; p < planes; p++) {
+                        vector_fmac_scalar_c((int16_t *)out_buf->extended_data[p],
+                                            (int16_t *) in_buf->extended_data[p],
+                                            input->scale * INT16_MAX, plane_size);
+                    }
+                } else {
+                    av_log(input->link->dst, AV_LOG_ERROR, "Unsupported sample format\n");
+                    ret = AVERROR(ENOSYS);
+                    goto err;
+                }
             }
 
             av_frame_free(&in_buf);
