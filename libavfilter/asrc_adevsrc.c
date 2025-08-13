@@ -363,7 +363,7 @@ static int adevsrc_activate(AVFilterContext *ctx)
         return FFERROR_NOT_READY;
 
     ret = adevsrc_open(ctx);
-    if (ret < 0)
+    if (ret < 0 || !priv->state)
         goto out;
 
     if (priv->dec_ctx)
