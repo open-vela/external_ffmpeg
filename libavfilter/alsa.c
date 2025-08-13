@@ -270,8 +270,8 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         goto fail;
     }
 
-    snd_pcm_hw_params_set_period_time(h, hw_params, s->period_time * 1000, 0);
-    snd_pcm_hw_params_set_periods(h, hw_params, s->periods, 0);
+    snd_pcm_hw_params_set_period_time(h, hw_params, period_time * 1000, 0);
+    snd_pcm_hw_params_set_periods(h, hw_params, periods, 0);
 
     res = snd_pcm_hw_params(h, hw_params);
     if (res < 0) {
