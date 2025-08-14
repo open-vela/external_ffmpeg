@@ -4,7 +4,6 @@ DESC = FFmpeg audio/video filtering library
 HEADERS = avfilter.h                                                    \
           buffersink.h                                                  \
           buffersrc.h                                                   \
-          subgraph.h                                                    \
           version.h                                                     \
           version_major.h                                               \
 
@@ -23,7 +22,6 @@ OBJS = allfilters.o                                                     \
        framequeue.o                                                     \
        graphdump.o                                                      \
        graphparser.o                                                    \
-       subgraph.o                                                       \
        version.o                                                        \
        video.o                                                          \
 
@@ -200,6 +198,7 @@ OBJS-$(CONFIG_ADEVSINK_FILTER)               += asink_adevsink.o
 OBJS-$(CONFIG_ADEVSRC_FILTER)                += asrc_adevsrc.o mapping.o
 OBJS-$(CONFIG_ALSASINK_FILTER)               += asink_alsasink.o alsa.o
 OBJS-$(CONFIG_ANULLSINK_FILTER)              += asink_anullsink.o
+OBJS-$(CONFIG_ASUBGRAPH_FILTER)              += af_asubgraph.o mapping.o
 OBJS-$(CONFIG_ALSASRC_FILTER)                += asrc_alsasrc.o alsa.o volume.o mapping.o
 OBJS-$(CONFIG_TINYCOMPRSINK_FILTER)         += asink_tinycomprsink.o amix.o
 
