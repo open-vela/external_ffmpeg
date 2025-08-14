@@ -39,7 +39,6 @@
 #include "formats.h"
 #include "internal.h"
 #include "volume.h"
-#include "subgraph.h"
 #include "mapping.h"
 
 #define ROUTE_OFF 0
@@ -70,18 +69,7 @@ typedef struct AlsasrcPriv {
     VolumeContext vol_ctx;
     double volume;
     bool mute;
-
-    int *sub_map;
-    char *sub_map_str;
-    char *sub_desc;
-    AVSubGraphContext subgraph;
 } AlsasrcPriv;
-
-static inline int alsasrc_subgraph_avaliable(AVFilterContext *ctx, int pad)
-{
-    AlsasrcPriv *priv = ctx->priv;
-    return (priv->sub_map && priv->sub_map[pad]);
-}
 
 static inline void alsasrc_force_request(AVFilterContext *ctx)
 {
@@ -124,57 +112,6 @@ static int alsasrc_get_device_support_format(AVFilterContext *ctx, const char *d
     return 0;
 }
 
-static int alsasrc_config_formats(AVFilterContext *ctx, int pad, AVAudioFormats *dev_fmt,
-                                  AVAudioFormats *sub_fmt)
-{
-    AlsasrcPriv *priv = ctx->priv;
-    AVFilterLink *link = ctx->outputs[pad];
-    AVAudioFormats suggest_fmt;
-    int ret, nb_channels = 0;
-
-    if (!dev_fmt)
-        return AVERROR(EINVAL);
-
-    /* if subgragh is enable, use the subgraph input format to negotiate with alsasrc dev,
-       or use out link format to negotiate with alsasrc dev */
-    if (alsasrc_subgraph_avaliable(ctx, pad)) {
-        suggest_fmt.format      = link->format;
-        suggest_fmt.sample_rate = link->sample_rate;
-        suggest_fmt.ch_layout   = link->ch_layout;
-
-        ret = avfilter_asubgraph_query_formats(priv->sub_desc, &suggest_fmt, dev_fmt, sub_fmt);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Unable to query subgraph formats ret %d\n", ret);
-            return ret;
-        }
-    } else {
-        dev_fmt->format      = link->format;
-        dev_fmt->sample_rate = link->sample_rate;
-        dev_fmt->ch_layout   = link->ch_layout;
-    }
-
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
-                                            dev_fmt->format, &dev_fmt->format);
-    if (ret < 0)
-        goto end;
-
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
-                                            dev_fmt->sample_rate, &dev_fmt->sample_rate);
-    if (ret < 0)
-        goto end;
-
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
-                                            dev_fmt->ch_layout.nb_channels, &nb_channels);
-    if (ret < 0)
-        goto end;
-
-    if (nb_channels != dev_fmt->ch_layout.nb_channels)
-        av_channel_layout_default(&dev_fmt->ch_layout, nb_channels);
-
-end:
-    return ret;
-}
-
 static void alsasrc_close(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
@@ -183,7 +120,6 @@ static void alsasrc_close(AVFilterContext *ctx)
     alsa_close(&priv->priv);
 
     volume_uninit(&priv->vol_ctx);
-    avfilter_asubgraph_uninit(&priv->subgraph);
 }
 
 static int alsasrc_init_dict(AVFilterContext *ctx)
@@ -209,14 +145,6 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
-    if (priv->sub_map_str) {
-        ret = avfilter_parse_mapping(priv->sub_map_str, &priv->sub_map, priv->nb_outputs);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "parse sub_map_str failed ret %d.\n", ret);
-            return ret;
-        }
-    }
-
     ff_resample_init(&priv->resample);
     priv->format = AV_SAMPLE_FMT_NONE;
     priv->sample_rate = 0;
@@ -232,7 +160,6 @@ static void alsasrc_uninit(AVFilterContext *ctx)
     AlsasrcPriv *priv = ctx->priv;
     int i;
 
-    avfilter_asubgraph_uninit(&priv->subgraph);
     ff_resample_uninit(&priv->resample);
 
     av_freep(&priv->map);
@@ -305,54 +232,34 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
     AlsasrcPriv *priv = ctx->priv;
 
     if (!strcmp(key, "format")) {
-        AVAudioFormats formats = {0};
+        int channels = priv->ch_layout.nb_channels;
+        enum AVSampleFormat format = priv->format;
+        int sample_rate = priv->sample_rate;
         int nb_channels = 0;
         int pad, ret = 0;
 
-        // Only use the first ROUTE_ON pad to match sub_map
-        for (pad = 0 ; pad < ctx->nb_outputs; pad++) {
-            if (priv->map && priv->map[pad] == ROUTE_ON)
-                break;
-        }
-
-        avfilter_asubgraph_reinit_formats(&formats);
-        if (pad < ctx->nb_outputs && alsasrc_subgraph_avaliable(ctx, pad)) {
-            ret = avfilter_asubgraph_query_formats(priv->sub_desc, NULL, NULL, &formats);
-            if (ret < 0)
-                goto format_end;
-        }
-
-        if (priv->format != AV_SAMPLE_FMT_NONE) {
-            formats.format = priv->format;
-        } else if (formats.format == AV_SAMPLE_FMT_NONE) {
+        if (format == AV_SAMPLE_FMT_NONE) {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "sample_fmts", -1, &formats.format);
+                                                    "sample_fmts", -1, &format);
             if (ret < 0)
                 goto format_end;
         }
 
-        if (priv->sample_rate) {
-            formats.sample_rate = priv->sample_rate;
-        } else if (!formats.sample_rate) {
+        if (!sample_rate) {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "sample_rates", -1, &formats.sample_rate);
+                                                    "sample_rates", -1, &sample_rate);
             if (ret < 0)
                 goto format_end;
         }
 
-        if (priv->ch_layout.nb_channels) {
-            nb_channels = priv->ch_layout.nb_channels;
-        } else if (formats.ch_layout.nb_channels) {
-            nb_channels = formats.ch_layout.nb_channels;
-        } else {
+        if (!channels) {
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "channels", -1, &nb_channels);
+                                                    "channels", -1, &channels);
             if (ret < 0)
                 goto format_end;
         }
 
-        snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
-                 formats.format, formats.sample_rate, nb_channels);
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", format, sample_rate, channels);
         av_log(ctx, AV_LOG_INFO, "get_parameter: %s = %s\n", key, value);
         return 0;
 
@@ -484,21 +391,14 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
             return AVERROR(EINVAL);
 
         return alsasrc_get_parameter(ctx, args, res, res_len);
-    }else if (!strcmp(cmd, "sub_map")) {
-        ret = avfilter_parse_mapping(args, &priv->sub_map, priv->nb_outputs);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to parse sub_map: %s ret:%d\n", args, ret);
-            return ret;
-        }
-
-        return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
         if (!args)
             return AVERROR(EINVAL);
 
         return alsasrc_set_parameter(ctx, args);
-    } else if (!strcmp(cmd, "dump") || !strcmp(cmd, "sub_cmd")) {
-        return avfilter_asubgraph_process_command(&priv->subgraph, cmd, args, res, res_len, flags);
+    } else if (!strcmp(cmd, "dump")) {
+
+        return 0;
     } else if (!strcmp(cmd, "mute") ) {
         priv->mute = true;
         av_log(ctx, AV_LOG_INFO, "set %s mute.", ctx->name);
@@ -562,9 +462,13 @@ fail:
 
 static int alsasrc_open(AVFilterContext *ctx)
 {
-    AVAudioFormats dev_fmt = {0}, sub_fmt = {0};
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
+    AVChannelLayout ch_layout = {0};
+    enum AVSampleFormat format;
+    AVFilterLink *link;
+    int sample_rate;
+    int channels;
     int ret;
     int pad;
     int i;
@@ -577,36 +481,36 @@ static int alsasrc_open(AVFilterContext *ctx)
             continue;
 
         pad = i;
-        if (priv->sub_map && priv->sub_map[i])
-            break;
+        break;
     }
 
-    avfilter_asubgraph_reinit_formats(&dev_fmt);
-    avfilter_asubgraph_reinit_formats(&sub_fmt);
-    ret = alsasrc_config_formats(ctx, pad, &dev_fmt, &sub_fmt);
-    if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "config formats failed %d.\n", ret);
+    link = ctx->outputs[pad];
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
+                                            link->format, &format);
+    if (ret < 0)
         return ret;
-    }
 
-    if (alsasrc_subgraph_avaliable(ctx, pad)) {
-        ret = avfilter_asubgraph_init(&priv->subgraph, priv->sub_desc, dev_fmt, sub_fmt);
-        if (ret < 0) {
-           av_log(ctx, AV_LOG_ERROR, "subgraph(%s) init failed %d.\n", priv->sub_desc, ret);
-           return ret;
-       }
-    }
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
+                                            link->sample_rate, &sample_rate);
+    if (ret < 0)
+        return ret;
 
-    ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE,
-                    dev_fmt.sample_rate, dev_fmt.ch_layout, dev_fmt.format,
-                    priv->periods, priv->period_time);
+    ret = alsasrc_get_device_support_format(ctx, priv->devname, "channels",
+                                            link->ch_layout.nb_channels, &channels);
+    if (ret < 0)
+        return ret;
+
+    av_channel_layout_default(&ch_layout, channels);
+
+    ret = alsa_open(handle, priv->devname, SND_PCM_STREAM_CAPTURE, sample_rate, ch_layout,
+                    format, priv->periods, priv->period_time);
     if (ret < 0)
         return ret;
 
     priv->period_size = handle->period_time * handle->sample_rate / 1000;
     priv->timestamp = 0;
 
-    ret = volume_init(&priv->vol_ctx, dev_fmt.format);
+    ret = volume_init(&priv->vol_ctx, format);
     if (ret < 0)
         goto error;
 
@@ -644,7 +548,7 @@ static int alsasrc_activate(AVFilterContext *ctx)
        return FFERROR_NOT_READY;
 
     ret = alsasrc_read_frame(priv, &frame);
-    if (ret < 0 && ret != AVERROR(EAGAIN))
+    if (ret < 0)
         goto out;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -655,17 +559,12 @@ static int alsasrc_activate(AVFilterContext *ctx)
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        if (alsasrc_subgraph_avaliable(ctx, i)) {
-            ret = avfilter_asubgraph_process(&priv->subgraph, frame, &iframe);
-            if (ret < 0)
-                continue;
-        } else if (frame && !(iframe = av_frame_clone(frame))) {
+        iframe = av_frame_clone(frame);
+        if (!iframe) {
+            av_frame_free(&frame);
             ret = AVERROR(ENOMEM);
             goto out;
         }
-
-        if (!iframe)
-            continue;
 
         volume_scale(&priv->vol_ctx, iframe);
 
@@ -701,8 +600,6 @@ static const AVOption alsasrc_options[] = {
     { "outputs",           "", OFFSET(nb_outputs),        AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
     { "map",               "", OFFSET(map_str),           AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
     { "map_array",         "", OFFSET(map),               AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
-    { "sub_desc",          "", OFFSET(sub_desc),          AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
-    { "sub_map",           "", OFFSET(sub_map_str),       AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
     { NULL },
 };
 
