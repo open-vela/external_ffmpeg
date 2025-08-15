@@ -200,6 +200,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
 
     av_dict_set_int(&fmt_opt, "ar", priv->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", priv->ch_layout.nb_channels, 0);
+    av_dict_set_int(&fmt_opt, "ab", config.codec->bit_rate, 0);
     tinycomprsink_codec_to_options(ctx, config.codec, &fmt_opt);
 
     if (config.codec)
