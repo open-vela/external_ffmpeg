@@ -206,9 +206,9 @@ static int abufsink_set_parameter(AVFilterContext *ctx, const char *args)
         if (*p)
             p++;
         av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
-        if (!strcmp(key, "frame_size")) {
+        if (!strcmp(key, "frame_size"))
             s->frame_size = strtol(value, NULL, 0);
-        } else
+        else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
         av_freep(&key);
@@ -225,13 +225,18 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
 
     if (!strcmp(cmd, "link")) {
         int (*on_event_cb)(void *udata, int evt, int64_t args);
+        int format, sample_rate, channels;
         void *udata;
 
         if (!args)
             return AVERROR(EINVAL);
 
-        if (sscanf(args, "%p %p", &on_event_cb, &udata) != 2)
+        if (sscanf(args, "%p %p fmt=%d:rate=%d:ch=%d", &on_event_cb, &udata, &format, &sample_rate, &channels) != 5)
             return AVERROR(EINVAL);
+
+        sink->sample_fmt = format;
+        sink->sample_rate = sample_rate;
+        av_channel_layout_default(&sink->ch_layout, channels);
 
         if (!sink->on_event_cb)
             av_abufsink_set_event_cb(ctx, on_event_cb, udata);
@@ -243,6 +248,9 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
 
         sink->frame_size = 0;
         sink->next_pts = AV_NOPTS_VALUE;
+        sink->sample_fmt = AV_SAMPLE_FMT_NONE;
+        sink->sample_rate = 0;
+        av_channel_layout_uninit(&sink->ch_layout);
         av_abufsink_set_event_cb(ctx, NULL, NULL);
         return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
@@ -284,6 +292,52 @@ static int abufsink_init(AVFilterContext *ctx)
     return 0;
 }
 
+static int abufsink_query_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in,
+                               AVFilterFormatsConfig **cfg_out)
+{
+    AVFilterChannelLayouts *layouts = NULL;
+    AVFilterFormats *formats = NULL;
+    ABufSinkPriv *sink = ctx->priv;
+    int ret, i;
+
+    for (i = 0; i < ctx->nb_inputs; i++) {
+        AVChannelLayout list64[] = { { 0 }, { 0 } };
+        int list[] = { 0, -1 };
+
+        list[0] = sink->sample_fmt;
+        formats = ff_make_format_list(list);
+        if (!formats)
+            goto out;
+
+        ff_formats_unref(&cfg_in[i]->formats);
+        ret = ff_formats_ref(formats, &cfg_in[i]->formats);
+        if (ret < 0)
+            goto out;
+
+        formats = NULL;
+        list[0] = sink->sample_rate;
+        formats = ff_make_format_list(list);
+        if (!formats)
+            goto out;
+
+        ff_formats_unref(&cfg_in[i]->samplerates);
+        ret = ff_formats_ref(formats, &cfg_in[i]->samplerates);
+        if (ret < 0)
+            goto out;
+
+        list64[0] = sink->ch_layout;
+        layouts = ff_make_channel_layout_list(list64);
+        if (!layouts)
+            goto out;
+
+        ff_channel_layouts_unref(&cfg_in[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(layouts, &cfg_in[i]->channel_layouts);
+    }
+
+out:
+    return ret;
+}
+
 const AVFilter ff_asink_abufsink = {
     .name            = "abufsink",
     .description     = NULL_IF_CONFIG_SMALL("audio buffer sink(only pcm)"),
@@ -292,5 +346,6 @@ const AVFilter ff_asink_abufsink = {
     .init            = abufsink_init,
     .activate        = abufsink_activate,
     .process_command = abufsink_process_command,
+    FILTER_QUERY_FUNC2(abufsink_query_formats),
     .flags           = AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
