@@ -34,6 +34,9 @@
 #include "volume.h"
 #include "mapping.h"
 
+#include "filters.h"
+#include "formats.h"
+
 #define ROUTE_ON 1
 #define ROUTE_OFF 0
 
@@ -211,6 +214,54 @@ static av_cold void abufsrc_uninit(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
     av_freep(&priv->map);
+}
+
+static int abufsrc_query_formats(const AVFilterContext *ctx,
+                                 AVFilterFormatsConfig **cfg_in,
+                                 AVFilterFormatsConfig **cfg_out)
+{
+    BuffSrcPriv *src = ctx->priv;
+    int ret = 0;
+
+    for (int i = 0; i < ctx->nb_outputs; i++) {
+        AVFilterFormats *formats = NULL;
+        AVFilterChannelLayouts *layouts = NULL;
+        int fmts[] = { src->sample_fmt, -1 };
+        int rates[] = { src->sample_rate, -1 };
+
+        formats = ff_make_format_list(fmts);
+
+        if (!formats) {
+            ret = AVERROR(ENOMEM);
+            goto out;
+        }
+        ff_formats_unref(&cfg_out[i]->formats);
+        ret = ff_formats_ref(formats, &cfg_out[i]->formats);
+        if (ret < 0)
+            goto out;
+
+        formats = ff_make_format_list(rates);
+        if (!formats) {
+            ret = AVERROR(ENOMEM);
+            goto out;
+        }
+        ff_formats_unref(&cfg_out[i]->samplerates);
+        ret = ff_formats_ref(formats, &cfg_out[i]->samplerates);
+        if (ret < 0)
+            goto out;
+
+        ret = ff_add_channel_layout(&layouts, &src->ch_layout);
+        if (ret < 0)
+            goto out;
+
+        ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(layouts, &cfg_out[i]->channel_layouts);
+        if (ret < 0)
+            goto out;
+    }
+
+out:
+    return ret;
 }
 
 static int abufsrc_activate(AVFilterContext *ctx)
@@ -504,6 +555,7 @@ const AVFilter ff_asrc_abufsrc = {
     .priv_class      = &abuffer_class,
     .init            = abufsrc_init_dict,
     .uninit          = abufsrc_uninit,
+    FILTER_QUERY_FUNC2(abufsrc_query_formats),
     .activate        = abufsrc_activate,
     .process_command = abufsrc_proccess_command,
     .flags           = AVFILTER_FLAG_DYNAMIC_OUTPUTS,
