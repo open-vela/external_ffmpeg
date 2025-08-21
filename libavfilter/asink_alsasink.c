@@ -52,6 +52,9 @@ static int alsasink_open(AVFilterContext *ctx, int pad)
     AlsaHandle *sink = &priv->handles[pad];
     int ret;
 
+    if (sink->draining)
+        return AVERROR(EAGAIN);
+
     if (sink->h)
         return 0;
 
@@ -230,8 +233,11 @@ static int alsasink_activate(AVFilterContext *ctx)
 
         if (ff_inlink_check_available_frame(inlink)) {
             ret = alsasink_open(ctx, i);
-            if (ret < 0)
+            if (ret < 0) {
+                if (ret == AVERROR(EAGAIN))
+                    continue;
                 return ret;
+            }
 
             ret = ff_inlink_consume_frame(inlink, &frame);
             if (ret < 0)
