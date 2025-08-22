@@ -32,6 +32,7 @@
 #include <sound/compress_params.h>
 #include <tinycompress/tinycompress.h>
 
+#include "alsa.h"
 #include "amix.h"
 #include "filters.h"
 #include "avfilter.h"
@@ -539,6 +540,84 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
 }
 
+static int tinycomprsink_query_cap(CompSinkPriv *priv, const char *format, int *out_value)
+{
+    AVOptionRanges* ranges = NULL;
+    AVOptionRange* range = NULL;
+    int ret;
+
+    ret = alsa_query_caps(&ranges, priv->devname, format, false);
+    if (ret > 0) {
+        *out_value = ranges->range[0]->value_min;
+        av_opt_freep_ranges(&ranges);
+    }
+
+    return ret;
+}
+
+static int tinycomprsink_query_formats(CompSinkPriv *priv)
+{
+    const AVCodec *enc;
+    int codec_id;
+    int ret;
+
+    ret = tinycomprsink_query_cap(priv, "codec", &codec_id);
+    if (ret < 0)
+        return ret;
+
+    priv->codec_id = codec_id;
+
+    enc = avcodec_find_encoder(priv->codec_id);
+    if (!enc)
+        return AV_SAMPLE_FMT_NONE;
+    priv->sample_fmt = enc->sample_fmts[0];
+
+    ret = tinycomprsink_query_cap(priv, "sample_rates", &priv->sample_rate);
+    if (ret < 0)
+        return ret;
+
+    ret = tinycomprsink_query_cap(priv, "channels", &priv->ch_layout.nb_channels);
+    if (ret < 0)
+        return ret;
+
+    av_channel_layout_default(&priv->ch_layout, priv->ch_layout.nb_channels);
+
+    return 0;
+}
+
+static int query_formats(const AVFilterContext *ctx,
+                         AVFilterFormatsConfig **cfg_in,
+                         AVFilterFormatsConfig **cfg_out)
+{
+    AVFilterChannelLayouts *layouts = NULL;
+    AVFilterFormats *formats = NULL;
+    CompSinkPriv *priv = ctx->priv;
+    int ret, i;
+
+    ret = tinycomprsink_query_formats(priv);
+    if (ret < 0)
+        return ret;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        const AVChannelLayout layout_list[] = {priv->ch_layout, {0}};
+
+        ff_formats_unref(&cfg_in[i]->formats);
+        ret = ff_formats_ref(ff_make_formats_list_singleton(priv->sample_fmt), &cfg_in[i]->formats);
+        if (ret < 0)
+            return ret;
+
+        ff_formats_unref(&cfg_in[i]->samplerates);
+        ret = ff_formats_ref(ff_make_formats_list_singleton(priv->sample_rate), &cfg_in[i]->samplerates);
+        if (ret < 0)
+            return ret;
+
+        ff_channel_layouts_unref(&cfg_in[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(ff_make_channel_layout_list(layout_list), &cfg_in[i]->channel_layouts);
+    }
+
+    return 0;
+}
+
 static int tinycomprsink_init(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
@@ -577,6 +656,7 @@ const AVFilter ff_asink_tinycomprsink = {
     .priv_class      = &tinycomprsink_class,
     .priv_size       = sizeof(CompSinkPriv),
     .init            = tinycomprsink_init,
+    FILTER_QUERY_FUNC2(query_formats),
     .activate        = tinycomprsink_activate,
     .process_command = tinycomprsink_process_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_INPUTS,
