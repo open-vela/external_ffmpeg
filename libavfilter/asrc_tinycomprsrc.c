@@ -71,13 +71,17 @@ static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
     FilterLinkInternal *li;
+    AVFilterLink *link;
 
     for (int i = 0; i < ctx->nb_outputs; i++) {
         if (s->map[i] == 0)
             continue;
 
-        li = ff_link_internal(ctx->outputs[i]);
+        link = ctx->outputs[i];
+        li = ff_link_internal(link);
         li->frame_wanted_out = 1;
+
+        s->sample_fmt = link->format;
     }
 
     ff_filter_set_ready(ctx, 100);
@@ -349,21 +353,41 @@ static av_cold void uninit(AVFilterContext *ctx)
     av_freep(&s->map);
 }
 
-static int tinycomprsrc_query_cap(AVFilterContext *ctx, const char *format, int *out_value)
+static int tinycomprsrc_query_cap(TinyCompressContext *s, const char *format, int *out_value)
 {
-    TinyCompressContext *s = ctx->priv;
     AVOptionRanges* ranges = NULL;
     AVOptionRange* range = NULL;
-    int ret, range_idx;
+    int ret;
 
     ret = alsa_query_caps(&ranges, s->devname, format, false);
     if (ret > 0) {
         *out_value = ranges->range[0]->value_min;
         av_opt_freep_ranges(&ranges);
-    } else {
-        av_log(ctx, AV_LOG_ERROR, "query fail:%s\n", format);
-        return AVERROR(EINVAL);
     }
+
+    return ret;
+}
+
+static int tinycomprsrc_query_formats(TinyCompressContext *s)
+{
+    int codec_id;
+    int ret;
+
+    ret = tinycomprsrc_query_cap(s, "codec", &codec_id);
+    if (ret < 0)
+        return ret;
+
+    s->codec_id = codec_id;
+
+    ret = tinycomprsrc_query_cap(s, "sample_rates", &s->sample_rate);
+    if (ret < 0)
+        return ret;
+
+    ret = tinycomprsrc_query_cap(s, "channels", &s->ch_layout.nb_channels);
+    if (ret < 0)
+        return ret;
+
+    av_channel_layout_default(&s->ch_layout, s->ch_layout.nb_channels);
 
     return 0;
 }
@@ -377,31 +401,6 @@ static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, cha
         snprintf(value, len, "vol:%f", s->vol_ctx.volume);
 
         av_log(s, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
-        return 0;
-    } else if (!strcmp(key, "format")) {
-        const AVCodec *dec;
-        int codec_id;
-        ret = tinycomprsrc_query_cap(ctx, "codec", &codec_id);
-        if (ret < 0)
-            return ret;
-
-        s->codec_id = codec_id;
-
-        dec = avcodec_find_decoder(s->codec_id);
-        if (!dec)
-            return AV_SAMPLE_FMT_NONE;
-        s->sample_fmt = dec->sample_fmts[0];
-
-        ret = tinycomprsrc_query_cap(ctx, "sample_rates", &s->sample_rate);
-        if (ret < 0)
-            return ret;
-
-        ret = tinycomprsrc_query_cap(ctx, "channels", &s->ch_layout.nb_channels);
-        if (ret < 0)
-            return ret;
-
-        snprintf(value, len, "fmt=%d:rate=%d:ch=%d",
-                 s->sample_fmt, s->sample_rate, s->ch_layout.nb_channels);
         return 0;
     }
 
@@ -452,6 +451,42 @@ end:
     }
 
     return ret;
+}
+
+static int query_formats(const AVFilterContext *ctx,
+                         AVFilterFormatsConfig **cfg_in,
+                         AVFilterFormatsConfig **cfg_out)
+{
+    TinyCompressContext *s = ctx->priv;
+    const AVCodec *dec;
+    int ret, i;
+
+    ret = tinycomprsrc_query_formats(s);
+    if (ret < 0)
+        return ret;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        const AVChannelLayout layout_list[] = {s->ch_layout, {0}};
+
+        ff_formats_unref(&cfg_out[i]->formats);
+        dec = avcodec_find_decoder(s->codec_id);
+        if (!dec)
+            ret = AVERROR(EINVAL);
+
+        ret = ff_formats_ref(ff_make_format_list(dec->sample_fmts), &cfg_out[i]->formats);
+        if (ret < 0)
+            return ret;
+
+        ff_formats_unref(&cfg_out[i]->samplerates);
+        ret = ff_formats_ref(ff_make_formats_list_singleton(s->sample_rate), &cfg_out[i]->samplerates);
+        if (ret < 0)
+            return ret;
+
+        ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
+        ret = ff_channel_layouts_ref(ff_make_channel_layout_list(layout_list), &cfg_out[i]->channel_layouts);
+    }
+
+    return 0;
 }
 
 static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, const char *arg,
@@ -550,6 +585,7 @@ const AVFilter ff_asrc_tinycomprsrc = {
     .activate      = activate,
     .init          = init,
     .uninit        = uninit,
+    FILTER_QUERY_FUNC2(query_formats),
     .process_command = tinycomprsrc_process_command,
     .outputs       = tinycomprsrc_outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
