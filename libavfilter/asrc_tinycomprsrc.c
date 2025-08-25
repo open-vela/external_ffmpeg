@@ -71,12 +71,15 @@ static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
     FilterLinkInternal *li;
+
     for (int i = 0; i < ctx->nb_outputs; i++) {
-        if (s->map && s->map[i] == 0)
+        if (s->map[i] == 0)
             continue;
+
         li = ff_link_internal(ctx->outputs[i]);
         li->frame_wanted_out = 1;
     }
+
     ff_filter_set_ready(ctx, 100);
 }
 
@@ -99,7 +102,7 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
 
         ret = compress_read(s->compress, pkt->data, s->fragment_size);
         if (ret > 0 && ret != s->fragment_size)
-            av_log(ctx, AV_LOG_ERROR, "Not read enough data fragment_size:%d ret:%d", s->fragment_size, ret);
+            av_log(ctx, AV_LOG_ERROR, "Not read enough data fragment_size:%d ret:%d\n", s->fragment_size, ret);
         else if (ret < 0)
             goto error;
 
@@ -126,17 +129,9 @@ static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR
     AVFilterContext *ctx = (AVFilterContext *)cookie;
     TinyCompressContext *s = ctx->priv;
     struct compress *h = s->compress;
-    int ret;
 
     av_log(ctx, AV_LOG_INFO, "%s line %d event %d\n", __func__, __LINE__, event);
 
-    if (event == AUDIO_MSG_START) {
-        av_log(ctx, AV_LOG_INFO, "%s line %d event:%d\n", __func__, __LINE__, event);
-    }
-
-    if (event == AUDIO_MSG_STOP) {
-        av_log(ctx, AV_LOG_INFO, "%s line %d event:%d\n", __func__, __LINE__, event);
-    }
     return;
 }
 
@@ -190,14 +185,14 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     ff_resample_init(&s->resampler);
 
     s->pkt = av_packet_alloc();
-    if (!s->pkt)
-        goto error;
-
-    ret = av_new_packet(s->pkt, s->fragment_size);
-    if (ret < 0) {
-        av_packet_free(&s->pkt);
+    if (!s->pkt) {
+        ret = AVERROR(ENOMEM);
         goto error;
     }
+
+    ret = av_new_packet(s->pkt, s->fragment_size);
+    if (ret < 0)
+        goto error;
 
     ret = compress_start(s->compress);
     if (ret < 0)
@@ -230,12 +225,14 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     TinyCompressContext *s = ctx->priv;
     if (!s->compress)
         return;
+
     compress_stop(s->compress);
     volume_uninit(&s->vol_ctx);
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
     av_packet_free(&s->pkt);
     ff_resample_uninit(&s->resampler);
+    s->next_pts = 0L;
     s->compress = NULL;
     s->dec_ctx = NULL;
 }
@@ -243,9 +240,9 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
 static int tinycomprsrc_check_outlink_status(AVFilterContext *ctx) {
     TinyCompressContext *s = ctx->priv;
     int need_close = 1;
-    int ret;
+    int ret, i;
 
-    for (int i = 0; i < ctx->nb_outputs; i++) {
+    for (i = 0; i < ctx->nb_outputs; i++) {
         if (ff_outlink_get_status(ctx->outputs[i]) != AVERROR_EOF) {
             need_close = 0;
             break;
@@ -288,7 +285,8 @@ static int activate(AVFilterContext *ctx)
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFilterLink *link = ctx->outputs[i];
         AVFrame *resampled;
-        if (s->map && s->map[i] == 0)
+
+        if (s->map[i] == 0)
             continue;
 
         ret = ff_resample_frame(&s->resampler, link, frame, &resampled);
@@ -381,6 +379,7 @@ static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, cha
         av_log(s, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
         return 0;
     } else if (!strcmp(key, "format")) {
+        const AVCodec *dec;
         int codec_id;
         ret = tinycomprsrc_query_cap(ctx, "codec", &codec_id);
         if (ret < 0)
@@ -388,17 +387,10 @@ static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, cha
 
         s->codec_id = codec_id;
 
-        if (s->codec_id != AV_CODEC_ID_PCM_S16LE) {
-            const AVCodec *dec;
-            dec = avcodec_find_decoder(s->codec_id);
-            if (!dec)
-                return AV_SAMPLE_FMT_NONE;
-            s->sample_fmt = dec->sample_fmts[0];
-        } else {
-            ret = tinycomprsrc_query_cap(ctx, "sample_fmts", &s->sample_fmt);
-            if (ret < 0)
-                return ret;
-        }
+        dec = avcodec_find_decoder(s->codec_id);
+        if (!dec)
+            return AV_SAMPLE_FMT_NONE;
+        s->sample_fmt = dec->sample_fmts[0];
 
         ret = tinycomprsrc_query_cap(ctx, "sample_rates", &s->sample_rate);
         if (ret < 0)
@@ -485,11 +477,11 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
     } else if (!strcmp(cmd, "unlink")) {
         for (int i = 0; i < ctx->nb_outputs; i++) {
             AVFilterLink *link = ctx->outputs[i];
-            if (s->map && s->map[i] == 0)
+
+            if (s->map[i] == 0)
                 continue;
             ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
         }
-        s->next_pts = 0;
         tinycomprsrc_close(ctx);
         return 0;
     } else if (!strcmp(cmd, "map")) {
@@ -502,9 +494,10 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
 
         for (int i = 0; i < ctx->nb_outputs; i++) {
             AVFilterLink *link = ctx->outputs[i];
-            if (s->map && s->map[i] == 0)
+
+            if (s->map[i] == 0)
                 ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-            else if (s->map && s->map[i] == 1)
+            else if (s->map[i] == 1)
                 need_close = 0;
         }
 
@@ -540,12 +533,10 @@ static const AVFilterPad tinycomprsrc_outputs[] = {
 #define A AV_OPT_FLAG_AUDIO_PARAM | AV_OPT_FLAG_FILTERING_PARAM
 #define R A|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption tinycomprsrc_options[] = {
-    { "devname",     "device name", OFFSET(devname),     AV_OPT_TYPE_STRING,     .flags = A },
-    { "outputs",     "output link num", OFFSET(nb_outputs),  AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
-    { "fragment_size", "fragment size", OFFSET(fragment_size), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, R },
-    { "fragments",   "fragment num", OFFSET(fragments),   AV_OPT_TYPE_INT,        {.i64 = 0}, 0, INT_MAX, R },
-    { "map",         "input indexes to remap to outputs", OFFSET(map_str),     AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
-    { "map_array",   "get map list", OFFSET(map),         AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
+    { "devname",       "device name",                       OFFSET(devname),       AV_OPT_TYPE_STRING, .flags = A },
+    { "outputs",       "output link num",                   OFFSET(nb_outputs),    AV_OPT_TYPE_INT,    {.i64 = 1}, 0, INT_MAX, R },
+    { "map",           "input indexes to remap to outputs", OFFSET(map_str),       AV_OPT_TYPE_STRING, {.str = NULL},   .flags=R },
+    { "map_array",     "get map list",                      OFFSET(map),           AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
     { NULL },
 };
 
