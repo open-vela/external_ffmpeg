@@ -41,6 +41,10 @@ typedef struct AlsaSinkPriv {
   int periods;
   int period_time;
 
+  int sample_rate;                /**< sample rate */
+  AVChannelLayout ch_layout;      /**< channel layout */
+  enum AVSampleFormat sample_fmt; /**< sample format */
+
   char *devname;
   AlsaHandle *handles;
 } AlsaSinkPriv;
@@ -263,28 +267,106 @@ static int alsasink_activate(AVFilterContext *ctx)
 }
 
 static int alsasink_query_formats(const AVFilterContext *ctx,
-                                AVFilterFormatsConfig **cfg_in,
-                                AVFilterFormatsConfig **cfg_out)
+                                 AVFilterFormatsConfig **cfg_in,
+                                 AVFilterFormatsConfig **cfg_out)
 {
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
-    int ret, i;
+    AVOptionRanges *ranges = NULL;
+    AlsaSinkPriv *priv = ctx->priv;
+    AVChannelLayout layout;
+    int ret = 0, n, i, j;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
-        formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+        formats = NULL;
+        if (priv->sample_fmt != AV_SAMPLE_FMT_NONE) {
+            ret = ff_add_format(&formats, priv->sample_fmt);
+            if (ret < 0)
+                goto out;
+        } else {
+            ret = alsa_query_caps(&ranges, priv->devname, "sample_fmts", true);
+            if (ret >= 0) {
+                for (n = 0; n < ranges->nb_ranges; n++) {
+                    ret = ff_add_format(&formats, ranges->range[n]->value_min);
+                    if (ret < 0)
+                        goto out;
+                }
+                av_opt_freep_ranges(&ranges);
+            } else {
+                formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
+                if (!formats) {
+                    ret = AVERROR(ENOMEM);
+                    goto out;
+                }
+            }
+        }
         ff_formats_unref(&cfg_in[i]->formats);
         ret = ff_formats_ref(formats, &cfg_in[i]->formats);
         if (ret < 0)
             goto out;
 
-
-        formats = ff_all_samplerates();
+        formats = NULL;
+        if (priv->sample_rate) {
+            ret = ff_add_format(&formats, priv->sample_rate);
+            if (ret < 0)
+                goto out;
+        } else {
+            ret = alsa_query_caps(&ranges, priv->devname, "sample_rates", true);
+            if (ret >= 0) {
+                for (n = 0; n < ranges->nb_ranges; n++) {
+                    ret = ff_add_format(&formats, ranges->range[n]->value_min);
+                    if (ret < 0)
+                        goto out;
+                }
+                av_opt_freep_ranges(&ranges);
+            } else {
+                formats = ff_all_samplerates();
+                if (!formats) {
+                    ret = AVERROR(ENOMEM);
+                    goto out;
+                }
+            }
+        }
         ff_formats_unref(&cfg_in[i]->samplerates);
         ret = ff_formats_ref(formats, &cfg_in[i]->samplerates);
         if (ret < 0)
             goto out;
 
-        layouts = ff_all_channel_counts();
+        layouts = NULL;
+        if (priv->ch_layout.nb_channels) {
+            ret = ff_add_channel_layout(&layouts, &priv->ch_layout);
+            if (ret < 0)
+               goto out;
+        } else {
+            ret = alsa_query_caps(&ranges, priv->devname, "channels", true);
+            if (ret >= 0) {
+                for (n = 0; n < ranges->nb_ranges; n++) {
+                    if (ranges->range[n]->is_range) {
+                        for (j = ranges->range[n]->value_min;
+                            j <= ranges->range[n]->value_max; j++) {
+                            av_channel_layout_default(&layout, j);
+                            ret = ff_add_channel_layout(&layouts, &layout);
+                            if (ret < 0)
+                                goto out;
+                        }
+                    } else {
+                        j = ranges->range[n]->value_min;
+                        av_channel_layout_default(&layout, j);
+                        ret = ff_add_channel_layout(&layouts, &layout);
+                        if (ret < 0)
+                            goto out;
+                    }
+                }
+                av_opt_freep_ranges(&ranges);
+            } else {
+                layouts = ff_all_channel_counts();
+                if (!layouts) {
+                    ret = AVERROR(ENOMEM);
+                    goto out;
+                }
+            }
+        }
+
         ff_channel_layouts_unref(&cfg_in[i]->channel_layouts);
         ret = ff_channel_layouts_ref(layouts, &cfg_in[i]->channel_layouts);
         if (ret < 0)
@@ -292,6 +374,9 @@ static int alsasink_query_formats(const AVFilterContext *ctx,
     }
 
 out:
+    av_opt_freep_ranges(&ranges);
+    ff_formats_unref(&formats);
+    ff_channel_layouts_unref(&layouts);
     return ret;
 }
 
@@ -359,10 +444,13 @@ static int alsasink_process_command(AVFilterContext *ctx,
 #define FLAGS  AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
 static const AVOption alsasink_options[] = {
-    { "inputs",      "", OFFSET(nb_inputs),   AV_OPT_TYPE_INT,    { .i64 = 1 },       1, INT16_MAX, FLAGS },
-    { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,    {.i64 = 4},         0, INT_MAX,   FLAGS },
-    { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,    {.i64 = 20},        0, INT_MAX,   FLAGS },
-    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING, {.str = "default"}, 0, 0,         FLAGS },
+    { "inputs",      "", OFFSET(nb_inputs),   AV_OPT_TYPE_INT,        { .i64 = 1 },                1, INT16_MAX, FLAGS },
+    { "periods",     "", OFFSET(periods),     AV_OPT_TYPE_INT,        {.i64 = 4},                  0, INT_MAX,   FLAGS },
+    { "period_time", "", OFFSET(period_time), AV_OPT_TYPE_INT,        {.i64 = 20},                 0, INT_MAX,   FLAGS },
+    { "devname",     "", OFFSET(devname),     AV_OPT_TYPE_STRING,     {.str = "default"},          0, 0,         FLAGS },
+    { "format",      "", OFFSET(sample_fmt),  AV_OPT_TYPE_SAMPLE_FMT, {.i64 =AV_SAMPLE_FMT_NONE}, -1, INT_MAX,   FLAGSR },
+    { "sample_rate", "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX,   FLAGSR },
+    { "ch_layout",   "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,         FLAGSR },
     { NULL },
 };
 
