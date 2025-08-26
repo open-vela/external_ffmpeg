@@ -546,10 +546,6 @@ int ff_nuttx_init(NuttxPriv *priv, const char *device, bool playback)
         goto out;
     }
 
-    ret = ff_nuttx_ioctl(priv->fd, AUDIOIOC_REGISTERMQ, priv->mq);
-    if (ret < 0)
-        goto out;
-
     priv->playback = playback;
     priv->volume = NAN;
     priv->mute = false;
@@ -755,6 +751,8 @@ int ff_nuttx_poll_available(NuttxPriv *priv, bool nonblock)
         } else if (msg.msg_id == AUDIO_MSG_COMPLETE) {
             av_log(priv, AV_LOG_INFO, "[%s][%s] complete\n", __func__, priv->devname);
             priv->draining = false;
+            if (priv->mq >= 0)
+                ff_nuttx_ioctl(priv->fd, AUDIOIOC_UNREGISTERMQ, 0);
             if (!priv->running)
                 ff_nuttx_ioctl(priv->fd, AUDIOIOC_RELEASE, NULL);
             else
