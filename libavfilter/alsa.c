@@ -251,6 +251,24 @@ static int alsa_get_capabilities(const char *device, int ac_type,
     return ret;
 }
 
+static int alsa_get_audio_info(const char *device, struct audio_info_s *info)
+{
+    char path[32];
+    int ret;
+    int fd;
+
+    snprintf(path, sizeof(path), CONFIG_AUDIOUTILS_ALSA_LIB_DEV_PATH "/%s", device);
+    fd = open(path, O_RDWR | O_CLOEXEC);
+
+    if (fd < 0)
+        return -ENOENT;
+
+    ret = alsa_ioctl(fd, AUDIOIOC_GETAUDIOINFO, (unsigned long)info);
+    close(fd);
+
+    return ret;
+}
+
 int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
               int rate, AVChannelLayout ch_layout, enum AVSampleFormat smpfmt,
               int periods, int period_time)
@@ -457,45 +475,69 @@ int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
     struct AVOptionRanges *ranges;
     int values0[64], values1[64];
     int nb_ranges, is_range = 0;
+    struct audio_info_s info;
+    int format;
     int ret;
 
     ranges = av_mallocz(sizeof(struct AVOptionRanges));
     if (!ranges)
         return AVERROR(ENOMEM);
 
+    alsa_get_audio_info(device, &info);
+
     if (!strcmp(key, "sample_fmts")) {
-        ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &formats);
-        if (ret < 0)
-            goto err;
-
-        ret = alsa_capbility_query_smpfmts(device, formats.ac_format.hw, values0);
-        if (ret < 0)
-            goto err;
-
-        nb_ranges = ret;
-    } else if (!strcmp(key, "channels") || !strcmp(key, "sample_rates")) {
-        ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
-        ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &others);
-        if (ret < 0)
-            goto err;
-
-        if (!strcmp(key, "channels")) {
-            if ((others.ac_channels & 0xf0) == 0) {
-                values0[0] = 1;
-                values1[0] = others.ac_channels;
-            } else {
-                values0[0] = others.ac_channels >> 4;
-                values1[0] = others.ac_channels & 0x0f;
-            }
-
+        if (info.format > 0) {
+            format = alsafmt_to_smpfmt(info.subformat);
+            values0[0] = format;
+            values1[0] = format;
             nb_ranges = 1;
-            is_range = (values0[0] != values1[0]);
         } else {
-            ret = alsa_samplerate_convert(others.ac_controls.hw[0], values0, 64);
+            ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &formats);
+            if (ret < 0)
+                goto err;
+
+            ret = alsa_capbility_query_smpfmts(device, formats.ac_format.hw, values0);
             if (ret < 0)
                 goto err;
 
             nb_ranges = ret;
+        }
+    } else if (!strcmp(key, "channels") || !strcmp(key, "sample_rates")) {
+        if (info.channels > 0 || info.samplerate > 0) {
+            if (!strcmp(key, "channels")) {
+                values0[0] = info.channels;
+                values1[0] = info.channels;
+                nb_ranges = 1;
+            } else {
+                values0[0] = info.samplerate;
+                values1[0] = info.samplerate;
+                nb_ranges = 1;
+            }
+
+        } else {
+            ac_type = playback ? AUDIO_TYPE_OUTPUT : AUDIO_TYPE_INPUT;
+            ret = alsa_get_capabilities(device, ac_type, AUDIO_TYPE_QUERY, &others);
+            if (ret < 0)
+                goto err;
+
+            if (!strcmp(key, "channels")) {
+                if ((others.ac_channels & 0xf0) == 0) {
+                    values0[0] = 1;
+                    values1[0] = others.ac_channels;
+                } else {
+                    values0[0] = others.ac_channels >> 4;
+                    values1[0] = others.ac_channels & 0x0f;
+                }
+
+                nb_ranges = 1;
+                is_range = (values0[0] != values1[0]);
+            } else {
+                ret = alsa_samplerate_convert(others.ac_controls.hw[0], values0, 64);
+                if (ret < 0)
+                    goto err;
+
+                nb_ranges = ret;
+            }
         }
     }  else if (!strcmp(key, "codec")) {
         int fmt = 0;
