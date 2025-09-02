@@ -4269,8 +4269,14 @@ if [ -z "$DECODER_LIST" ]; then
 fi
 OUTDEV_LIST=$(find_things_extern muxer FFOutputFormat libavdevice/alldevices.c outdev)
 INDEV_LIST=$(find_things_extern demuxer FFInputFormat libavdevice/alldevices.c indev)
-MUXER_LIST=$(find_things_extern muxer FFOutputFormat libavformat/allformats.c)
-DEMUXER_LIST=$(find_things_extern demuxer FFInputFormat libavformat/allformats.c)
+
+if [ -z "$MUXER_LIST" ]; then
+    MUXER_LIST=$(find_things_extern muxer FFOutputFormat libavformat/allformats.c)
+fi
+
+if [ -z "$DEMUXER_LIST" ]; then
+    DEMUXER_LIST=$(find_things_extern demuxer FFInputFormat libavformat/allformats.c)
+fi
 
 CODEC_LIST="
     $ENCODER_LIST
