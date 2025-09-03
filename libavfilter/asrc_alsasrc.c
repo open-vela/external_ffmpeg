@@ -165,119 +165,95 @@ static int alsasrc_query_formats(const AVFilterContext *ctx,
                                  AVFilterFormatsConfig **cfg_in,
                                  AVFilterFormatsConfig **cfg_out)
 {
+    AVFilterFormats *samprates = NULL, *fmts = NULL;
     AVFilterChannelLayouts *layouts = NULL;
-    AVFilterFormats *formats = NULL;
-    AVOptionRanges *ranges = NULL;
-    AlsasrcPriv *src = ctx->priv;
+    AVOptionRanges *caps_ranges = NULL;
+    AlsasrcPriv *priv = ctx->priv;
     AVChannelLayout layout;
-    int ret, n, i,j;
+    int n, i, j, ret;
+
+    if (priv->sample_rate > 0) {
+        ret = ff_add_format(&fmts, priv->sample_rate);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = alsa_query_caps(&caps_ranges, priv->devname, "sample_rates", false);
+        if (ret >= 0) {
+            for (n = 0; n < caps_ranges->nb_ranges; n++) {
+                ret = ff_add_format(&fmts, caps_ranges->range[n]->value_min);
+                if (ret < 0)
+                    goto out;
+            }
+            av_opt_freep_ranges(&caps_ranges);
+        }
+    }
+    samprates = fmts;
+    fmts = NULL;
+
+    if (priv->format != AV_SAMPLE_FMT_NONE) {
+        ret = ff_add_format(&fmts, priv->format);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = alsa_query_caps(&caps_ranges, priv->devname, "sample_fmts", false);
+        if (ret >= 0) {
+            for (n = 0; n < caps_ranges->nb_ranges; n++) {
+                ret = ff_add_format(&fmts, caps_ranges->range[n]->value_min);
+                if (ret < 0)
+                    goto out;
+            }
+            av_opt_freep_ranges(&caps_ranges);
+        }
+    }
+
+    if (priv->ch_layout.nb_channels > 0) {
+        ret = ff_add_channel_layout(&layouts, &priv->ch_layout);
+        if (ret < 0)
+            goto out;
+    } else {
+        ret = alsa_query_caps(&caps_ranges, priv->devname, "channels", false);
+        if (ret >= 0) {
+            for (n = 0; n < caps_ranges->nb_ranges; n++) {
+                int min_ch = caps_ranges->range[n]->value_min;
+                int max_ch = caps_ranges->range[n]->is_range ?
+                             caps_ranges->range[n]->value_max : min_ch;
+
+                for (j = min_ch; j <= max_ch; j++) {
+                    av_channel_layout_default(&layout, j);
+                    ret = ff_add_channel_layout(&layouts, &layout);
+                    if (ret < 0)
+                        goto out;
+                }
+            }
+            av_opt_freep_ranges(&caps_ranges);
+        }
+    }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
-        if (src->map && src->map[i] == ROUTE_OFF)
+        if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        formats = NULL;
-        if (src->format != AV_SAMPLE_FMT_NONE) {
-            int fmts[] = { src->format, -1 };
-            formats = ff_make_format_list(fmts);
-        } else {
-            ret = alsa_query_caps(&ranges, src->devname, "sample_fmts", false);
-            if (ret >= 0) {
-                for (int n = 0; n < ranges->nb_ranges; n++) {
-                    ret = ff_add_format(&formats, ranges->range[n]->value_min);
-                    if (ret < 0)
-                        goto out;
-                }
-                av_opt_freep_ranges(&ranges);
-            } else {
-                formats = ff_all_formats(AVMEDIA_TYPE_AUDIO);
-                if (!formats) {
-                    ret = AVERROR(ENOMEM);
-                    goto out;
-                }
-            }
-        }
-
         ff_formats_unref(&cfg_out[i]->formats);
-        ret = ff_formats_ref(formats, &cfg_out[i]->formats);
+        ret = ff_formats_ref(fmts, &cfg_out[i]->formats);
         if (ret < 0)
             goto out;
-
-        formats = NULL;
-        if (src->sample_rate) {
-            int rates[] = { src->sample_rate, -1 };
-            formats = ff_make_format_list(rates);
-        } else {
-            ret = alsa_query_caps(&ranges, src->devname, "sample_rates", false);
-            if (ret >= 0) {
-                for (int n = 0; n < ranges->nb_ranges; n++) {
-                    ret = ff_add_format(&formats, ranges->range[n]->value_min);
-                    if (ret < 0)
-                        goto out;
-                }
-                av_opt_freep_ranges(&ranges);
-            } else {
-                formats = ff_all_samplerates();
-                if (!formats) {
-                    ret = AVERROR(ENOMEM);
-                    goto out;
-                }
-            }
-        }
 
         ff_formats_unref(&cfg_out[i]->samplerates);
-        ret = ff_formats_ref(formats, &cfg_out[i]->samplerates);
+        ret = ff_formats_ref(samprates, &cfg_out[i]->samplerates);
         if (ret < 0)
             goto out;
-
-        if (src->ch_layout.nb_channels) {
-            ret = ff_add_channel_layout(&layouts, &src->ch_layout);
-            if (ret < 0)
-               goto out;
-        } else {
-            ret = alsa_query_caps(&ranges, src->devname, "channels", false);
-            if (ret >= 0) {
-                for (n = 0; n < ranges->nb_ranges; n++) {
-                    if (ranges->range[n]->is_range) {
-                        for (j = ranges->range[0]->value_min; j <= ranges->range[0]->value_max; j++) {
-                            av_channel_layout_default(&layout, j);
-                            ret = ff_add_channel_layout(&layouts, &layout);
-                            if (ret < 0)
-                                goto out;
-                        }
-                    } else {
-                        j = ranges->range[n]->value_min;
-                        av_channel_layout_default(&layout, j);
-                        ret = ff_add_channel_layout(&layouts, &layout);
-                        if (ret < 0)
-                            goto out;
-                    }
-                }
-                av_opt_freep_ranges(&ranges);
-            } else {
-                layouts = ff_all_channel_counts();
-                if (!layouts) {
-                    ret = AVERROR(ENOMEM);
-                    goto out;
-                }
-            }
-        }
 
         ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
         ret = ff_channel_layouts_ref(layouts, &cfg_out[i]->channel_layouts);
         if (ret < 0)
             goto out;
-        layouts = NULL;
     }
 
-    ret = 0;
-
 out:
-    av_opt_freep_ranges(&ranges);
-    if (formats)
-        ff_formats_unref(&formats);
-    if (layouts)
-        ff_channel_layouts_unref(&layouts);
+    av_opt_freep_ranges(&caps_ranges);
+    ff_channel_layouts_unref(&layouts);
+    ff_formats_unref(&samprates);
+    ff_formats_unref(&fmts);
 
     return ret;
 }
