@@ -746,11 +746,12 @@ static int asubgraph_process_command(AVFilterContext *ctx, const char *cmd, cons
     } else if (!strcmp(cmd, "sub_cmd")) {
         return asubgraph_process_subcmd(ctx, args, res, res_len, flags);
     } else if (!strcmp(cmd, "link")) {
+        FilterLinkInternal *li;
         for (i = 0; i < ctx->nb_outputs; i++) {
             if (priv->map && priv->map[i] == ROUTE_OFF)
                 continue;
 
-            FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+            li = ff_link_internal(ctx->outputs[i]);
             li->frame_wanted_out = 1;
         }
 

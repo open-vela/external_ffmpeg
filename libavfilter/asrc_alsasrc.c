@@ -516,8 +516,8 @@ static int alsasrc_open(AVFilterContext *ctx)
     AVFilterLink *link;
     int sample_rate;
     int channels;
+    int pad = -1;
     int ret;
-    int pad;
     int i;
 
     if (handle->h)
@@ -530,6 +530,9 @@ static int alsasrc_open(AVFilterContext *ctx)
         pad = i;
         break;
     }
+
+    if (pad == -1)
+        return AVERROR(EINVAL);
 
     link = ctx->outputs[pad];
     ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
