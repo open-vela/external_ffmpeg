@@ -65,6 +65,7 @@ typedef struct TinyCompressContext {
     int64_t next_pts;
     AVPacket *pkt;
 
+    bool paused;
     VolumeContext vol_ctx;
     double volume;
 } TinyCompressContext;
@@ -139,12 +140,8 @@ error:
 static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR void* extra)
 {
     AVFilterContext *ctx = (AVFilterContext *)cookie;
-    TinyCompressContext *s = ctx->priv;
-    struct compress *h = s->compress;
 
     av_log(ctx, AV_LOG_INFO, "%s line %d event %d\n", __func__, __LINE__, event);
-
-    return;
 }
 
 static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec)
@@ -255,7 +252,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
         goto error;
 
     volume_set(&s->vol_ctx, s->volume);
-
+    s->paused = false;
     return ret;
 
 error:
@@ -282,30 +279,48 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
     av_packet_free(&s->pkt);
+    s->paused = true;
     s->next_pts = 0L;
     s->compress = NULL;
     s->dec_ctx = NULL;
     s->sample_fmt = AV_SAMPLE_FMT_NONE;
 }
 
-static int tinycomprsrc_check_outlink_status(AVFilterContext *ctx) {
+static int tinycomprsrc_pause(AVFilterContext *ctx)
+{
     TinyCompressContext *s = ctx->priv;
-    int need_close = 1;
-    int ret, i;
+    int ret;
 
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        if (ff_outlink_get_status(ctx->outputs[i]) != AVERROR_EOF) {
-            need_close = 0;
-            break;
-        }
-    }
-
-    if (need_close && s->compress) {
-        tinycomprsrc_close(ctx);
+    if (!s->compress || s->paused)
         return 0;
+
+    ret = compress_pause(s->compress);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "%s pause fail.\n", ctx->name);
+        return ret;
     }
 
-    return 1;
+    s->paused = true;
+    av_log(ctx, AV_LOG_INFO, "%s pause.\n", ctx->name);
+    return ret;
+}
+
+static int tinycomprsrc_resume(AVFilterContext *ctx) {
+    TinyCompressContext *s = ctx->priv;
+    int ret;
+
+    if (!s->compress || !s->paused)
+        return 0;
+
+    ret = compress_resume(s->compress);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "%s resume fail.\n", ctx->name);
+        return ret;
+    }
+
+    s->paused = false;
+    av_log(ctx, AV_LOG_INFO, "%s resume.\n", ctx->name);
+    return 0;
 }
 
 static int activate(AVFilterContext *ctx)
@@ -314,9 +329,8 @@ static int activate(AVFilterContext *ctx)
     AVFrame *frame = NULL;
     int ret, i;
 
-    ret = tinycomprsrc_check_outlink_status(ctx);
-    if (!ret)
-        return ret;
+    if (s->paused)
+        return 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (ff_outlink_frame_wanted(ctx->outputs[i]))
@@ -585,6 +599,11 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         ff_filter_set_ready(ctx, 100);
         return 0;
     } else if (!strcmp(cmd, "link")) {
+        if (s->compress && s->paused) {
+            tinycomprsrc_resume(ctx);
+            return 0;
+        }
+
         tinycomprsrc_force_request(ctx);
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
@@ -595,10 +614,11 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
                 continue;
             ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
         }
+
         tinycomprsrc_close(ctx);
         return 0;
     } else if (!strcmp(cmd, "map")) {
-        int need_close = 1;
+        int need_pause = 1;
         ret = avfilter_parse_mapping(arg, &s->map, s->nb_outputs);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "Failed to parse mapping: %s ret:%d\n", arg, ret);
@@ -611,12 +631,14 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             if (s->map[i] == 0)
                 ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
             else if (s->map[i] == 1)
-                need_close = 0;
+                need_pause = 0;
         }
 
-        if (need_close)
-            tinycomprsrc_close(ctx);
+        if (need_pause)
+            tinycomprsrc_pause(ctx);
         return ret;
+    } else if (!strcmp(cmd, "pause")) {
+        ret = tinycomprsrc_pause(ctx);
     } else if (!strcmp(cmd, "get_parameter")) {
         if (!arg || res_len <= 0)
             return AVERROR(EINVAL);
