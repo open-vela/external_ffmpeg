@@ -27,7 +27,7 @@
 #include "bsf.h"
 #include "bsf_internal.h"
 #include "bytestream.h"
-#include "defs.h"
+#include "libavcodec/defs.h"
 
 #include "hevc/hevc.h"
 
