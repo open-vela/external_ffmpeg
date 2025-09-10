@@ -31,7 +31,6 @@
 #include <libavutil/samplefmt.h>
 
 #include "alsa.h"
-#include "aresample.h"
 #include "avfilter.h"
 #include "avfilter_internal.h"
 #include "filters.h"
@@ -48,7 +47,6 @@ typedef struct TinyCompressContext {
     const AVClass *class;
     struct compress *compress;
     AVCodecContext *dec_ctx;
-    AResampleContext resampler;
 
     enum AVSampleFormat sample_fmt;
     AVChannelLayout ch_layout;
@@ -186,8 +184,6 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
         goto error;
     }
 
-    ff_resample_init(&s->resampler);
-
     s->pkt = av_packet_alloc();
     if (!s->pkt) {
         ret = AVERROR(ENOMEM);
@@ -235,7 +231,6 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
     av_packet_free(&s->pkt);
-    ff_resample_uninit(&s->resampler);
     s->next_pts = 0L;
     s->compress = NULL;
     s->dec_ctx = NULL;
@@ -286,22 +281,21 @@ static int activate(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    volume_scale(&s->vol_ctx, frame);
+
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFilterLink *link = ctx->outputs[i];
-        AVFrame *resampled;
+        AVFrame *iframe = NULL;
 
         if (s->map[i] == 0)
             continue;
 
-        ret = ff_resample_frame(&s->resampler, link, frame, &resampled);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to resample frame ret:%d\n", ret);
-            continue;
+        iframe = av_frame_clone(frame);
+        if (!iframe) {
+            ret = AVERROR(ENOMEM);
+            goto out;
         }
 
-        volume_scale(&s->vol_ctx, resampled);
-
-        ret = ff_filter_frame(link, resampled);
+        ret = ff_filter_frame(ctx->outputs[i], iframe);
         if (ret < 0)
             goto out;
     }
