@@ -33,7 +33,6 @@
 
 #include "alsa.h"
 #include "avfilter.h"
-#include "aresample.h"
 #include "avfilter_internal.h"
 #include "filters.h"
 #include "formats.h"
@@ -64,7 +63,6 @@ typedef struct AlsasrcPriv {
     int nb_outputs;
 
     int64_t timestamp;
-    AResampleContext resample;
 
     VolumeContext vol_ctx;
     double volume;
@@ -145,7 +143,6 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
-    ff_resample_init(&priv->resample);
     priv->volume = -1.0f;
     priv->mute = false;
     return 0;
@@ -155,8 +152,6 @@ static void alsasrc_uninit(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
     int i;
-
-    ff_resample_uninit(&priv->resample);
 
     av_freep(&priv->map);
 }
@@ -601,34 +596,21 @@ static int alsasrc_activate(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    volume_scale(&priv->vol_ctx, frame);
+
     for (i = 0; i < ctx->nb_outputs; i++) {
-        AVFrame *oframe = NULL;
         AVFrame *iframe = NULL;
-        AVFilterLink *link;
 
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
         iframe = av_frame_clone(frame);
         if (!iframe) {
-            av_frame_free(&frame);
             ret = AVERROR(ENOMEM);
             goto out;
         }
 
-        volume_scale(&priv->vol_ctx, iframe);
-
-        link = ctx->outputs[i];
-        ret = ff_resample_frame(&priv->resample, link, iframe, &oframe);
-        if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "resample frame failed %d.\n", ret);
-            av_frame_free(&iframe);
-            continue;
-        }
-
-        av_frame_free(&iframe);
-
-        ret = ff_filter_frame(link, oframe);
+        ret = ff_filter_frame(ctx->outputs[i], iframe);
         if (ret < 0)
             goto out;
     }
