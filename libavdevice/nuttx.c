@@ -108,8 +108,9 @@ static int ff_nuttx_avcodec_to_fmt(int codec_id)
         case AV_CODEC_ID_FLAC:
             return AUDIO_FMT_FLAC;
         case AV_CODEC_ID_AMR_NB:
-        case AV_CODEC_ID_AMR_WB:
             return AUDIO_FMT_AMR;
+        case AV_CODEC_ID_AMR_WB:
+            return AUDIO_FMT_AMRWB;
         case AV_CODEC_ID_OPUS:
             return AUDIO_FMT_OPUS;
         case AV_CODEC_ID_AAC:
@@ -137,8 +138,6 @@ static int ff_nuttx_subfmt_to_avcodec(int subfmt)
         case AUDIO_SUBFMT_PCM_MP1:    return AV_CODEC_ID_MP1;
         case AUDIO_SUBFMT_PCM_MP2:    return AV_CODEC_ID_MP2;
         case AUDIO_SUBFMT_PCM_MP3:    return AV_CODEC_ID_MP3;
-        case AUDIO_SUBFMT_AMRNB:      return AV_CODEC_ID_AMR_NB;
-        case AUDIO_SUBFMT_AMRWB:      return AV_CODEC_ID_AMR_WB;
     }
 
     return AV_CODEC_ID_FIRST_AUDIO;
@@ -293,6 +292,10 @@ static int ff_nuttx_fmt_to_avcodec(int *codec_id, int *formats)
         codec     = AV_CODEC_ID_AMR_NB;
         format    = AUDIO_FMT_AMR;
         *formats &= ~(1 << (AUDIO_FMT_AMR - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AMRWB - 1))) {
+        codec     = AV_CODEC_ID_AMR_WB;
+        format    = AUDIO_FMT_AMRWB;
+        *formats &= ~(1 << (AUDIO_FMT_AMRWB - 1));
     } else if (*formats & (1 << (AUDIO_FMT_OTHER - 1))) {
         format    = AUDIO_FMT_OTHER;
         *formats &= ~(1 << (AUDIO_FMT_OTHER - 1));
