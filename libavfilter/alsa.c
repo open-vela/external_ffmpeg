@@ -284,7 +284,7 @@ int alsa_open(AlsaHandle *s, const char *device, snd_pcm_stream_t mode,
         av_log(NULL, AV_LOG_ERROR, "sample format %d is not supported\n", smpfmt);
         return AVERROR(ENOSYS);
     }
-    s->frame_size = snd_pcm_get_sample_bits(format) / 8 * ch_layout.nb_channels;
+    s->frame_size = snd_pcm_format_width(format) / 8 * ch_layout.nb_channels;
 
     res = snd_pcm_open(&h, device, mode, SND_PCM_NONBLOCK);
     if (res < 0) {
