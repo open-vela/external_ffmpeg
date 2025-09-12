@@ -226,7 +226,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
         ff_amix_set_frame_size(priv->mix, priv->enc_ctx->frame_size);
 
     compress_nonblock(priv->compress, 1);
-    compress_set_event(priv->compress, ctx, tinycomprsink_control_callback);
+    compress_set_event_callback(priv->compress, tinycomprsink_control_callback, ctx);
     priv->last_pkt = av_packet_alloc();
     if (!priv->last_pkt) {
         ret = -ENOMEM;

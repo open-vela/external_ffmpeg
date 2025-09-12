@@ -161,7 +161,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
         free(config.codec);
 
     compress_nonblock(s->compress, 1);
-    compress_set_event(s->compress, ctx, tinycomprsrc_control_callback);
+    compress_set_event_callback(s->compress, tinycomprsrc_control_callback, ctx);
 
     dec = avcodec_find_decoder(s->codec_id);
     if (!dec) {
