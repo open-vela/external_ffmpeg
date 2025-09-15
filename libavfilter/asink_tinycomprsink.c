@@ -111,17 +111,18 @@ static void tinycomprsink_codec_to_options(AVFilterContext *ctx, struct snd_code
         case AV_CODEC_ID_SBC:
             snprintf(buffer, sizeof(buffer),
                      "channel_mode=%d:blocks=%d:subbands=%d:alloc_method=%d:bitpool=%d",
-                     codec->options.sbc.channel_mode,
+                     codec->ch_mode,
                      codec->options.sbc.blocks,
                      codec->options.sbc.subbands,
                      codec->options.sbc.alloc_method,
                      codec->options.sbc.bitpool);
+            av_log(ctx, AV_LOG_INFO, "%s\n", buffer);
             av_dict_set(options, "sbc_param", buffer, 0);
             break;
 
         case AV_CODEC_ID_AAC:
-            av_dict_set_int(options, "profile", codec->options.aac.profile, 0);
-            av_dict_set_int(options, "vbr", codec->options.aac.vbr, 0);
+            av_dict_set_int(options, "profile", codec->profile, 0);
+            av_dict_set_int(options, "vbr", codec->rate_control, 0);
             av_dict_set_int(options, "latm", 1, 0);
             av_dict_set_int(options, "peak", 1, 0);
             break;
@@ -181,31 +182,31 @@ static int tinycomprsink_start(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
     struct compr_config config = {0};
+    struct snd_codec codec= {0};
     AVDictionary *fmt_opt = NULL;
+    char devname[64];
     int ret;
 
     if (priv->compress)
         return 0;
 
-    priv->compress = compress_open_by_name(priv->devname, COMPRESS_IN, &config);
+    snprintf(devname, sizeof(devname), "/dev/audio/%s", priv->devname);
+    priv->compress = compress_open_by_name(devname, COMPRESS_IN, NULL);
     if (!priv->compress || !is_compress_ready(priv->compress)) {
         av_log(ctx, AV_LOG_ERROR, "Failed to open device node: %s\n", priv->devname);
         ret = AVERROR(EIO);
         goto out;
     }
 
-    av_channel_layout_default(&priv->ch_layout, config.codec->ch_in);
-    priv->sample_fmt = tinycomprsink_subfmt_to_smpfmt(config.codec->format);
-    priv->sample_rate = config.codec->sample_rate;
-    priv->codec_id = tinycomprsink_fmt_to_avcodec(config.codec->id);
+    config.codec = &codec;
+    if (compress_get_current_config(priv->compress, &config) < 0) {
+        goto out;
+    }
 
     av_dict_set_int(&fmt_opt, "ar", priv->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", priv->ch_layout.nb_channels, 0);
     av_dict_set_int(&fmt_opt, "ab", config.codec->bit_rate, 0);
     tinycomprsink_codec_to_options(ctx, config.codec, &fmt_opt);
-
-    if (config.codec)
-        free(config.codec);
 
     ret = tinycomprsink_open_encoder(ctx, &fmt_opt);
     av_dict_free(&fmt_opt);
@@ -243,10 +244,9 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     return 0;
 
 out:
-    avcodec_free_context(&priv->enc_ctx);
+    if (priv->enc_ctx)
+        avcodec_free_context(&priv->enc_ctx);
     av_packet_free(&priv->last_pkt);
-    if (config.codec)
-        free(config.codec);
     if (priv->compress) {
         compress_close(priv->compress);
         priv->compress = NULL;

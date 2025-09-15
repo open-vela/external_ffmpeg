@@ -141,24 +141,29 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
     struct compr_config config = { 0 };
+    struct snd_codec codec = { 0 };
     const AVCodec *dec;
+    char devname[64];
     int ret;
 
     if (s->dec_ctx || s->compress)
         return 0;
 
-    s->compress = compress_open_by_name(s->devname, COMPRESS_OUT, &config);
+    snprintf(devname, sizeof(devname), "/dev/audio/%s", s->devname);
+    s->compress = compress_open_by_name(devname, COMPRESS_OUT, NULL);
     if (!s->compress || !is_compress_ready(s->compress)) {
         av_log(ctx, AV_LOG_ERROR, "Failed to open device node: %s\n", s->devname);
         ret = AVERROR(EIO);
         goto error;
     }
 
+    config.codec = &codec;
+    if (compress_get_current_config(s->compress, &config) < 0) {
+        goto error;
+    }
+
     s->fragment_size = config.fragment_size;
     s->fragments = config.fragments;
-
-    if (config.codec)
-        free(config.codec);
 
     compress_nonblock(s->compress, 1);
     compress_set_event_callback(s->compress, tinycomprsrc_control_callback, ctx);
