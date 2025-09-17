@@ -255,7 +255,7 @@ static int alsasink_activate(AVFilterContext *ctx)
         }
 
         ff_inlink_acknowledge_status(inlink, &ret, &pts);
-        if (ret >= 0)
+        if (ret >= 0 && ff_outlink_get_status(inlink) != AVERROR_EOF)
             ff_inlink_request_frame(inlink);
         else if (ret == AVERROR_EOF) {
             alsasink_drain(ctx, i);
