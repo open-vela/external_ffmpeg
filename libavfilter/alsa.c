@@ -471,11 +471,11 @@ int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
                     const char *key, bool playback)
 {
     struct audio_caps_s formats, others;
+    struct audio_info_s info = {0};
     int ac_type = AUDIO_TYPE_QUERY;
     struct AVOptionRanges *ranges;
     int values0[64], values1[64];
     int nb_ranges, is_range = 0;
-    struct audio_info_s info;
     int format;
     int ret;
 
