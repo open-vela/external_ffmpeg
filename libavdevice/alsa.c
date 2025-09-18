@@ -249,10 +249,6 @@ static int ff_audio_subfmt_to_avcodec(int subfmt)
         return AV_CODEC_ID_MP2;
     case AUDIO_SUBFMT_PCM_MP3:
         return AV_CODEC_ID_MP3;
-    case AUDIO_SUBFMT_AMRNB:
-        return AV_CODEC_ID_AMR_NB;
-    case AUDIO_SUBFMT_AMRWB:
-        return AV_CODEC_ID_AMR_WB;
     }
 
     return AV_CODEC_ID_FIRST_AUDIO;
@@ -318,6 +314,10 @@ static int ff_audio_fmt_to_avcodec(int *codec_id, int *formats)
         codec = AV_CODEC_ID_OPUS;
         format = AUDIO_FMT_OPUS;
         *formats &= ~(1 << (AUDIO_FMT_OPUS - 1));
+    } else if (*formats & (1 << (AUDIO_FMT_AMRWB - 1))) {
+        codec = AV_CODEC_ID_AMR_WB;
+        format = AUDIO_FMT_AMRWB;
+        *formats &= ~(1 << (AUDIO_FMT_AMRWB - 1));
     }
 
     *codec_id = codec;
