@@ -255,6 +255,9 @@ int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt)
     vol->volume_last = -1.0f;
     vol->volume = 1.0f;
 
+    if (vol->fdsp)
+        av_freep(&vol->fdsp);
+
     vol->fdsp = avpriv_float_dsp_alloc(0);
     if (!vol->fdsp)
         return AVERROR(ENOMEM);
