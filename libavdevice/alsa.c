@@ -33,6 +33,7 @@
 #include <alsa/asoundlib.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <unistd.h>
 
 #include "avdevice.h"
 #include "libavutil/avassert.h"

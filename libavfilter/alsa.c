@@ -28,6 +28,7 @@
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
 
+#include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
