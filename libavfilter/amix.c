@@ -41,6 +41,7 @@
 
 #define INPUT_ON       1    /**< input is active */
 #define INPUT_EOF      2    /**< input has reached EOF (may still be active) */
+#define INPUT_BLOCKED  4    /**< input is blocked (no frame available now) */
 
 typedef struct AMixInput {
     AMixContext *parent;        /**< amix context */
@@ -62,12 +63,17 @@ struct AMixContext {
     int frame_size;         /**< out frame size */
 };
 
+static inline bool input_needs_detach(AMixInput *input)
+{
+    return input->state & INPUT_EOF || input->state & INPUT_BLOCKED;
+}
+
 /**
  * Update the scaling factors to apply to each input during mixing.
  *
- * This balances the full volume range between active inputs and handles
- * volume transitions when EOF is encountered on an input but mixing continues
- * with the remaining inputs.
+ * Only the inputs which are in INPUT_ON state and non-empty need mix.
+ * Cause input with frame_blocked_in won't be removed from amix context,
+ * we need take care of this catiously.
  */
 static int calculate_scales(AMixContext *s)
 {
@@ -92,13 +98,18 @@ static int calculate_scales(AMixContext *s)
     return activate_inputs;
 }
 
+/**
+ * Calculate the num of inputs which are in INPUT_ON and not blocked in.
+ *
+ * This function is used to check how many inputs are not in draining.
+ */
 static int calc_active_inputs(AMixContext *s)
 {
     AMixInput *input;
     int count = 0;
 
     TAILQ_FOREACH(input, &s->inputs, entries) {
-        if (!(input->state & INPUT_EOF))
+        if (!input_needs_detach(input))
             count++;
     }
 
@@ -107,7 +118,7 @@ static int calc_active_inputs(AMixContext *s)
 
 static int get_output_samples(AMixContext *s)
 {
-    int ns, nb_samples = INT_MAX, min_samples = INT_MAX;
+    int ns, nb_samples = INT_MAX, min_samples = INT_MAX, max_samples = 0;
     AMixInput *input;
     int count = 0;
 
@@ -126,7 +137,8 @@ static int get_output_samples(AMixContext *s)
                 ns = av_audio_fifo_size(input->fifo);
 
             nb_samples = FFMIN(nb_samples, ns);
-            if (!(input->state & INPUT_EOF))
+            max_samples = FFMAX(max_samples, ns);
+            if (!input_needs_detach(input))
                 min_samples = FFMIN(min_samples, ns);
         }
     }
@@ -143,7 +155,7 @@ static int get_output_samples(AMixContext *s)
         } else if (count == s->nb_inputs) { //all inputs are not draining
             if (nb_samples >= s->frame_size)
                 nb_samples = s->frame_size;
-        } else if (count == 0) // all inputs are draining
+        } else if (count == 0 && max_samples > 0) // all inputs are draining
             nb_samples = s->frame_size;
 
         if (nb_samples != s->frame_size)
@@ -269,7 +281,9 @@ static void input_sync_state(AMixInput *input)
     else {
         li = ff_link_internal(input->link);
         if (li->frame_blocked_in)
-            input->state |= INPUT_EOF;
+            input->state |= INPUT_BLOCKED;
+        else
+            input->state &= ~INPUT_BLOCKED;
     }
 }
 
@@ -421,6 +435,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     int  i, ret, nb_samples;
     AMixInput *input, *tinput;
     int64_t pts;
+    int scales;
 
     if (!s)
         return AVERROR(EINVAL);
@@ -439,7 +454,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     if (!out_buf)
         return AVERROR(ENOMEM);
 
-    calculate_scales(s);
+    scales = calculate_scales(s);
 
     TAILQ_FOREACH_SAFE(input, &s->inputs, entries, tinput) {
         if (input->state & INPUT_ON) {
@@ -449,7 +464,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
             if (left_size == 0)
                 continue;
 
-            if ((input->state & INPUT_EOF) && left_size < nb_samples) {
+            if (input_needs_detach(input) && left_size < nb_samples) {
                 in_buf = ff_default_get_audio_buffer(s->out, nb_samples);
                 if (!in_buf) {
                     ret = AVERROR(ENOMEM);
@@ -490,8 +505,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
                 }
             }
 
-            if (calculate_scales(s) == 1)
-            {
+            if (scales == 1) {
                 if (av_frame_copy(out_buf, in_buf) < 0) {
                     av_frame_free(&out_buf);
                     return AVERROR(EINVAL);
