@@ -41,6 +41,14 @@
 
 #define TINYCOMPRSINK_SILENCE_FRAME_DURATION 20
 
+enum CompSinkState {
+    COMPSINK_IDLE,
+    COMPSINK_PAUSED,
+    COMPSINK_RESUMED,
+    COMPSINK_STARTED,
+    COMPSINK_STOPPED
+};
+
 typedef struct CompSinkPriv {
     const AVClass *class;
     AVCodecContext *enc_ctx;
@@ -54,7 +62,7 @@ typedef struct CompSinkPriv {
     AMixContext *mix;
     int frame_count; /**< number of silent frames before pause */
     int timeout; /**< time tolerance for silence frame before pause */
-    bool started;
+    enum CompSinkState state;
     bool unlinked;
     FAR struct compress *compress;
 } CompSinkPriv;
@@ -178,7 +186,7 @@ static void tinycomprsink_control_callback(FAR void* cookie, int event, const FA
     av_log(ctx, AV_LOG_INFO, "tinycomprsink line %d event %d\n", __LINE__, event);
 }
 
-static int tinycomprsink_start(AVFilterContext *ctx)
+static int tinycomprsink_open(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
     struct compr_config config = {0};
@@ -199,7 +207,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     }
 
     config.codec = &codec;
-    if (compress_get_current_config(priv->compress, &config) < 0) {
+    if (ret = compress_get_current_config(priv->compress, &config) < 0) {
         goto out;
     }
 
@@ -223,8 +231,10 @@ static int tinycomprsink_start(AVFilterContext *ctx)
         }
     }
 
-    if (priv->enc_ctx->frame_size)
+    if (priv->enc_ctx->frame_size) {
         ff_amix_set_frame_size(priv->mix, priv->enc_ctx->frame_size);
+        av_log(ctx, AV_LOG_INFO, "tinycomprsink frame_size:%d\n", priv->enc_ctx->frame_size);
+    }
 
     compress_nonblock(priv->compress, 1);
     compress_set_event_callback(priv->compress, tinycomprsink_control_callback, ctx);
@@ -234,11 +244,6 @@ static int tinycomprsink_start(AVFilterContext *ctx)
         goto out;
     }
 
-    ret = compress_start(priv->compress);
-    if (ret < 0)
-        goto out;
-
-    priv->started = true;
     priv->frame_count = 0;
 
     return 0;
@@ -259,7 +264,25 @@ out:
     return ret;
 }
 
-static void tinycomprsink_stop(AVFilterContext *ctx)
+static int tinycomprsink_start(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+    int ret;
+
+    if (!priv->compress || priv->state != COMPSINK_IDLE)
+        return 0;
+
+    ret = compress_start(priv->compress);
+    if (ret < 0)
+        return ret;
+
+    av_log(ctx, AV_LOG_INFO, "[%s:%d] %s start.\n", __func__, __LINE__, ctx->name);
+    priv->state = COMPSINK_STARTED;
+    priv->frame_count = 0;
+    return 0;
+}
+
+static void tinycomprsink_close(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
 
@@ -276,7 +299,7 @@ static void tinycomprsink_stop(AVFilterContext *ctx)
     compress_drain(priv->compress);
     compress_close(priv->compress);
     priv->compress = NULL;
-    priv->started = false;
+    priv->state = COMPSINK_IDLE;
     priv->unlinked = false;
     priv->frame_count = 0;
 }
@@ -286,7 +309,7 @@ static int tinycomprsink_pause(AVFilterContext *ctx)
     CompSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (!priv->compress || !priv->started)
+    if (!priv->compress || priv->state == COMPSINK_PAUSED)
         return 0;
 
     ret = compress_pause(priv->compress);
@@ -294,7 +317,7 @@ static int tinycomprsink_pause(AVFilterContext *ctx)
         return ret;
 
     av_log(ctx, AV_LOG_INFO, "[%s:%d] %s pause.\n", __func__, __LINE__, ctx->name);
-    priv->started = false;
+    priv->state = COMPSINK_PAUSED;
     priv->frame_count = 0;
 
     return 0;
@@ -305,7 +328,7 @@ static int tinycomprsink_resume(AVFilterContext *ctx)
     CompSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (!priv->compress || priv->started)
+    if (!priv->compress || priv->state != COMPSINK_RESUMED)
         return 0;
 
     ret = compress_resume(priv->compress);
@@ -313,7 +336,7 @@ static int tinycomprsink_resume(AVFilterContext *ctx)
         return ret;
 
     av_log(ctx, AV_LOG_INFO, "[%s:%d] %s resume.\n", __func__, __LINE__, ctx->name);
-    priv->started = true;
+    priv->state = COMPSINK_STARTED;
     priv->frame_count = 0;
     return 0;
 }
@@ -336,6 +359,16 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
                 pkt->data += ret;
                 pkt->size -= ret;
                 break;
+            } else if (ret == -EAGAIN) {
+                if (priv->state == COMPSINK_IDLE)
+                    ret = tinycomprsink_start(ctx);
+                else if (priv->state == COMPSINK_RESUMED)
+                    ret = tinycomprsink_resume(ctx);
+
+                if (ret < 0 && ret != -EAGAIN)
+                    return ret;
+
+                break;
             } else
                 break;
         }
@@ -349,7 +382,7 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
     }
 
     if (ret == AVERROR_EOF)
-        tinycomprsink_stop(ctx);
+        tinycomprsink_close(ctx);
 
     return ret;
 }
@@ -408,7 +441,7 @@ static bool tinycomprsink_need_pause(AVFilterContext *ctx)
     int64_t pts;
     int ret, i;
 
-    if ((priv->compress && !priv->started) || priv->unlinked)
+    if ((priv->compress && priv->state == COMPSINK_PAUSED) || priv->unlinked)
        return false;
 
     for (i = 0; i < priv->nb_inputs; i++) {
@@ -450,7 +483,7 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         link = ctx->inputs[i];
 
         if (ff_inlink_check_available_frame(link)) {
-            ret = tinycomprsink_start(ctx);
+            ret = tinycomprsink_open(ctx);
             if (ret < 0)
                 return ret;
 
@@ -462,15 +495,18 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
-    ff_amix_read(priv->mix, &frame);
+    ret = ff_amix_read(priv->mix, &frame);
     if (!frame && tinycomprsink_need_pause(ctx)) {
         frame = tinycomprsink_generate_silence_frame(ctx);
         if (!frame) {
             ret = tinycomprsink_pause(ctx);
         }
     } else if (frame) {
-        ret = tinycomprsink_resume(ctx);
-        priv->frame_count = 0;
+        if (priv->state == COMPSINK_PAUSED) {
+            priv->state = COMPSINK_RESUMED;
+            av_log(ctx, AV_LOG_INFO, "%s resuming.\n", ctx->name);
+            priv->frame_count = 0;
+        }
     }
 
     if (ret < 0)
