@@ -402,7 +402,7 @@ static int movie_async_seek(AVFilterContext *ctx, unsigned ms, bool flush)
     if (movie->format_ctx->start_time != AV_NOPTS_VALUE)
         timestamp += movie->format_ctx->start_time;
 
-    ret = avformat_seek_file(movie->format_ctx, -1, INT64_MIN, timestamp, INT64_MAX, 0);
+    ret = avformat_seek_file(movie->format_ctx, -1, INT64_MIN, timestamp, INT64_MAX, AVSEEK_FLAG_ANY);
     if (ret < 0)
         goto end;
 
