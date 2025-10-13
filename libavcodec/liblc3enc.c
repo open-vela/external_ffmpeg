@@ -43,6 +43,7 @@ typedef struct LibLC3EncContext {
     lc3_encoder_t encoder[ENCODER_MAX_CHANNELS];
     int delay_samples;
     int remaining_samples;
+    enum lc3_pcm_format liblc3_format;
 } LibLC3EncContext;
 
 static av_cold int liblc3_encode_init(AVCodecContext *avctx)
@@ -55,6 +56,16 @@ static av_cold int liblc3_encode_init(AVCodecContext *avctx)
     int effective_bit_rate;
     unsigned encoder_size;
 
+    struct {
+        enum AVSampleFormat av_format;
+        enum lc3_pcm_format lc3_format;
+    } format_map[] = {
+        { AV_SAMPLE_FMT_S16,  LC3_PCM_FORMAT_S16   },
+        { AV_SAMPLE_FMT_S16P, LC3_PCM_FORMAT_S16   },
+        { AV_SAMPLE_FMT_FLT,  LC3_PCM_FORMAT_FLOAT },
+        { AV_SAMPLE_FMT_FLTP, LC3_PCM_FORMAT_FLOAT },
+    };
+
     if (frame_us != 2500 && frame_us !=  5000 &&
         frame_us != 7500 && frame_us != 10000   ) {
         av_log(avctx, AV_LOG_ERROR,
@@ -66,6 +77,13 @@ static av_cold int liblc3_encode_init(AVCodecContext *avctx)
                "Invalid number of channels %d. Max %d channels are accepted\n",
                channels, ENCODER_MAX_CHANNELS);
         return AVERROR(EINVAL);
+    }
+
+    for (int i = 0; i < FF_ARRAY_ELEMS(format_map); i++) {
+        if (format_map[i].av_format == avctx->sample_fmt) {
+            liblc3->liblc3_format = format_map[i].lc3_format;
+            break;
+        }
     }
 
     hr_mode |= srate_hz > 48000;
@@ -138,8 +156,12 @@ static int liblc3_encode(AVCodecContext *avctx, AVPacket *pkt,
     int block_bytes = liblc3->block_bytes;
     int channels = avctx->ch_layout.nb_channels;
     void *zero_frame = NULL;
-    uint8_t *data_ptr;
+    size_t sample_size;
+    int is_planar;
     int ret;
+
+    is_planar = av_sample_fmt_is_planar(avctx->sample_fmt);
+    sample_size = av_get_bytes_per_sample(avctx->sample_fmt);
 
     if ((ret = ff_get_encode_buffer(avctx, pkt, block_bytes, 0)) < 0)
         return ret;
@@ -157,15 +179,14 @@ static int liblc3_encode(AVCodecContext *avctx, AVPacket *pkt,
             return AVERROR(ENOMEM);
     }
 
-    data_ptr = pkt->data;
     for (int ch = 0; ch < channels; ch++) {
-        const float *pcm = zero_frame ? zero_frame : frame->data[ch];
         int nbytes = block_bytes / channels + (ch < block_bytes % channels);
+        const void *pcm = zero_frame ? zero_frame :
+                        (is_planar ? frame->data[ch] : frame->data[0] + ch * sample_size);
+        int stride = zero_frame ? 1 : (is_planar ? 1 : channels);
 
         lc3_encode(liblc3->encoder[ch],
-                   LC3_PCM_FORMAT_FLOAT, pcm, 1, nbytes, data_ptr);
-
-        data_ptr += nbytes;
+                liblc3->liblc3_format, pcm, stride, nbytes, pkt->data + ch * nbytes);
     }
 
     if (zero_frame)
@@ -201,12 +222,12 @@ const FFCodec ff_liblc3_encoder = {
     .p.type         = AVMEDIA_TYPE_AUDIO,
     .p.id           = AV_CODEC_ID_LC3,
     .p.capabilities = AV_CODEC_CAP_DR1 | AV_CODEC_CAP_DELAY,
+    .p.priv_class   = &class,
+    .p.wrapper_name = "liblc3",
     .p.supported_samplerates = (const int [])
         { 96000, 48000, 32000, 24000, 16000, 8000, 0 },
     .p.sample_fmts = (const enum AVSampleFormat[])
-        { AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_NONE },
-    .p.priv_class   = &class,
-    .p.wrapper_name = "liblc3",
+        { AV_SAMPLE_FMT_FLT, AV_SAMPLE_FMT_FLTP, AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_S16P, AV_SAMPLE_FMT_NONE },
     .priv_data_size = sizeof(LibLC3EncContext),
     .init           = liblc3_encode_init,
     .close          = liblc3_encode_close,
