@@ -83,8 +83,10 @@ static void abufsrc_set_event_cb(AVFilterContext *ctx,
 
     if (priv->on_event_cb) {
         for (i = 0; i < ctx->nb_outputs; i++) {
-            FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
-            li->frame_wanted_out = 1;
+            if (priv->map && priv->map[i] == ROUTE_ON) {
+                FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
+                li->frame_wanted_out = 1;
+            }
         }
 
         ff_filter_set_ready(ctx, 100);
@@ -428,6 +430,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 {
     BuffSrcPriv *priv = ctx->priv;
     int ret = 0;
+    int i;
 
     if (!cmd)
         return AVERROR(EINVAL);
@@ -455,10 +458,14 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 
         ret = volume_init(&priv->vol_ctx, format);
         volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (priv->map[i] == ROUTE_ON)
+                avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
+        }
+
         return ret;
     } else if (!av_strcasecmp(cmd, "unlink")) {
-        int i;
-
         if (priv->frame)
             ret = abufsrc_fadeout_last_frame(ctx);
 
@@ -466,8 +473,10 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             priv->on_event_cb(priv->on_event_cb_udata, -1, 0);
 
         for (i= 0; i < priv->nb_outputs; i++) {
-            if (priv->map && priv->map[i] == ROUTE_ON)
+            if (priv->map && priv->map[i] == ROUTE_ON) {
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
+            }
         }
 
         priv->sample_fmt = AV_SAMPLE_FMT_NONE;
@@ -481,7 +490,6 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         return ret;
     } else if (!av_strcasecmp(cmd, "map")) {
         int *old_map = NULL;
-        int i;
 
         if (priv->map) {
             old_map = av_calloc(priv->nb_outputs, sizeof(*old_map));
@@ -501,9 +509,12 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             if (old_map[i] != priv->map[i]) {
                 if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
                     ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
+                    avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
                 } else if (old_map[i] == ROUTE_OFF && priv->map[i] == ROUTE_ON) {
                     FilterLinkInternal *li = ff_link_internal(ctx->outputs[i]);
                     li->frame_wanted_out = 1;
+                    if (!ff_outlink_get_status(ctx->outputs[i]))
+                        avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
                 }
             }
         }
@@ -525,9 +536,20 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
         priv->paused = true;
         if (priv->frame)
             ret = abufsrc_fadeout_last_frame(ctx);
+
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (priv->map[i] == ROUTE_ON)
+                avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
+        }
+
         return 0;
     } else if (!av_strcasecmp(cmd, "resume")) {
         priv->paused = false;
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            if (priv->map[i] == ROUTE_ON)
+                avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
+        }
+
         ff_filter_set_ready(ctx, 100);
         return 0;
     } else {

@@ -41,12 +41,20 @@
 
 #define TINYCOMPRSINK_SILENCE_FRAME_DURATION 20
 
+enum InputState
+{
+    INPUT_PAUSED = 1,
+    INPUT_STARTED = 2
+};
+
 enum CompSinkState {
-    COMPSINK_IDLE,
-    COMPSINK_PAUSED,
-    COMPSINK_RESUMED,
-    COMPSINK_STARTED,
-    COMPSINK_STOPPED
+    COMPSINK_STARTING = 1,
+    COMPSINK_PAUSING = 2,
+    COMPSINK_RESUMING = 3,
+    COMPSINK_PAUSED = 4,
+    COMPSINK_RESUMED = 5,
+    COMPSINK_STARTED = 6,
+    COMPSINK_STOPPED = 7
 };
 
 typedef struct CompSinkPriv {
@@ -60,9 +68,10 @@ typedef struct CompSinkPriv {
     enum AVCodecID codec_id;
     AVPacket *last_pkt;
     AMixContext *mix;
-    int frame_count; /**< number of silent frames before pause */
-    int timeout; /**< time tolerance for silence frame before pause */
+    int frame_count;              /**< number of silent frames before pause */
+    int timeout;                  /**< time tolerance for silence frame before pause */
     enum CompSinkState state;
+    enum InputState *input_state; /**< start state of each input */
     bool unlinked;
     FAR struct compress *compress;
 } CompSinkPriv;
@@ -182,8 +191,24 @@ static void tinycomprsink_close_encoder(AVFilterContext *ctx)
 static void tinycomprsink_control_callback(FAR void* cookie, int event, const FAR void* extra)
 {
     AVFilterContext *ctx = (AVFilterContext *)cookie;
+    CompSinkPriv *priv = ctx->priv;
 
-    av_log(ctx, AV_LOG_INFO, "tinycomprsink line %d event %d\n", __LINE__, event);
+    av_log(ctx, AV_LOG_INFO, "tinycomprsink event:%d state:%d\n", event, priv->state);
+
+    switch (event) {
+        case AUDIO_MSG_START:
+            if (priv->state == COMPSINK_STARTING)
+                priv->state = COMPSINK_STARTED;
+            break;
+        case AUDIO_MSG_PAUSE:
+            if (priv->state == COMPSINK_PAUSING)
+                priv->state = COMPSINK_PAUSED;
+            break;
+        case AUDIO_MSG_RESUME:
+            if (priv->state == COMPSINK_RESUMING)
+                priv->state = COMPSINK_RESUMED;
+            break;
+    }
 }
 
 static int tinycomprsink_open(AVFilterContext *ctx)
@@ -240,7 +265,7 @@ static int tinycomprsink_open(AVFilterContext *ctx)
     compress_set_event_callback(priv->compress, tinycomprsink_control_callback, ctx);
     priv->last_pkt = av_packet_alloc();
     if (!priv->last_pkt) {
-        ret = -ENOMEM;
+        ret = -AVERROR(ENOMEM);
         goto out;
     }
 
@@ -256,6 +281,7 @@ out:
         compress_close(priv->compress);
         priv->compress = NULL;
     }
+
     if (priv->mix) {
         ff_amix_free(priv->mix);
         priv->mix = NULL;
@@ -269,7 +295,7 @@ static int tinycomprsink_start(AVFilterContext *ctx)
     CompSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (!priv->compress || priv->state != COMPSINK_IDLE)
+    if (!priv->compress || priv->state != COMPSINK_STOPPED)
         return 0;
 
     ret = compress_start(priv->compress);
@@ -277,14 +303,17 @@ static int tinycomprsink_start(AVFilterContext *ctx)
         return ret;
 
     av_log(ctx, AV_LOG_INFO, "[%s:%d] %s start.\n", __func__, __LINE__, ctx->name);
-    priv->state = COMPSINK_STARTED;
+    priv->state = COMPSINK_STARTING;
     priv->frame_count = 0;
+
     return 0;
 }
 
 static void tinycomprsink_close(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
+
+    av_log(ctx, AV_LOG_INFO, "%s close.\n", ctx->name);
 
     if (!priv->compress)
         return;
@@ -299,9 +328,11 @@ static void tinycomprsink_close(AVFilterContext *ctx)
     compress_drain(priv->compress);
     compress_close(priv->compress);
     priv->compress = NULL;
-    priv->state = COMPSINK_IDLE;
+    priv->state = COMPSINK_STOPPED;
     priv->unlinked = false;
     priv->frame_count = 0;
+
+    memset(priv->input_state, 0, sizeof(*priv->input_state) * priv->nb_inputs);
 }
 
 static int tinycomprsink_pause(AVFilterContext *ctx)
@@ -309,7 +340,7 @@ static int tinycomprsink_pause(AVFilterContext *ctx)
     CompSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (!priv->compress || priv->state == COMPSINK_PAUSED)
+    if (!priv->compress || (priv->state != COMPSINK_STARTED && priv->state != COMPSINK_RESUMED))
         return 0;
 
     ret = compress_pause(priv->compress);
@@ -317,7 +348,7 @@ static int tinycomprsink_pause(AVFilterContext *ctx)
         return ret;
 
     av_log(ctx, AV_LOG_INFO, "[%s:%d] %s pause.\n", __func__, __LINE__, ctx->name);
-    priv->state = COMPSINK_PAUSED;
+    priv->state = COMPSINK_PAUSING;
     priv->frame_count = 0;
 
     return 0;
@@ -328,7 +359,7 @@ static int tinycomprsink_resume(AVFilterContext *ctx)
     CompSinkPriv *priv = ctx->priv;
     int ret;
 
-    if (!priv->compress || priv->state != COMPSINK_RESUMED)
+    if (!priv->compress || priv->state != COMPSINK_PAUSED)
         return 0;
 
     ret = compress_resume(priv->compress);
@@ -336,8 +367,9 @@ static int tinycomprsink_resume(AVFilterContext *ctx)
         return ret;
 
     av_log(ctx, AV_LOG_INFO, "[%s:%d] %s resume.\n", __func__, __LINE__, ctx->name);
-    priv->state = COMPSINK_STARTED;
+    priv->state = COMPSINK_RESUMING;
     priv->frame_count = 0;
+
     return 0;
 }
 
@@ -345,7 +377,7 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
     AVPacket *pkt = priv->last_pkt;
-    int ret = 0;
+    int ret = 0, i;
 
     if (!priv->compress)
         return 0;
@@ -360,9 +392,9 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
                 pkt->size -= ret;
                 break;
             } else if (ret == -EAGAIN) {
-                if (priv->state == COMPSINK_IDLE)
+                if (priv->state == COMPSINK_STOPPED)
                     ret = tinycomprsink_start(ctx);
-                else if (priv->state == COMPSINK_RESUMED)
+                else if (priv->state == COMPSINK_PAUSED)
                     ret = tinycomprsink_resume(ctx);
 
                 if (ret < 0 && ret != -EAGAIN)
@@ -381,8 +413,11 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
         }
     }
 
-    if (ret == AVERROR_EOF)
+    if (ret == AVERROR_EOF) {
+        for (i = 0; i < priv->nb_inputs; i++)
+            ff_inlink_set_status(ctx->inputs[i], AVERROR_EOF);
         tinycomprsink_close(ctx);
+    }
 
     return ret;
 }
@@ -428,6 +463,8 @@ static AVFrame* tinycomprsink_generate_silence_frame(AVFilterContext *ctx)
                                frame->ch_layout.nb_channels, frame->format);
         priv->frame_count++;
     }
+
+    av_log(ctx, AV_LOG_DEBUG, "generate silence frame:%d\n", priv->frame_count);
 
     return frame;
 }
@@ -475,7 +512,22 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     AVFilterLink *link;
     int64_t pts;
 
-    ret = tinycomprsink_output_packet(ctx);
+    if (priv->state < COMPSINK_PAUSED) {
+        av_log(ctx, AV_LOG_WARNING, "%s busy state:%d\n", ctx->name, priv->state);
+        return -EAGAIN;
+    }
+
+    for (i = 0; i < priv->nb_inputs; i++) {
+        if (priv->input_state[i] == INPUT_STARTED)
+            break;
+    }
+
+    if (i == priv->nb_inputs && !priv->unlinked) {/* If all inputs arenot started, then skip output */
+        av_log(ctx, AV_LOG_WARNING, "%s all inputs are not started\n", ctx->name);
+        return 0;
+    }
+
+    ret = tinycomprsink_output_packet(ctx); /* Might cause silence frame before start recovered from pausing */
     if (ret < 0)
         return ret;
 
@@ -495,22 +547,15 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
-    ret = ff_amix_read(priv->mix, &frame);
+    ff_amix_read(priv->mix, &frame);
     if (!frame && tinycomprsink_need_pause(ctx)) {
         frame = tinycomprsink_generate_silence_frame(ctx);
         if (!frame) {
             ret = tinycomprsink_pause(ctx);
-        }
-    } else if (frame) {
-        if (priv->state == COMPSINK_PAUSED) {
-            priv->state = COMPSINK_RESUMED;
-            av_log(ctx, AV_LOG_INFO, "%s resuming.\n", ctx->name);
-            priv->frame_count = 0;
+            if (ret < 0)
+                return ret;
         }
     }
-
-    if (ret < 0)
-        return ret;
 
     if (frame) {
         ret = tinycomprsink_send_frame(ctx, frame);
@@ -536,9 +581,7 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     }
 
     if (empty_inputs == priv->nb_inputs) { /* notify encoder there is no more data to handle */
-        if (!priv->unlinked)
-            tinycomprsink_pause(ctx);
-        else
+        if (priv->unlinked)
             tinycomprsink_send_frame(ctx, NULL);
     }
 
@@ -574,6 +617,28 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
     }
 
     return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
+}
+
+static int tinycomprsink_forward_command(AVFilterContext *ctx,
+                                         int pad_idx, const char* target, const char *cmd,
+                                         const char *arg, char *res, int res_len, int flags)
+{
+    CompSinkPriv *priv = ctx->priv;
+
+    if (!strcmp(cmd, "play")) {
+        priv->input_state[pad_idx] = INPUT_STARTED;
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv play, state %d %d.\n", ctx->name, pad_idx, priv->input_state[pad_idx], priv->state);
+    } else if (!strcmp(cmd, "pause")) {
+        if (priv->state != COMPSINK_STARTED && priv->state != COMPSINK_RESUMED)
+            priv->input_state[pad_idx] = INPUT_PAUSED;
+
+        if (ff_outlink_get_status(ctx->inputs[pad_idx]) && priv->state < COMPSINK_PAUSED)
+            ff_inlink_set_status(ctx->inputs[pad_idx], AVERROR_EOF);
+
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv pause, state %d %d.\n", ctx->name, pad_idx, priv->input_state[pad_idx], priv->state);
+    }
+
+    return 0;
 }
 
 static int tinycomprsink_query_cap(CompSinkPriv *priv, const char *format, int *out_value)
@@ -654,6 +719,13 @@ static int query_formats(const AVFilterContext *ctx,
     return 0;
 }
 
+static void tinycomprsink_uninit(AVFilterContext *ctx)
+{
+    CompSinkPriv *priv = ctx->priv;
+
+    av_freep(&priv->input_state);
+}
+
 static int tinycomprsink_init(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
@@ -670,6 +742,12 @@ static int tinycomprsink_init(AVFilterContext *ctx)
         if ((ret = ff_append_inpad_free_name(ctx, &pad)) < 0)
             return ret;
     }
+
+    priv->input_state = av_mallocz(priv->nb_inputs * sizeof(*priv->input_state));
+    if (!priv->input_state)
+        return AVERROR(ENOMEM);
+
+    priv->state = COMPSINK_STOPPED;
 
     return 0;
 }
@@ -692,8 +770,10 @@ const AVFilter ff_asink_tinycomprsink = {
     .priv_class      = &tinycomprsink_class,
     .priv_size       = sizeof(CompSinkPriv),
     .init            = tinycomprsink_init,
+    .uninit          = tinycomprsink_uninit,
     FILTER_QUERY_FUNC2(query_formats),
     .activate        = tinycomprsink_activate,
     .process_command = tinycomprsink_process_command,
+    .forward_command = tinycomprsink_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_INPUTS,
 };
