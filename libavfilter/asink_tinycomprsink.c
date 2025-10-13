@@ -114,6 +114,11 @@ static void tinycomprsink_codec_to_options(AVFilterContext *ctx, struct snd_code
             av_dict_set_int(options, "peak", 1, 0);
             break;
 
+        case AV_CODEC_ID_LC3:
+            snprintf(buffer, sizeof(buffer), "%.4f", codec->options.lc3.frame_duration);
+            av_dict_set(options, "frame_duration", buffer, 0);
+            break;
+
         default:
             av_log(ctx, AV_LOG_ERROR, "Unsupported codec: %d\n", codec->id);
             break;
@@ -208,9 +213,9 @@ static int tinycomprsink_open(AVFilterContext *ctx)
     }
 
     config.codec = &codec;
-    if (ret = compress_get_current_config(priv->compress, &config) < 0) {
+    ret = compress_get_current_config(priv->compress, &config);
+    if (ret < 0)
         goto out;
-    }
 
     av_dict_set_int(&fmt_opt, "ar", priv->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", priv->ch_layout.nb_channels, 0);

@@ -29,6 +29,7 @@
 #include <libavutil/mem.h>
 #include <libavutil/opt.h>
 #include <libavutil/samplefmt.h>
+#include "libavutil/intreadwrite.h"
 
 #include "alsa.h"
 #include "avfilter.h"
@@ -43,6 +44,7 @@
 #include <sound/compress_params.h>
 #include <tinycompress/tinycompress.h>
 
+#define LC3_EXTRADATA_SIZE 6
 typedef struct TinyCompressContext {
     const AVClass *class;
     struct compress *compress;
@@ -55,6 +57,7 @@ typedef struct TinyCompressContext {
     int sample_rate;
     int fragment_size;
     int fragments;
+    int frame_us;
 
     char *map_str;
     int *map;
@@ -109,6 +112,7 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
         pkt->size = ret;
         pkt->pts = s->next_pts;
         pkt->time_base =  (AVRational) { 1, s->sample_rate };
+        pkt->duration = (s->frame_us * s->sample_rate) / 1000000;
 
         bytes_per_sample = av_get_bytes_per_sample(s->sample_fmt);
         if (bytes_per_sample <= 0) {
@@ -142,6 +146,39 @@ static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR
     return;
 }
 
+static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec)
+{
+    TinyCompressContext *priv = ctx->priv;
+
+    if (!codec)
+        return AVERROR(EINVAL);
+
+    switch (priv->codec_id) {
+        case AV_CODEC_ID_LC3: {
+            bool hr_mode = false;
+            priv->frame_us = codec->options.lc3_d.frame_duration * 1000;
+            hr_mode |= priv->sample_rate > 48000;
+            hr_mode &= priv->sample_rate >= 48000;
+
+            priv->dec_ctx->extradata = av_mallocz(LC3_EXTRADATA_SIZE + AV_INPUT_BUFFER_PADDING_SIZE);
+            if (!priv->dec_ctx->extradata)
+                return AVERROR(ENOMEM);
+
+            AV_WL16(priv->dec_ctx->extradata + 0, priv->frame_us / 10);
+            AV_WL16(priv->dec_ctx->extradata + 2, 0);
+            AV_WL16(priv->dec_ctx->extradata + 4, hr_mode);
+            priv->dec_ctx->extradata_size = LC3_EXTRADATA_SIZE;
+            break;
+        }
+
+        default:
+            av_log(ctx, AV_LOG_ERROR, "Unsupported codec: %d\n", codec->id);
+            break;
+    }
+
+    return 0;
+}
+
 static int tinycomprsrc_open(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
@@ -163,9 +200,9 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     }
 
     config.codec = &codec;
-    if (compress_get_current_config(s->compress, &config) < 0) {
+    ret = compress_get_current_config(s->compress, &config);
+    if (ret < 0)
         goto error;
-    }
 
     s->fragment_size = config.fragment_size;
     s->fragments = config.fragments;
@@ -188,6 +225,10 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     s->dec_ctx->sample_rate = s->sample_rate;
     s->dec_ctx->ch_layout = s->ch_layout;
     s->dec_ctx->sample_fmt = s->sample_fmt;
+    s->dec_ctx->request_sample_fmt = s->sample_fmt;
+    ret = tinycomprsrc_codec_to_options(ctx, config.codec);
+    if (ret < 0)
+        goto error;
 
     ret = avcodec_open2(s->dec_ctx, dec, NULL);
     if (ret < 0) {
@@ -220,9 +261,6 @@ error:
         compress_close(s->compress);
         s->compress = NULL;
     }
-
-    if (config.codec)
-        free(config.codec);
 
     av_packet_free(&s->pkt);
     s->dec_ctx = NULL;
