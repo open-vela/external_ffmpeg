@@ -397,7 +397,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
         if (!res || res_len < sizeof(struct pollfd))
             return AVERROR(EINVAL);
 
-        if (!handle->h)
+        if (!handle->h || handle->poll_available >= handle->periods)
             return 0;
 
         ret = snd_pcm_poll_descriptors(handle->h, poll, 1);
@@ -409,6 +409,7 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
     } else if (!strcmp(cmd, "poll_available")) {
         snd_pcm_avail_update(handle->h);
         ff_filter_set_ready(ctx, 100);
+        handle->poll_available++;
         return 0;
     } else if (!strcmp(cmd, "map")) {
         ret = avfilter_parse_mapping(args, &priv->map, priv->nb_outputs);
@@ -476,6 +477,8 @@ static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
         av_log(priv, AV_LOG_ERROR, "Failed to allocate frame buffer, ret %d.\n", ret);
         goto fail;
     }
+
+    handle->poll_available = 0;
 
     ret = alsa_read(handle, src->data[0], priv->period_size);
     if (ret < 0)
