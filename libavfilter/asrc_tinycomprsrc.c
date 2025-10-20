@@ -45,6 +45,23 @@
 #include <tinycompress/tinycompress.h>
 
 #define LC3_EXTRADATA_SIZE 6
+
+enum CompSinkState {
+    COMPSRC_STARTING = 1,
+    COMPSRC_PAUSING = 2,
+    COMPSRC_PAUSED = 3,
+    COMPSRC_STARTED = 4,
+    COMPSRC_STOPPED = 5
+};
+
+const char *state_str[] = {
+    [COMPSRC_STARTING] = "COMPSRC_STARTING",
+    [COMPSRC_PAUSING] = "COMPSRC_PAUSING",
+    [COMPSRC_PAUSED] = "COMPSRC_PAUSED",
+    [COMPSRC_STARTED] = "COMPSRC_STARTED",
+    [COMPSRC_STOPPED] = "COMPSRC_STOPPED"
+};
+
 typedef struct TinyCompressContext {
     const AVClass *class;
     struct compress *compress;
@@ -65,7 +82,8 @@ typedef struct TinyCompressContext {
     int64_t next_pts;
     AVPacket *pkt;
 
-    bool paused;
+    enum CompSinkState state;
+    bool start; /* Record the latest running state based on command*/
     VolumeContext vol_ctx;
     double volume;
 } TinyCompressContext;
@@ -137,11 +155,75 @@ error:
     return ret;
 }
 
+static int tinycomprsrc_pause(AVFilterContext *ctx)
+{
+    TinyCompressContext *s = ctx->priv;
+    int ret;
+
+    if (!s->compress || s->state != COMPSRC_STARTED)
+        return 0;
+
+    ret = compress_pause(s->compress);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "%s pause fail.\n", ctx->name);
+        return ret;
+    }
+
+    s->state = COMPSRC_PAUSING;
+    av_log(ctx, AV_LOG_INFO, "%s pause.\n", ctx->name);
+    return ret;
+}
+
+static int tinycomprsrc_resume(AVFilterContext *ctx) {
+    TinyCompressContext *s = ctx->priv;
+    int ret;
+
+    if (!s->compress || s->state != COMPSRC_PAUSED)
+        return 0;
+
+    ret = compress_resume(s->compress);
+    if (ret < 0) {
+        av_log(ctx, AV_LOG_ERROR, "%s resume fail.\n", ctx->name);
+        return ret;
+    }
+
+    s->state = COMPSRC_STARTING;
+    av_log(ctx, AV_LOG_INFO, "%s resume.\n", ctx->name);
+    return 0;
+}
+
 static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR void* extra)
 {
     AVFilterContext *ctx = (AVFilterContext *)cookie;
+    TinyCompressContext *s = ctx->priv;
+    const char *event_str[] = {
+        [AUDIO_MSG_START] = "STARTED",
+        [AUDIO_MSG_PAUSE] = "PAUSED",
+        [AUDIO_MSG_RESUME] = "RESUMED"
+    };
 
-    av_log(ctx, AV_LOG_INFO, "%s line %d event %d\n", __func__, __LINE__, event);
+    av_log(ctx, AV_LOG_INFO, "tinycomprsrc event:%s state:%s\n", event_str[event], state_str[s->state]);
+
+    switch (event) {
+        case AUDIO_MSG_START:
+        case AUDIO_MSG_RESUME:
+            if (s->state == COMPSRC_STARTING)
+                s->state = COMPSRC_STARTED;
+            break;
+        case AUDIO_MSG_PAUSE:
+            if (s->state == COMPSRC_PAUSING)
+                s->state = COMPSRC_PAUSED;
+            break;
+
+        /* Device won't fail*/
+        // case AUDIO_MSG_IOERR:
+    }
+
+    if (s->state == COMPSRC_PAUSED && s->start) {
+        tinycomprsrc_resume(ctx);
+    } else if (s->state == COMPSRC_STARTED && !s->start) {
+        tinycomprsrc_pause(ctx);
+    }
 }
 
 static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec)
@@ -247,12 +329,14 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto error;
 
+    s->state = COMPSRC_STARTING;
+    av_log(ctx, AV_LOG_INFO, "%s start.\n", ctx->name);
+
     ret = volume_init(&s->vol_ctx, s->sample_fmt);
     if (ret < 0)
         goto error;
 
     volume_set(&s->vol_ctx, s->volume);
-    s->paused = false;
     return ret;
 
 error:
@@ -279,48 +363,11 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
     av_packet_free(&s->pkt);
-    s->paused = true;
+    s->state = COMPSRC_STOPPED;
     s->next_pts = 0L;
     s->compress = NULL;
     s->dec_ctx = NULL;
     s->sample_fmt = AV_SAMPLE_FMT_NONE;
-}
-
-static int tinycomprsrc_pause(AVFilterContext *ctx)
-{
-    TinyCompressContext *s = ctx->priv;
-    int ret;
-
-    if (!s->compress || s->paused)
-        return 0;
-
-    ret = compress_pause(s->compress);
-    if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "%s pause fail.\n", ctx->name);
-        return ret;
-    }
-
-    s->paused = true;
-    av_log(ctx, AV_LOG_INFO, "%s pause.\n", ctx->name);
-    return ret;
-}
-
-static int tinycomprsrc_resume(AVFilterContext *ctx) {
-    TinyCompressContext *s = ctx->priv;
-    int ret;
-
-    if (!s->compress || !s->paused)
-        return 0;
-
-    ret = compress_resume(s->compress);
-    if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "%s resume fail.\n", ctx->name);
-        return ret;
-    }
-
-    s->paused = false;
-    av_log(ctx, AV_LOG_INFO, "%s resume.\n", ctx->name);
-    return 0;
 }
 
 static int activate(AVFilterContext *ctx)
@@ -329,8 +376,11 @@ static int activate(AVFilterContext *ctx)
     AVFrame *frame = NULL;
     int ret, i;
 
-    if (s->paused)
-        return 0;
+    /* if pausing, supposed to read all left data from device */
+    if (s->state < COMPSRC_PAUSING) {
+        av_log(ctx, AV_LOG_WARNING, "%s busy state:%s\n", ctx->name, state_str[s->state]);
+        return AVERROR(EAGAIN);
+    }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (ff_outlink_frame_wanted(ctx->outputs[i]))
@@ -408,6 +458,8 @@ static av_cold int init(AVFilterContext *ctx)
             return ret;
         }
     }
+
+    s->state = COMPSRC_STOPPED;
 
     return 0;
 }
@@ -599,9 +651,10 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         ff_filter_set_ready(ctx, 100);
         return 0;
     } else if (!strcmp(cmd, "link")) {
-        if (s->compress && s->paused) {
-            tinycomprsrc_resume(ctx);
-            return 0;
+        s->start = true;
+        if (s->compress) {
+            if (s->state == COMPSRC_PAUSED)
+                return tinycomprsrc_resume(ctx);
         }
 
         tinycomprsrc_force_request(ctx);
@@ -638,6 +691,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             tinycomprsrc_pause(ctx);
         return ret;
     } else if (!strcmp(cmd, "pause")) {
+        s->start = false;
         ret = tinycomprsrc_pause(ctx);
     } else if (!strcmp(cmd, "get_parameter")) {
         if (!arg || res_len <= 0)
