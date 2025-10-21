@@ -383,7 +383,7 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
         return 0;
 
     while (pkt) {
-        if (pkt->data) {
+        if (pkt->data && !priv->unlinked) {
             ret = compress_write(priv->compress, pkt->data, pkt->size);
             if (ret == pkt->size)
                 av_packet_unref(pkt);
@@ -403,6 +403,9 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
                 break;
             } else
                 break;
+        } else if (priv->unlinked) {
+            if (pkt->data)
+                av_packet_unref(pkt);
         }
 
         ret = avcodec_receive_packet(priv->enc_ctx, pkt);
@@ -464,7 +467,7 @@ static AVFrame* tinycomprsink_generate_silence_frame(AVFilterContext *ctx)
         priv->frame_count++;
     }
 
-    av_log(ctx, AV_LOG_DEBUG, "generate silence frame:%d\n", priv->frame_count);
+    av_log(ctx, AV_LOG_INFO, "generate silence frame:%d\n", priv->frame_count);
 
     return frame;
 }
@@ -507,22 +510,25 @@ static int tinycomprsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
 static int tinycomprsink_activate(AVFilterContext *ctx)
 {
     CompSinkPriv *priv = ctx->priv;
-    int i, ret, empty_inputs = 0;
+    int i, ret, count = 0;
     AVFrame *frame = NULL;
     AVFilterLink *link;
     int64_t pts;
+
+    for (i = 0; i < priv->nb_inputs; i++) {
+        if (priv->input_state[i] == INPUT_PAUSED) {
+            if (ff_outlink_get_status(ctx->inputs[i]))
+                ff_inlink_acknowledge_status(ctx->inputs[i], &ret, &pts);
+            count ++;
+        }
+    }
 
     if (priv->state < COMPSINK_PAUSED) {
         av_log(ctx, AV_LOG_WARNING, "%s busy state:%d\n", ctx->name, priv->state);
         return -EAGAIN;
     }
 
-    for (i = 0; i < priv->nb_inputs; i++) {
-        if (priv->input_state[i] == INPUT_STARTED)
-            break;
-    }
-
-    if (i == priv->nb_inputs && !priv->unlinked) {/* If all inputs arenot started, then skip output */
+    if (count == priv->nb_inputs && !priv->unlinked && priv->state == COMPSINK_PAUSED) {/* If all inputs arenot started, then skip output */
         av_log(ctx, AV_LOG_WARNING, "%s all inputs are not started\n", ctx->name);
         return 0;
     }
@@ -565,6 +571,7 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         return ret;
     }
 
+    count = 0;
     for (i = 0; i < priv->nb_inputs; i++) {
         link = ctx->inputs[i];
 
@@ -576,11 +583,11 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
             if (!ff_amix_input_empty(priv->mix, link))
                 ff_filter_set_ready(ctx, 100);
             else
-                empty_inputs++;
+                count++;
         }
     }
 
-    if (empty_inputs == priv->nb_inputs) { /* notify encoder there is no more data to handle */
+    if (count == priv->nb_inputs) { /* notify encoder there is no more data to handle */
         if (priv->unlinked)
             tinycomprsink_send_frame(ctx, NULL);
     }
@@ -611,6 +618,7 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
     } else if (!strcmp(cmd, "unlink")) {
         if (priv->compress) {
             priv->unlinked = true;
+            avcodec_send_frame(priv->enc_ctx, NULL);
             ff_filter_set_ready(ctx, 100);
         }
         return 0;
@@ -623,19 +631,22 @@ static int tinycomprsink_forward_command(AVFilterContext *ctx,
                                          int pad_idx, const char* target, const char *cmd,
                                          const char *arg, char *res, int res_len, int flags)
 {
+    FilterLinkInternal *li = (FilterLinkInternal *)ctx->inputs[pad_idx];
     CompSinkPriv *priv = ctx->priv;
 
     if (!strcmp(cmd, "play")) {
         priv->input_state[pad_idx] = INPUT_STARTED;
-        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv play, state %d %d.\n", ctx->name, pad_idx, priv->input_state[pad_idx], priv->state);
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv play, state %d %d status_in:%d status_out:%d.\n",
+            ctx->name, pad_idx, priv->input_state[pad_idx], priv->state, li->status_in, li->status_out);
     } else if (!strcmp(cmd, "pause")) {
-        if (priv->state != COMPSINK_STARTED && priv->state != COMPSINK_RESUMED)
+        if (priv->state < COMPSINK_PAUSED)
             priv->input_state[pad_idx] = INPUT_PAUSED;
 
-        if (ff_outlink_get_status(ctx->inputs[pad_idx]) && priv->state < COMPSINK_PAUSED)
+        if (li->status_in)
             ff_inlink_set_status(ctx->inputs[pad_idx], AVERROR_EOF);
 
-        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv pause, state %d %d.\n", ctx->name, pad_idx, priv->input_state[pad_idx], priv->state);
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv pause, state %d %d status_in:%d status_out:%d.\n",
+            ctx->name, pad_idx, priv->input_state[pad_idx], priv->state, li->status_in, li->status_out);
     }
 
     return 0;
