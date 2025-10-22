@@ -443,8 +443,11 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     if (TAILQ_EMPTY(&s->inputs))
         return AVERROR(EINVAL);
 
-    TAILQ_FOREACH(input, &s->inputs, entries)
+    TAILQ_FOREACH(input, &s->inputs, entries) {
         input_sync_state(input);
+        if (!(input->state & INPUT_ON))
+            amix_input_free(input);
+    }
 
     nb_samples = get_output_samples(s);
     if (nb_samples == INT_MAX || nb_samples == 0)
