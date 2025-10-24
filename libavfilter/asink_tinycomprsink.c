@@ -117,6 +117,11 @@ static void tinycomprsink_codec_to_options(AVFilterContext *ctx, struct snd_code
         case AV_CODEC_ID_LC3:
             snprintf(buffer, sizeof(buffer), "%.4f", codec->options.lc3.frame_duration);
             av_dict_set(options, "frame_duration", buffer, 0);
+
+        case AV_CODEC_ID_SPEEX:
+            av_dict_set_int(options, "cbr_quality", codec->options.spx.cbr_quality, 0);
+            av_dict_set_int(options, "compression_level", codec->options.spx.compression_level, 0);
+            av_dict_set_int(options, "frames_per_packet", codec->options.spx.frames_per_packet, 0);
             break;
 
         default:
