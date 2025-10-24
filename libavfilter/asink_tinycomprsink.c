@@ -177,6 +177,7 @@ static void tinycomprsink_control_callback(FAR void* cookie, int event, const FA
         [AUDIO_MSG_PAUSE]  = "PAUSED",
         [AUDIO_MSG_RESUME] = "RESUMED"
     };
+    int i;
 
     av_log(ctx, AV_LOG_INFO, "tinycomprsink event:%s state:%s\n", audio_event_str[event],
            comp_sink_state_str[priv->state]);
@@ -194,6 +195,18 @@ static void tinycomprsink_control_callback(FAR void* cookie, int event, const FA
             if (priv->state == COMPSINK_RESUMING)
                 priv->state = COMPSINK_RESUMED;
             break;
+        case AUDIO_MSG_IOERR:
+            if (priv->state == COMPSINK_RESUMING) {
+                /* Should stop output packet to device */
+                for (i = 0; i < priv->nb_inputs; i++)
+                    priv->input_state[i] = INPUT_PAUSED;
+                priv->state = COMPSINK_PAUSED;
+            }
+            else if (priv->state == COMPSINK_STARTING) {
+                for (i = 0; i < priv->nb_inputs; i++)
+                    priv->input_state[i] = INPUT_PAUSED;
+                priv->state = COMPSINK_STOPPED;
+            }
     }
 }
 
@@ -444,7 +457,8 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
-    if (count == priv->nb_inputs && priv->state == COMPSINK_PAUSED) {/* If all inputs arenot started, then skip output */
+    if (count == priv->nb_inputs &&
+        (priv->state == COMPSINK_PAUSED || priv->state == COMPSINK_STOPPED)) {/* If all inputs arenot started, then skip output */
         av_log(ctx, AV_LOG_WARNING, "%s all inputs are not started\n", ctx->name);
         return 0;
     }
