@@ -114,11 +114,8 @@ static void alsasink_consume_samples(AVFrame *frame, int consumed, int frame_siz
 static void alsasink_update_writable(AlsaHandle *sink, AVFrame *frame)
 {
     sink->poll_available = 0;
-    if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED) {
-        sink->resume_min -= frame->nb_samples;
-        if (sink->resume_min <= 0)
-            snd_pcm_pause(sink->h, 0);
-    }
+    if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED)
+        snd_pcm_pause(sink->h, 0);
 }
 
 static int alsasink_write_lastframe(AVFilterContext *ctx, int pad)
@@ -375,9 +372,15 @@ static int alsasink_process_command(AVFilterContext *ctx,
         for (i = 0; i < ctx->nb_inputs; i++) {
             sink = &priv->handles[i];
             if (sink->h) {
-                if (sink->poll_available >= sink->periods)
+                if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED)
                     continue;
-                snd_pcm_poll_descriptors(sink->h, &poll[ret++], 1);
+
+                snd_pcm_poll_descriptors(sink->h, &poll[ret], 1);
+
+                if (sink->poll_available >= sink->periods)
+                    poll[ret].events = POLLERR;
+
+                ret++;
             }
         }
 
@@ -400,9 +403,6 @@ static int alsasink_process_command(AVFilterContext *ctx,
             state = snd_pcm_state(sink->h);
             if (state == SND_PCM_STATE_XRUN) {
                 snd_pcm_pause(sink->h, 1);
-                snd_pcm_sw_params_alloca(&sw_params);
-                snd_pcm_sw_params_current(sink->h, sw_params);
-                sink->resume_min = sw_params->avail_min;
                 sink->poll_available = 0;
             } else if (state == SND_PCM_STATE_SETUP) {
                 if (sink->draining)

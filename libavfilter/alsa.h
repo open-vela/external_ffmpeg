@@ -38,7 +38,6 @@ typedef struct AlsaHandle {
     AVFrame *last_frame;
     int periods;
     int period_time;
-    long resume_min;
     enum AVSampleFormat format;
     int poll_available;
     uint32_t sample_rate;
