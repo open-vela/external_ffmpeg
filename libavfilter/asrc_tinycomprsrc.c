@@ -66,6 +66,7 @@ typedef struct TinyCompressContext {
     AVPacket *pkt;
 
     VolumeContext vol_ctx;
+    double volume;
 } TinyCompressContext;
 
 static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
@@ -252,6 +253,8 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     ret = volume_init(&s->vol_ctx, s->sample_fmt);
     if (ret < 0)
         goto error;
+
+    volume_set(&s->vol_ctx, s->volume);
 
     return ret;
 
@@ -492,6 +495,7 @@ static int tinycomprsrc_set_parameter(AVFilterContext *ctx, const char *args)
             }
 
             volume_set(&s->vol_ctx, volume);
+            s->volume = volume;
 
             av_log(s, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
         } else
