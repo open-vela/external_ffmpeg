@@ -554,6 +554,10 @@ enum AVCodecID {
     AV_CODEC_ID_SBC_PACKED,
     AV_CODEC_ID_SBC_PACKED_A2DP,
     AV_CODEC_ID_SILK,
+    AV_CODEC_ID_LLAC,
+    AV_CODEC_ID_LHDC3,
+    AV_CODEC_ID_LHDC4,
+    AV_CODEC_ID_LHDC5,
 
     /* subtitle codecs */
     AV_CODEC_ID_FIRST_SUBTITLE = 0x17000,          ///< A dummy ID pointing at the start of subtitle codecs.
