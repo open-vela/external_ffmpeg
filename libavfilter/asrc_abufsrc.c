@@ -269,24 +269,24 @@ out:
 static int abufsrc_activate(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
-    int i, ret, routed = 1;
     FilterLinkInternal *li;
+    int ret, routed = 0;
     AVFrame *frame;
 
     if (!priv->on_event_cb)
         return FFERROR_NOT_READY;
 
-    for (i = 0; i < priv->nb_outputs; i++) {
+    for (int i = 0; i < priv->nb_outputs; i++) {
         if (priv->map && priv->map[i] == ROUTE_ON) {
             li = ff_link_internal(ctx->outputs[i]);
             if (li->frame_wanted_out) {
+                routed = 1;
                 if (priv->paused && li->frame_blocked_in == 0) {
                     li->frame_blocked_in = 1;
                     av_log(ctx, AV_LOG_INFO, "%s xrun\n", ctx->name);
                     ff_filter_set_ready(ctx->outputs[i]->dst, 300);
                 }
-            } else
-                routed = 0;
+            }
         }
     }
 
