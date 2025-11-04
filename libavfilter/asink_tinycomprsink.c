@@ -57,6 +57,16 @@ enum CompSinkState {
     COMPSINK_STOPPED = 7
 };
 
+const char* comp_sink_state_str[] = {
+    [COMPSINK_STARTING] = "COMPSINK_STARTING",
+    [COMPSINK_PAUSING]  = "COMPSINK_PAUSING",
+    [COMPSINK_RESUMING] = "COMPSINK_RESUMING",
+    [COMPSINK_PAUSED]   = "COMPSINK_PAUSED",
+    [COMPSINK_RESUMED]  = "COMPSINK_RESUMED",
+    [COMPSINK_STARTED]  = "COMPSINK_STARTED",
+    [COMPSINK_STOPPED]  = "COMPSINK_STOPPED"
+};
+
 typedef struct CompSinkPriv {
     const AVClass *class;
     AVCodecContext *enc_ctx;
@@ -192,8 +202,14 @@ static void tinycomprsink_control_callback(FAR void* cookie, int event, const FA
 {
     AVFilterContext *ctx = (AVFilterContext *)cookie;
     CompSinkPriv *priv = ctx->priv;
+    const char* audio_event_str[] = {
+        [AUDIO_MSG_START]  = "STARTED",
+        [AUDIO_MSG_PAUSE]  = "PAUSED",
+        [AUDIO_MSG_RESUME] = "RESUMED"
+    };
 
-    av_log(ctx, AV_LOG_INFO, "tinycomprsink event:%d state:%d\n", event, priv->state);
+    av_log(ctx, AV_LOG_INFO, "tinycomprsink event:%s state:%s\n", audio_event_str[event],
+           comp_sink_state_str[priv->state]);
 
     switch (event) {
         case AUDIO_MSG_START:
@@ -524,7 +540,7 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     }
 
     if (priv->state < COMPSINK_PAUSED) {
-        av_log(ctx, AV_LOG_WARNING, "%s busy state:%d\n", ctx->name, priv->state);
+        av_log(ctx, AV_LOG_WARNING, "%s busy state:%s\n", ctx->name, comp_sink_state_str[priv->state]);
         return -EAGAIN;
     }
 
@@ -625,11 +641,18 @@ static int tinycomprsink_forward_command(AVFilterContext *ctx,
 {
     FilterLinkInternal *li = (FilterLinkInternal *)ctx->inputs[pad_idx];
     CompSinkPriv *priv = ctx->priv;
+    const char* input_state_str[] = {
+        [INPUT_PAUSED]  = "PAUSED",
+        [INPUT_STARTED] = "STARTED"
+    };
+
 
     if (!strcmp(cmd, "play")) {
         priv->input_state[pad_idx] = INPUT_STARTED;
-        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv play, state %d %d status_in:%d status_out:%d.\n",
-            ctx->name, pad_idx, priv->input_state[pad_idx], priv->state, li->status_in, li->status_out);
+
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv play, input_state:%s sink_state:%s status_in:%d status_out:%d.\n",
+               ctx->name, pad_idx, input_state_str[priv->input_state[pad_idx]],
+               comp_sink_state_str[priv->state], li->status_in, li->status_out);
     } else if (!strcmp(cmd, "pause")) {
         if (priv->state < COMPSINK_PAUSED)
             priv->input_state[pad_idx] = INPUT_PAUSED;
@@ -637,8 +660,9 @@ static int tinycomprsink_forward_command(AVFilterContext *ctx,
         if (li->status_in)
             ff_inlink_set_status(ctx->inputs[pad_idx], AVERROR_EOF);
 
-        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv pause, state %d %d status_in:%d status_out:%d.\n",
-            ctx->name, pad_idx, priv->input_state[pad_idx], priv->state, li->status_in, li->status_out);
+        av_log(ctx, AV_LOG_INFO, "%s inputs[%d] recv pause, input_state:%s sink_state:%s status_in:%d status_out:%d.\n",
+            ctx->name, pad_idx, input_state_str[priv->input_state[pad_idx]],
+            comp_sink_state_str[priv->state], li->status_in, li->status_out);
     }
 
     return 0;
