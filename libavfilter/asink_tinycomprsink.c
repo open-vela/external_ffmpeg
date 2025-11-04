@@ -359,7 +359,7 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
         return 0;
 
     while (pkt) {
-        if (pkt->data && !priv->unlinked) {
+        if (pkt->data && !priv->unlinked && priv->state >= COMPSINK_PAUSED) {
             ret = compress_write(priv->compress, pkt->data, pkt->size);
             if (ret == pkt->size)
                 av_packet_unref(pkt);
@@ -499,11 +499,6 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
-    if (priv->state < COMPSINK_PAUSED) {
-        av_log(ctx, AV_LOG_WARNING, "%s busy state:%s\n", ctx->name, comp_sink_state_str[priv->state]);
-        return -EAGAIN;
-    }
-
     if (count == priv->nb_inputs && priv->state == COMPSINK_PAUSED) {/* If all inputs arenot started, then skip output */
         av_log(ctx, AV_LOG_WARNING, "%s all inputs are not started\n", ctx->name);
         return 0;
@@ -551,7 +546,7 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         link = ctx->inputs[i];
 
         ff_inlink_acknowledge_status(link, &ret, &pts);
-        if (ret >= 0) {
+        if (ret >= 0 && priv->state >= COMPSINK_PAUSED) {
             if (ff_amix_input_want(priv->mix, link))
                 ff_inlink_request_frame(link);
         } else if (ret == AVERROR_EOF) {
