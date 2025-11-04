@@ -86,46 +86,6 @@ typedef struct CompSinkPriv {
     FAR struct compress *compress;
 } CompSinkPriv;
 
-static int tinycomprsink_fmt_to_avcodec(int fmt)
-{
-    switch (fmt) {
-        case AUDIO_FMT_PCM:
-            return AV_CODEC_ID_PCM_S16LE;
-        case AUDIO_FMT_MP3:
-            return AV_CODEC_ID_MP3;
-        case AUDIO_FMT_SBC:
-            return AV_CODEC_ID_SBC;
-        case AUDIO_FMT_AAC:
-            return AV_CODEC_ID_AAC;
-        case AUDIO_FMT_WAV:
-            return AV_CODEC_ID_WAVARC;
-        case AUDIO_FMT_OPUS:
-            return AV_CODEC_ID_OPUS;
-    }
-
-    return AV_CODEC_ID_NONE;
-}
-
-static int tinycomprsink_subfmt_to_smpfmt(int subfmt)
-{
-    switch (subfmt) {
-        case AUDIO_SUBFMT_PCM_S8:
-        case AUDIO_SUBFMT_PCM_U8:
-            return AV_SAMPLE_FMT_U8;
-        case AUDIO_SUBFMT_PCM_S16_LE:
-        case AUDIO_SUBFMT_PCM_S16_BE:
-        case AUDIO_SUBFMT_SBC:
-            return AV_SAMPLE_FMT_S16;
-        case AUDIO_SUBFMT_PCM_S32_LE:
-        case AUDIO_SUBFMT_PCM_S32_BE:
-            return AV_SAMPLE_FMT_S32;
-        case AUDIO_SUBFMT_PCM_MP3   :
-            return AV_SAMPLE_FMT_S16P;
-    }
-
-    return AV_SAMPLE_FMT_NONE;
-}
-
 static void tinycomprsink_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec, AVDictionary **options)
 {
     CompSinkPriv *priv = ctx->priv;
