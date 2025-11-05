@@ -78,8 +78,6 @@ static inline void tinycomprsrc_force_request(AVFilterContext *ctx)
         link = ctx->outputs[i];
         li = ff_link_internal(link);
         li->frame_wanted_out = 1;
-
-        s->sample_fmt = link->format;
     }
 
     ff_filter_set_ready(ctx, 100);
@@ -239,6 +237,7 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     s->next_pts = 0L;
     s->compress = NULL;
     s->dec_ctx = NULL;
+    s->sample_fmt = AV_SAMPLE_FMT_NONE;
 }
 
 static int tinycomprsrc_check_outlink_status(AVFilterContext *ctx) {
@@ -314,6 +313,11 @@ out:
 
 static int config_props(AVFilterLink *link)
 {
+    AVFilterContext *ctx = link->src;
+    TinyCompressContext *s = ctx->priv;
+
+    s->sample_fmt = link->format;
+
     return 0;
 }
 
