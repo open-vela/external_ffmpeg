@@ -364,7 +364,7 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
         return 0;
 
     while (pkt) {
-        if (pkt->data && !priv->unlinked && priv->state >= COMPSINK_PAUSED) {
+        if (pkt->data && !priv->unlinked) {
             ret = compress_write(priv->compress, pkt->data, pkt->size);
             if (ret == pkt->size)
                 av_packet_unref(pkt);
@@ -406,76 +406,6 @@ static int tinycomprsink_output_packet(AVFilterContext *ctx)
     return ret;
 }
 
-static AVFrame* tinycomprsink_generate_silence_frame(AVFilterContext *ctx)
-{
-    CompSinkPriv *priv = ctx->priv;
-    int64_t duration;
-    int nb_samples;
-    AVFrame *frame;
-
-    if (!priv->enc_ctx)
-        return 0;
-
-    nb_samples = priv->enc_ctx->frame_size;
-    duration = (nb_samples ?
-                (av_rescale_q(nb_samples,
-                             (AVRational){1, priv->sample_rate},
-                             AV_TIME_BASE_Q)) :
-                TINYCOMPRSINK_SILENCE_FRAME_DURATION * 1000ll) *
-                priv->frame_count;
-
-    if (duration >= priv->timeout * 1000ll)
-        return NULL;
-
-    frame = av_frame_alloc();
-    if (frame) {
-        frame->sample_rate = priv->sample_rate;
-        frame->format = priv->sample_fmt;
-        frame->ch_layout = priv->ch_layout;
-        if (priv->enc_ctx->frame_size)
-            frame->nb_samples = priv->enc_ctx->frame_size;
-        else
-            frame->nb_samples = frame->sample_rate * av_get_bytes_per_sample(frame->format) *
-                                TINYCOMPRSINK_SILENCE_FRAME_DURATION / 1000;
-
-        if (av_frame_get_buffer(frame, 0) < 0) {
-            av_frame_free(&frame);
-            return NULL;
-        }
-
-        av_samples_set_silence((uint8_t **)frame->extended_data, 0, frame->nb_samples,
-                               frame->ch_layout.nb_channels, frame->format);
-        priv->frame_count++;
-    }
-
-    av_log(ctx, AV_LOG_INFO, "generate silence frame:%d\n", priv->frame_count);
-
-    return frame;
-}
-
-static bool tinycomprsink_need_pause(AVFilterContext *ctx)
-{
-    CompSinkPriv *priv = ctx->priv;
-    FilterLinkInternal *li;
-    bool blocked = true;
-    AVFilterLink *link;
-    int64_t pts;
-    int ret, i;
-
-    if ((priv->compress && priv->state == COMPSINK_PAUSED))
-       return false;
-
-    for (i = 0; i < priv->nb_inputs; i++) {
-        link = ctx->inputs[i];
-        li = ff_link_internal(link);
-        ff_inlink_acknowledge_status(link, &ret, &pts);
-        if (ret >= 0 && !li->frame_blocked_in)
-            blocked = false;
-    }
-
-    return blocked;
-}
-
 static int tinycomprsink_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     CompSinkPriv *priv = ctx->priv;
@@ -504,6 +434,11 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         }
     }
 
+    if (priv->state < COMPSINK_PAUSED) {
+        av_log(ctx, AV_LOG_WARNING, "%s busy state:%s\n", ctx->name, comp_sink_state_str[priv->state]);
+        return -EAGAIN;
+    }
+
     if (count == priv->nb_inputs && priv->state == COMPSINK_PAUSED) {/* If all inputs arenot started, then skip output */
         av_log(ctx, AV_LOG_WARNING, "%s all inputs are not started\n", ctx->name);
         return 0;
@@ -530,16 +465,11 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
     }
 
     ff_amix_read(priv->mix, &frame);
-    if (!frame && tinycomprsink_need_pause(ctx)) {
-        frame = tinycomprsink_generate_silence_frame(ctx);
-        if (!frame) {
-            ret = tinycomprsink_pause(ctx);
-            if (ret < 0)
-                return ret;
-        }
-    }
-
-    if (frame) {
+    if (!frame && ff_amix_blocked(priv->mix)) {
+        ret = tinycomprsink_pause(ctx);
+        if (ret < 0)
+            return ret;
+    } else if (frame) {
         ret = tinycomprsink_send_frame(ctx, frame);
         av_frame_free(&frame);
         if (ret >= 0)
@@ -551,12 +481,9 @@ static int tinycomprsink_activate(AVFilterContext *ctx)
         link = ctx->inputs[i];
 
         ff_inlink_acknowledge_status(link, &ret, &pts);
-        if (ret >= 0 && priv->state >= COMPSINK_PAUSED) {
+        if (ret >= 0) {
             if (ff_amix_input_want(priv->mix, link))
                 ff_inlink_request_frame(link);
-        } else if (ret == AVERROR_EOF) {
-            if (!ff_amix_input_empty(priv->mix, link))
-                ff_filter_set_ready(ctx, 100);
         }
     }
 
@@ -579,6 +506,8 @@ static int tinycomprsink_process_command(AVFilterContext *ctx,
         return AVERROR(EINVAL);
     } else if (!strcmp(cmd, "poll_available")) {
         if (priv->compress) {
+            if (priv->state == COMPSINK_PAUSING)
+                av_log(ctx, AV_LOG_INFO, "[bt-audio]%s poll available when pausing.\n", ctx->name);
             compress_poll_available(priv->compress);
             ff_filter_set_ready(ctx, 100);
         }
