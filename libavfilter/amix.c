@@ -126,10 +126,6 @@ static int get_output_samples(AMixContext *s)
         return 0;
 
     TAILQ_FOREACH(input, &s->inputs, entries) {
-        av_log(NULL, AV_LOG_DEBUG, "input count[%d] state:%d fifo size: %d link size:%d\n",
-               count++, input->state, input->fifo ? av_audio_fifo_size(input->fifo) : 0,
-               input->fifo ? 0 : ff_inlink_queued_samples(input->link));
-
         if (input->state & INPUT_ON) {
             if (!input->fifo)
                 ns = ff_inlink_queued_samples(input->link);
@@ -137,31 +133,62 @@ static int get_output_samples(AMixContext *s)
                 ns = av_audio_fifo_size(input->fifo);
 
             nb_samples = FFMIN(nb_samples, ns);
-            max_samples = FFMAX(max_samples, ns);
+            if (input->state & INPUT_EOF && !(input->state & INPUT_BLOCKED))
+                max_samples = FFMAX(max_samples, ns);
             if (!input_needs_detach(input))
                 min_samples = FFMIN(min_samples, ns);
         }
     }
 
+    /**
+     * If specific mix size is given, then the following logic depends
+     * whether to mix and which inputs need to be mixed.
+     *
+     * nb_samples: minimum samples among all inputs.
+     * min_samples: minimum samples among all active inputs with states
+     *              equal to INPUT_ON.
+     * max_samples: maximum samples among all drain inputs with
+     *              INPUT_EOF state.
+     *
+     * Here are three cases that need to be considered:
+     * - Partially draining: at least one but not all inpputs with
+     *                       state equal to INPUT_ON;
+     * - None draining: all inpputs' state equal to INPUT_ON;
+     * - All draining: none input's state equals to INPUT_ON.
+     *
+     */
+
     if (s->frame_size) {
         count = calc_active_inputs(s);
 
-        av_log(NULL, AV_LOG_DEBUG, "active count:%d, nb_inputs:%d. nb_samples:%d min_samples: %d frame_size:%d\n",
-               count, s->nb_inputs, nb_samples, min_samples, s->frame_size);
-
         if (count > 0 && count < s->nb_inputs) {// partially draining
+
+             /**
+              * If min_samples more than given size,
+              * should mix them and fill silence data in other drain inputs,
+              * otherwise wait.
+              * */
+
             if (min_samples >= s->frame_size)
                 nb_samples = s->frame_size;
-        } else if (count == s->nb_inputs) { //all inputs are not draining
+        } else if (count == s->nb_inputs) { // none draining
+
+            /* If nb_samples more than given size, should mix them, otherwise wait. */
+
             if (nb_samples >= s->frame_size)
                 nb_samples = s->frame_size;
-        } else if (count == 0 && max_samples > 0) // all inputs are draining
+        } else if (count == 0 && max_samples > 0) { // all draining
+
+            /* If max_samples more than zero, mix them and fill silence data to frame_size. */
+
             nb_samples = s->frame_size;
+        }
 
         if (nb_samples != s->frame_size)
             return 0;
     }
-    return nb_samples; //frame_size is not specified or nb_samples equals to frame_size
+
+    return nb_samples;
 }
 
 static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, int len)
@@ -206,7 +233,7 @@ static AMixInput *amix_input_alloc(AMixContext *s, AVFilterLink *link)
     TAILQ_INSERT_TAIL(&s->inputs, input, entries);
     s->nb_inputs++;
 
-    av_log(NULL, AV_LOG_INFO, "[%s %d]input %p alloc, resample: %d, total inputs:%d\n", __func__, __LINE__, input, input->fifo ? 1: 0, s->nb_inputs);
+    av_log(NULL, AV_LOG_INFO, "[%s %d]input %p alloc, resample: %d, first size: %d total inputs:%d\n", __func__, __LINE__, input, input->fifo ? 1: 0, ff_inlink_queued_samples(link) ,s->nb_inputs);
 
     return input;
 
@@ -219,8 +246,9 @@ err:
 
 static void amix_input_free(AMixInput *in)
 {
+    int link_size = 0;
+    int fifo_size = 0;
     AMixContext *s;
-    int i;
 
     if (!in)
         return;
@@ -229,7 +257,10 @@ static void amix_input_free(AMixInput *in)
 
     TAILQ_REMOVE(&s->inputs, in, entries);
 
+    link_size = ff_inlink_queued_samples(in->link);
+
     if (in->resample && in->fifo) {
+        fifo_size = av_audio_fifo_size(in->fifo);
         av_audio_fifo_free(in->fifo);
         in->fifo = NULL;
         ff_resample_uninit(in->resample);
@@ -239,7 +270,8 @@ static void amix_input_free(AMixInput *in)
     av_free(in);
     s->nb_inputs--;
 
-    av_log(NULL, AV_LOG_INFO, "[%s %d]input %p free, total inputs:%d\n", __func__, __LINE__, in, s->nb_inputs);
+    av_log(NULL, AV_LOG_INFO, "[%s %d]input %p free, link_size:%d fifo_size:%d total inputs:%d\n",
+        __func__, __LINE__, in, link_size, fifo_size, s->nb_inputs);
 }
 
 static AMixInput *amix_find_input(AMixContext *s, AVFilterLink *link)
@@ -264,6 +296,10 @@ static AMixInput *amix_find_input(AMixContext *s, AVFilterLink *link)
  *
  * case2: queued_samples == 0, and link status is AVERROR_EOF, input->state &= ~INPUT_ON;
  *
+ * case3: link blocked, and samples < mix_size, input->state |= INPUT_BLOCKED;
+ *
+ * case4: link unblocked, and samples >= mix_size, input->state &= ~INPUT_BLOCKED;
+ *
  */
 static void input_sync_state(AMixInput *input)
 {
@@ -276,13 +312,29 @@ static void input_sync_state(AMixInput *input)
         return;
     }
 
-    if (ff_outlink_get_status(link) == AVERROR_EOF)
-        input->state |= INPUT_EOF;
-    else {
-        li = ff_link_internal(input->link);
-        if (li->frame_blocked_in)
-            input->state |= INPUT_BLOCKED;
+    if (ff_outlink_get_status(link) == AVERROR_EOF) {
+
+        /* If a link is blocked and was closing at last, then free it directly. */
+
+         if (input->state & INPUT_BLOCKED)
+             input->state &= ~INPUT_ON;
         else
+            input->state |= INPUT_EOF;
+    } else {
+        li = ff_link_internal(input->link);
+        if (li->frame_blocked_in && ((input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) < input->mix_size)) {
+            if (!(input->state & INPUT_BLOCKED))
+                av_log(NULL, AV_LOG_INFO, "input %p blocking, link size:%d fifo size:%d nb_inputs:%d\n",
+                    input, ff_inlink_queued_samples(input->link), input->fifo ? av_audio_fifo_size(input->fifo) : 0, s->nb_inputs);
+            input->state |= INPUT_BLOCKED;
+        } else if (s->frame_size && !li->frame_blocked_in) {
+            if ((input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) >= input->mix_size) {
+                if (input->state & INPUT_BLOCKED)
+                    av_log(NULL, AV_LOG_INFO, "input %p unblock from blocking, link size:%d fifo size:%d nb_inputs:%d\n",
+                        input, ff_inlink_queued_samples(input->link), input->fifo ? av_audio_fifo_size(input->fifo) : 0, s->nb_inputs);
+                input->state &= ~INPUT_BLOCKED;
+            }
+        } else if (!li->frame_blocked_in)
             input->state &= ~INPUT_BLOCKED;
     }
 }
@@ -357,7 +409,7 @@ bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
     if (!input)
         return true;
 
-    if (input->state & INPUT_EOF)
+    if (input_needs_detach(input))
         return false;
 
     if (input->link) {
@@ -393,7 +445,7 @@ bool ff_amix_blocked(AMixContext *s)
     return true;
 }
 
-/* where param "link" is a real link*/
+/* Where param "link" is a real link. */
 int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
 {
     AVFrame *frame, *rframe;
@@ -485,10 +537,16 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
             int left_size;
             left_size = input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link);
 
-            if (left_size == 0)
+            /* If input no samples left or in blocked, then skip mix. */
+
+            if (left_size == 0 || (input->state & INPUT_BLOCKED))
                 continue;
 
             if (input_needs_detach(input) && left_size < nb_samples) {
+
+                av_log(NULL, AV_LOG_INFO, "input %p state: %d size: %d silence size: %d nb_inputs:%d\n",
+                    input, input->state, left_size, nb_samples - left_size, s->nb_inputs);
+
                 in_buf = ff_default_get_audio_buffer(s->out, nb_samples);
                 if (!in_buf) {
                     ret = AVERROR(ENOMEM);
