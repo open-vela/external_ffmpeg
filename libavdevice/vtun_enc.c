@@ -316,7 +316,7 @@ static int vtun_write_uncoded_frame(AVFormatContext *h, int stream_index,
             return AVERROR(EINVAL);
         }
 
-        av_log(priv, AV_LOG_DEBUG, "vtun drop frame pts:%lld selected=%d\n", dequeue_frame->pts, selected);
+        av_log(priv, AV_LOG_DEBUG, "vtun drop frame pts:%" PRId64 " selected=%d\n", dequeue_frame->pts, selected);
 
         av_frame_free(&dequeue_frame);
         priv->drop_count++;
