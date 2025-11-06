@@ -372,6 +372,27 @@ bool ff_amix_input_want(AMixContext *s, AVFilterLink *link)
     return true;
 }
 
+/**
+ * Check if all inputs are in state INPUT_EOF | INPUT_BLOCKED.
+ */
+bool ff_amix_blocked(AMixContext *s)
+{
+    AMixInput *input;
+
+    if (!s)
+        return false;
+
+    if (TAILQ_EMPTY(&s->inputs))
+        return true;
+
+    TAILQ_FOREACH(input, &s->inputs, entries) {
+        if (!input_needs_detach(input))
+            return false;
+    }
+
+    return true;
+}
+
 /* where param "link" is a real link*/
 int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
 {
@@ -481,7 +502,6 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
                     ret = ff_inlink_consume_samples(input->link, left_size, left_size, &tmp);
                     if (ret < 0)
                         goto err;
-
                     if ((ret = av_samples_copy(in_buf->extended_data, tmp->extended_data, 0, 0,
                                               tmp->nb_samples, tmp->ch_layout.nb_channels,
                                               tmp->format)) < 0) {
@@ -490,6 +510,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
                     }
                     av_frame_free(&tmp);
                 }
+
                 av_samples_set_silence(in_buf->extended_data, left_size, nb_samples - left_size,
                                       s->out->ch_layout.nb_channels, s->out->format);
             } else {
