@@ -427,6 +427,10 @@ static int tinycomprsrc_query_formats(TinyCompressContext *s)
 
     s->codec_id = codec_id;
 
+    ret = tinycomprsrc_query_cap(s, "sample_fmts", &s->sample_fmt);
+    if (ret < 0)
+        return ret;
+
     ret = tinycomprsrc_query_cap(s, "sample_rates", &s->sample_rate);
     if (ret < 0)
         return ret;
@@ -505,37 +509,69 @@ static int query_formats(const AVFilterContext *ctx,
                          AVFilterFormatsConfig **cfg_in,
                          AVFilterFormatsConfig **cfg_out)
 {
-    TinyCompressContext *s = ctx->priv;
+    const enum AVSampleFormat *sample_fmts = NULL;
+    TinyCompressContext *priv = ctx->priv;
+    AVFilterFormats *formats = NULL;
+    AVCodecContext *dec_ctx = NULL;
+    int fmt_success = 0;
+    int ret = 0, count;
     const AVCodec *dec;
-    int ret, i;
 
-    ret = tinycomprsrc_query_formats(s);
+    ret = tinycomprsrc_query_formats(priv);
     if (ret < 0)
         return ret;
 
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        const AVChannelLayout layout_list[] = {s->ch_layout, {0}};
+    dec = avcodec_find_decoder(priv->codec_id);
+    if (!dec)
+        return AVERROR_DECODER_NOT_FOUND;
 
+    dec_ctx = avcodec_alloc_context3(dec);
+    if (!dec_ctx)
+        return AVERROR(ENOMEM);
+
+    ret = avcodec_get_supported_config(dec_ctx, NULL,
+                                       AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
+                                       (const void **)&sample_fmts, &count);
+    if (ret >= 0 && count > 0 && sample_fmts != NULL) {
+        int *fmts = av_malloc_array(count + 1, sizeof(int));
+        if (!fmts) {
+            ret = AVERROR(ENOMEM);
+            goto out;
+        }
+
+        memcpy(fmts, sample_fmts, count * sizeof(int));
+        fmts[count] = -1;
+        formats = ff_make_format_list(fmts);
+        fmt_success = !!formats;
+        av_free(fmts);
+    }
+
+    for (int i = 0; i < ctx->nb_outputs; i++) {
+        const AVChannelLayout layout_list[] = { priv->ch_layout, { 0 } };
         ff_formats_unref(&cfg_out[i]->formats);
-        dec = avcodec_find_decoder(s->codec_id);
-        if (!dec)
-            ret = AVERROR(EINVAL);
+        if (fmt_success)
+            ret = ff_formats_ref(formats, &cfg_out[i]->formats);
+        else
+            ret = ff_formats_ref(ff_make_format_list((const int[]){ priv->sample_fmt, -1 }), &cfg_out[i]->formats);
 
-        ret = ff_formats_ref(ff_make_format_list(dec->sample_fmts), &cfg_out[i]->formats);
         if (ret < 0)
-            return ret;
+            goto out;
 
         ff_formats_unref(&cfg_out[i]->samplerates);
-        ret = ff_formats_ref(ff_make_formats_list_singleton(s->sample_rate), &cfg_out[i]->samplerates);
+        ret = ff_formats_ref(ff_make_format_list((const int[]){ priv->sample_rate, -1 }), &cfg_out[i]->samplerates);
         if (ret < 0)
-            return ret;
+            goto out;
 
         ff_channel_layouts_unref(&cfg_out[i]->channel_layouts);
         ret = ff_channel_layouts_ref(ff_make_channel_layout_list(layout_list), &cfg_out[i]->channel_layouts);
     }
 
-    return 0;
+out:
+    ff_formats_unref(&formats);
+    avcodec_free_context(&dec_ctx);
+    return ret;
 }
+
 
 static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, const char *arg,
                                     char *res, int res_len, int flags)

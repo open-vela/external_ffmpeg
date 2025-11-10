@@ -645,7 +645,6 @@ static int tinycomprsink_query_cap(CompSinkPriv *priv, const char *format, int *
 
 static int tinycomprsink_query_formats(CompSinkPriv *priv)
 {
-    const AVCodec *enc;
     int codec_id;
     int ret;
 
@@ -655,10 +654,9 @@ static int tinycomprsink_query_formats(CompSinkPriv *priv)
 
     priv->codec_id = codec_id;
 
-    enc = avcodec_find_encoder(priv->codec_id);
-    if (!enc)
-        return AV_SAMPLE_FMT_NONE;
-    priv->sample_fmt = enc->sample_fmts[0];
+    ret = tinycomprsink_query_cap(priv, "sample_fmts", &priv->sample_fmt);
+    if (ret < 0)
+        return ret;
 
     ret = tinycomprsink_query_cap(priv, "sample_rates", &priv->sample_rate);
     if (ret < 0)
@@ -677,33 +675,66 @@ static int query_formats(const AVFilterContext *ctx,
                          AVFilterFormatsConfig **cfg_in,
                          AVFilterFormatsConfig **cfg_out)
 {
-    AVFilterChannelLayouts *layouts = NULL;
+    const enum AVSampleFormat *sample_fmts = NULL;
     AVFilterFormats *formats = NULL;
     CompSinkPriv *priv = ctx->priv;
-    int ret, i;
+    AVCodecContext *enc_ctx = NULL;
+    int fmt = 0, ret = 0, count;
+    const AVCodec *enc;
 
     ret = tinycomprsink_query_formats(priv);
     if (ret < 0)
         return ret;
 
-    for (i = 0; i < ctx->nb_outputs; i++) {
-        const AVChannelLayout layout_list[] = {priv->ch_layout, {0}};
+    enc = avcodec_find_encoder(priv->codec_id);
+    if (!enc)
+        return AVERROR_ENCODER_NOT_FOUND;
 
+    enc_ctx = avcodec_alloc_context3(enc);
+    if (!enc_ctx)
+        return AVERROR(EINVAL);
+
+    ret = avcodec_get_supported_config(enc_ctx, NULL,
+                                        AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
+                                        (const void **)&sample_fmts, &count);
+    if (ret >= 0 && count > 0 && sample_fmts != NULL) {
+        int *fmts = av_malloc_array(count + 1, sizeof(int));
+        if (!fmts) {
+            ret = AVERROR(ENOMEM);
+            goto out;
+        }
+
+        memcpy(fmts, sample_fmts, count * sizeof(int));
+        fmts[count] = -1;
+        formats = ff_make_format_list(fmts);
+        fmt = !!formats;
+        av_free(fmts);
+    }
+
+    for (int i = 0; i < ctx->nb_outputs; i++) {
+        const AVChannelLayout layout_list[] = { priv->ch_layout, { 0 } };
         ff_formats_unref(&cfg_in[i]->formats);
-        ret = ff_formats_ref(ff_make_formats_list_singleton(priv->sample_fmt), &cfg_in[i]->formats);
+        if (fmt)
+            ret = ff_formats_ref(formats, &cfg_in[i]->formats);
+        else
+            ret = ff_formats_ref(ff_make_format_list((const int[]){ priv->sample_fmt, -1 }), &cfg_in[i]->formats);
+
         if (ret < 0)
-            return ret;
+            goto out;
 
         ff_formats_unref(&cfg_in[i]->samplerates);
-        ret = ff_formats_ref(ff_make_formats_list_singleton(priv->sample_rate), &cfg_in[i]->samplerates);
+        ret = ff_formats_ref(ff_make_format_list((const int[]){ priv->sample_rate, -1 }), &cfg_in[i]->samplerates);
         if (ret < 0)
-            return ret;
+            goto out;
 
         ff_channel_layouts_unref(&cfg_in[i]->channel_layouts);
         ret = ff_channel_layouts_ref(ff_make_channel_layout_list(layout_list), &cfg_in[i]->channel_layouts);
     }
 
-    return 0;
+out:
+    ff_formats_unref(&formats);
+    avcodec_free_context(&enc_ctx);
+    return ret;
 }
 
 static void tinycomprsink_uninit(AVFilterContext *ctx)
