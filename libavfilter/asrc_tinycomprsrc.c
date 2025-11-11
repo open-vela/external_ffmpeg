@@ -87,7 +87,7 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
     TinyCompressContext *s = ctx->priv;
     AVPacket *pkt = s->pkt;
     AVFrame *out;
-    int ret;
+    int bytes_per_sample, ret;
 
     out = av_frame_alloc();
     if (!out)
@@ -109,7 +109,14 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
         pkt->size = ret;
         pkt->pts = s->next_pts;
         pkt->time_base =  (AVRational) { 1, s->sample_rate };
-        s->next_pts += ret / av_get_bytes_per_sample(s->sample_fmt);
+
+        bytes_per_sample = av_get_bytes_per_sample(s->sample_fmt);
+        if (bytes_per_sample <= 0) {
+            av_log(ctx, AV_LOG_ERROR, "Invalid sample format: %d\n", s->sample_fmt);
+            goto error;
+        }
+
+        s->next_pts += ret / bytes_per_sample;
 
         ret = avcodec_send_packet(s->dec_ctx, pkt);
         if (ret < 0)
@@ -142,7 +149,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     struct snd_codec codec = { 0 };
     const AVCodec *dec;
     char devname[64];
-    int ret;
+    int ret = -EINVAL;
 
     if (s->dec_ctx || s->compress)
         return 0;
