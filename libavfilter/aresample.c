@@ -26,6 +26,7 @@
 #include "aresample.h"
 #include "libswresample/swresample.h"
 #include "libavutil/mem.h"
+#include "libavutil/opt.h"
 #include "avfilter.h"
 #include "audio.h"
 
@@ -76,6 +77,27 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
                                   &iframe->ch_layout, iframe->format, iframe->sample_rate, 0, NULL);
         if (ret < 0) {
             av_log(link->src, AV_LOG_ERROR, "Error swr set opts2 ret:%d:%s\n", ret, av_err2str(ret));
+            swr_free(&ar->swr);
+            return ret;
+        }
+
+        ret = av_opt_set_int(ar->swr, "filter_size", 16, 0);
+        if (ret < 0) {
+            av_log(link->src, AV_LOG_ERROR, "Error swr set filter_size ret:%d:%s\n", ret, av_err2str(ret));
+            swr_free(&ar->swr);
+            return ret;
+        }
+
+        ret = av_opt_set_int(ar->swr, "phase_shift", 6, 0);
+        if (ret < 0) {
+            av_log(link->src, AV_LOG_ERROR, "Error swr set phase_shift ret:%d:%s\n", ret, av_err2str(ret));
+            swr_free(&ar->swr);
+            return ret;
+        }
+
+        ret = av_opt_set_int(ar->swr, "tsf", AV_SAMPLE_FMT_S16P, 0);
+        if (ret < 0) {
+            av_log(link->src, AV_LOG_ERROR, "Error swr set tsf ret:%d:%s\n", ret, av_err2str(ret));
             swr_free(&ar->swr);
             return ret;
         }
