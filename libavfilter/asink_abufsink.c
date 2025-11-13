@@ -298,7 +298,7 @@ static int abufsink_query_formats(const AVFilterContext *ctx, AVFilterFormatsCon
     AVFilterChannelLayouts *layouts = NULL;
     AVFilterFormats *formats = NULL;
     ABufSinkPriv *sink = ctx->priv;
-    int ret, i;
+    int ret = AVERROR(EINVAL), i;
 
     for (i = 0; i < ctx->nb_inputs; i++) {
         AVChannelLayout list64[] = { { 0 }, { 0 } };
