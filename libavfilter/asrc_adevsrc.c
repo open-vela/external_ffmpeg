@@ -101,7 +101,8 @@ static int adevsrc_open(AVFilterContext *ctx)
     if (priv->state)
         return 0;
 
-    priv->fmt_ctx->audio_codec_id = link->codec;
+    priv->fmt_ctx->audio_codec_id = avcodec_is_pcm_lossless(link->codec) ?
+                                    av_get_pcm_codec(link->format, -1) : link->codec;
 
     if (!avcodec_is_pcm_lossless(link->codec)) {
         if (avfilter_forward_command(ctx, 0, "all", "get_options", NULL,
@@ -276,7 +277,8 @@ static int adevsrc_alloc_codecparams(AVFilterContext *ctx, AVCodecParameters **d
     params->codec_type  = link->type;
     params->format      = link->format;
     params->sample_rate = link->sample_rate;
-    params->codec_id    = link->codec;
+    params->codec_id    = avcodec_is_pcm_lossless(link->codec) ?
+                          av_get_pcm_codec(link->format, -1) : link->codec;
     av_channel_layout_copy(&params->ch_layout, &link->ch_layout);
 
     if (params->codec_id == AV_CODEC_ID_OPUS) {
