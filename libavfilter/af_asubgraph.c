@@ -654,10 +654,8 @@ static int asubgraph_activate(AVFilterContext *ctx)
             }
 
             ret = ff_filter_frame(outlink, oframe);
-            if (ret < 0) {
-                av_frame_free(&oframe);
+            if (ret < 0)
                 goto out;
-            }
 
             priv->first_frame_sent = true;
             need_close = false;
