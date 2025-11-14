@@ -448,7 +448,7 @@ bool ff_amix_blocked(AMixContext *s)
 /* Where param "link" is a real link. */
 int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
 {
-    AVFrame *frame, *rframe;
+    AVFrame *frame = NULL, *rframe = NULL;
     AMixInput *input;
     int ret;
 
@@ -469,7 +469,7 @@ int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
                 return ret;
 
             ret = ff_resample_frame(input->resample, s->out, frame, &rframe);
-            if (ret < 0) {
+            if (ret <= 0) {
                 av_frame_free(&frame);
                 return ret;
             }
