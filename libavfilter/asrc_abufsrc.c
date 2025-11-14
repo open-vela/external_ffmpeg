@@ -505,7 +505,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             return ret;
         }
 
-        for (i = 0; i < priv->nb_outputs; i++) {
+        for (i = 0; i < priv->nb_outputs && old_map; i++) {
             if (old_map[i] != priv->map[i]) {
                 if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
                     ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);

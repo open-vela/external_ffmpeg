@@ -498,7 +498,7 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         if (ret < 0)
             return ret;
 
-        for (i = 0; i < src->nb_outputs; i++) {
+        for (i = 0; i < src->nb_outputs && old_map; i++) {
             if (old_map[i] == ROUTE_ON && src->map[i] == ROUTE_OFF &&
                 ff_outlink_frame_wanted(ctx->outputs[i])) {
                 ret = anxsrc_send_empty_frame(ctx, ctx->outputs[i]);

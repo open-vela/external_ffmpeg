@@ -715,7 +715,7 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             return ret;
         }
 
-        for (i = 0; i < s->nb_outputs; i++) {
+        for (i = 0; i < s->nb_outputs && old_map; i++) {
             if (old_map[i] == ROUTE_ON && s->map[i] == ROUTE_OFF &&
                 ff_outlink_frame_wanted(ctx->outputs[i])) {
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
