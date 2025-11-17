@@ -491,13 +491,14 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
     } else if (!av_strcasecmp(cmd, "map")) {
         int *old_map = NULL;
 
-        if (priv->map) {
-            old_map = av_calloc(priv->nb_outputs, sizeof(*old_map));
-            if (!old_map)
-                return AVERROR(ENOMEM);
+        if (!priv->map)
+            return AVERROR(EINVAL);
 
-            memcpy(old_map, priv->map, priv->nb_outputs * sizeof(*old_map));
-        }
+        old_map = av_calloc(priv->nb_outputs, sizeof(*old_map));
+        if (!old_map)
+            return AVERROR(ENOMEM);
+
+        memcpy(old_map, priv->map, priv->nb_outputs * sizeof(*old_map));
 
         ret = avfilter_parse_mapping(args, &priv->map, priv->nb_outputs);
         if (ret < 0) {
