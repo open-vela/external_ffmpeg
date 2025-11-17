@@ -648,17 +648,8 @@ static int query_formats(const AVFilterContext *ctx,
                                         AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
                                         (const void **)&sample_fmts, &count);
     if (ret >= 0 && count > 0 && sample_fmts != NULL) {
-        int *fmts = av_malloc_array(count + 1, sizeof(int));
-        if (!fmts) {
-            ret = AVERROR(ENOMEM);
-            goto out;
-        }
-
-        memcpy(fmts, sample_fmts, count * sizeof(int));
-        fmts[count] = -1;
-        formats = ff_make_format_list(fmts);
+        formats = ff_make_format_list(sample_fmts);
         fmt = !!formats;
-        av_free(fmts);
     }
 
     for (int i = 0; i < ctx->nb_outputs; i++) {

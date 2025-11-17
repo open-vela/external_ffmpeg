@@ -513,8 +513,7 @@ static int query_formats(const AVFilterContext *ctx,
     TinyCompressContext *priv = ctx->priv;
     AVFilterFormats *formats = NULL;
     AVCodecContext *dec_ctx = NULL;
-    int fmt_success = 0;
-    int ret = 0, count;
+    int ret = 0, fmt = 0, count;
     const AVCodec *dec;
 
     ret = tinycomprsrc_query_formats(priv);
@@ -533,23 +532,14 @@ static int query_formats(const AVFilterContext *ctx,
                                        AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
                                        (const void **)&sample_fmts, &count);
     if (ret >= 0 && count > 0 && sample_fmts != NULL) {
-        int *fmts = av_malloc_array(count + 1, sizeof(int));
-        if (!fmts) {
-            ret = AVERROR(ENOMEM);
-            goto out;
-        }
-
-        memcpy(fmts, sample_fmts, count * sizeof(int));
-        fmts[count] = -1;
-        formats = ff_make_format_list(fmts);
-        fmt_success = !!formats;
-        av_free(fmts);
+        formats = ff_make_format_list(sample_fmts);
+        fmt = !!formats;
     }
 
     for (int i = 0; i < ctx->nb_outputs; i++) {
         const AVChannelLayout layout_list[] = { priv->ch_layout, { 0 } };
         ff_formats_unref(&cfg_out[i]->formats);
-        if (fmt_success)
+        if (fmt)
             ret = ff_formats_ref(formats, &cfg_out[i]->formats);
         else
             ret = ff_formats_ref(ff_make_format_list((const int[]){ priv->sample_fmt, -1 }), &cfg_out[i]->formats);
