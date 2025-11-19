@@ -516,7 +516,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
     if (TAILQ_EMPTY(&s->inputs))
         return AVERROR(EINVAL);
 
-    TAILQ_FOREACH(input, &s->inputs, entries) {
+    TAILQ_FOREACH_SAFE(input, &s->inputs, entries, tinput) {
         input_sync_state(input);
         if (!(input->state & INPUT_ON))
             amix_input_free(input);
