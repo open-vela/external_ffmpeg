@@ -460,6 +460,7 @@ static av_cold int init(AVFilterContext *ctx)
     }
 
     s->state = COMPSRC_STOPPED;
+    s->volume = 1.0f;
 
     return 0;
 }
