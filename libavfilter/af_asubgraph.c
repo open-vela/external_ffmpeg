@@ -46,17 +46,17 @@ typedef struct SubCmd {
 
 SIMPLEQ_HEAD(SubCmdQueue, SubCmd);
 
-typedef struct SubGraph {
+typedef struct SubGraphInstance {
     AVFilterGraph   *graph;
     AVFilterContext *src_filter;
     AVFilterContext *sink_filter;
     AVFilterContext *alg_filter;
-} SubGraph;
+} SubGraphInstance;
 
 typedef struct SubGraphPriv {
     const AVClass *class;
 
-    SubGraph subgraph;
+    SubGraphInstance graph_inst;
     struct SubCmdQueue cmd_queue;
 
     int nb_inputs;
@@ -79,9 +79,9 @@ typedef struct SubGraphFormats {
     AVChannelLayout ch_layout;
 } SubGraphFormats;
 
-static int asubgraph_create_graph(const AVFilterContext *ctx, SubGraph *subgraph,
-                                  const SubGraphFormats *src_fmt,
-                                  const SubGraphFormats *sink_fmt)
+static int asubgraph_init_instance(const AVFilterContext *ctx, SubGraphInstance *inst,
+                                   const SubGraphFormats *src_fmt,
+                                   const SubGraphFormats *sink_fmt)
 {
     AVFilterInOut *outputs = NULL, *inputs = NULL;
     AVFilterContext *src_filter, *sink_filter;
@@ -167,15 +167,15 @@ static int asubgraph_create_graph(const AVFilterContext *ctx, SubGraph *subgraph
         goto fail;
     }
 
-    subgraph->graph       = graph;
-    subgraph->src_filter  = src_filter;
-    subgraph->sink_filter = sink_filter;
+    inst->graph       = graph;
+    inst->src_filter  = src_filter;
+    inst->sink_filter = sink_filter;
 
-    for (i = 0; i < subgraph->graph->nb_filters; i++) {
-        AVFilterContext *filter = subgraph->graph->filters[i];
+    for (i = 0; i < inst->graph->nb_filters; i++) {
+        AVFilterContext *filter = inst->graph->filters[i];
         if ((filter->name && !strcmp(dest_name, filter->name))
             || !strcmp(dest_name, filter->filter->name)) {
-            subgraph->alg_filter = subgraph->graph->filters[i];
+            inst->alg_filter = inst->graph->filters[i];
             break;
         }
     }
@@ -189,9 +189,20 @@ fail:
     return ret;
 }
 
-static inline bool asubgraph_is_inited(SubGraphPriv *priv)
+static void asubgraph_uninit_instance(SubGraphInstance *inst)
 {
-    return priv->subgraph.graph ? true : false;
+    if (!inst || !inst->graph)
+        return;
+
+    avfilter_graph_free(&inst->graph);
+    inst->src_filter  = NULL;
+    inst->sink_filter = NULL;
+    inst->alg_filter  = NULL;
+}
+
+static inline bool asubgraph_instance_is_inited(SubGraphInstance *inst)
+{
+    return (inst && inst->graph) ? true : false;
 }
 
 static void asubgraph_free_cmd(SubCmd **cmd)
@@ -228,15 +239,15 @@ static int asubgraph_dump(AVFilterContext *ctx)
     SubGraphPriv *priv = ctx->priv;
     char* dump;
 
-    if (!asubgraph_is_inited(priv))
+    if (!asubgraph_instance_is_inited(&priv->graph_inst))
         return AVERROR(EINVAL);
 
-    dump = avfilter_graph_dump(priv->subgraph.graph, NULL);
+    dump = avfilter_graph_dump(priv->graph_inst.graph, NULL);
     if (dump != NULL) {
         av_log(ctx, AV_LOG_INFO, "%s dump:\n%s\n", ctx->name, dump);
         av_free(dump);
     } else {
-        av_log(ctx, AV_LOG_ERROR, "%s unable to dump subgraph\n", ctx->name);
+        av_log(ctx, AV_LOG_ERROR, "%s unable to dump\n", ctx->name);
         return AVERROR(ENOMEM);
     }
 
@@ -255,12 +266,13 @@ static int asubgraph_process_subcmd(AVFilterContext *ctx, const char *args,
     if (!args)
         return AVERROR(EINVAL);
 
-    // when subgraph is not initialized, enqueue the cmd to cmd_queue
-    if (!asubgraph_is_inited(priv)) {
+    // when graph_inst is not initialized, enqueue the cmd to cmd_queue
+    if (!asubgraph_instance_is_inited(&priv->graph_inst)) {
         if (!priv)
             return AVERROR(EINVAL);
 
-        av_log(ctx, AV_LOG_INFO, "subgraph is not init, pending sub_cmd: %s\n", args);
+        av_log(ctx, AV_LOG_INFO, "%s graph_inst is not init, pending sub_cmd: %s\n",
+               ctx->name, args);
         ret = asubgraph_enqueue_cmd(&priv->cmd_queue, args);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "enqueue_cmd error %d\n", ret);
@@ -286,8 +298,8 @@ static int asubgraph_process_subcmd(AVFilterContext *ctx, const char *args,
 
     av_log(ctx, AV_LOG_INFO, "process sub_cmd: %s %s %s.\n", target, sub_cmd, sub_args);
 
-    for (i = 0; i < priv->subgraph.graph->nb_filters; i++) {
-        AVFilterContext *filter = priv->subgraph.graph->filters[i];
+    for (i = 0; i < priv->graph_inst.graph->nb_filters; i++) {
+        AVFilterContext *filter = priv->graph_inst.graph->filters[i];
         if ((filter->name && !strcmp(target, filter->name))
             || !strcmp(target, filter->filter->name)) {
             ret = avfilter_process_command(filter, sub_cmd, sub_args, res, res_len, flags);
@@ -312,9 +324,9 @@ static int asubgraph_query_alg_formats(const AVFilterContext *ctx, AVFilterForma
 {
     AVFilterFormatsConfig *alg_cfg_in, *alg_cfg_out;
     AVFilterLink *in_link = NULL, *out_link = NULL;
+    SubGraphInstance inst = { 0 };
     SubGraphPriv *priv = ctx->priv;
     void *logger = (void *)ctx;
-    SubGraph subgraph = { 0 };
     char tmp[64];
     int ret;
     int i;
@@ -325,25 +337,25 @@ static int asubgraph_query_alg_formats(const AVFilterContext *ctx, AVFilterForma
         .ch_layout = AV_CHANNEL_LAYOUT_STEREO,
     };
 
-    av_log(logger, AV_LOG_INFO, "subgraph query_formats: %s.\n", priv->graph_desc);
+    av_log(logger, AV_LOG_INFO, "graph_inst query_formats: %s.\n", priv->graph_desc);
 
-    ret = asubgraph_create_graph(ctx, &subgraph, &default_fmt, NULL);
+    ret = asubgraph_init_instance(ctx, &inst, &default_fmt, NULL);
     if (ret < 0) {
-        av_log(logger, AV_LOG_ERROR, "cannot create subgraph %d.\n", ret);
+        av_log(logger, AV_LOG_ERROR, "cannot create graph_inst %d.\n", ret);
         goto end;
     }
 
-    if (subgraph.alg_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
+    if (inst.alg_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
         av_log(logger, AV_LOG_ERROR, "%s is not support query_func2.\n",
-               subgraph.alg_filter->filter->name);
+               inst.alg_filter->filter->name);
         ret = AVERROR(EINVAL);
         goto end;
     }
 
-    alg_cfg_in  = &subgraph.alg_filter->inputs[0]->outcfg;
-    alg_cfg_out = &subgraph.alg_filter->outputs[0]->incfg;
-    ret = subgraph.alg_filter->filter->formats.query_func2(subgraph.alg_filter,
-                                                           &alg_cfg_in, &alg_cfg_out);
+    alg_cfg_in  = &inst.alg_filter->inputs[0]->outcfg;
+    alg_cfg_out = &inst.alg_filter->outputs[0]->incfg;
+    ret = inst.alg_filter->filter->formats.query_func2(inst.alg_filter,
+                                                       &alg_cfg_in, &alg_cfg_out);
     if (ret < 0)
         goto end;
 
@@ -382,7 +394,7 @@ static int asubgraph_query_alg_formats(const AVFilterContext *ctx, AVFilterForma
     }
 
 end:
-    avfilter_graph_free(&subgraph.graph);
+    asubgraph_uninit_instance(&inst);
     return ret;
 }
 
@@ -390,13 +402,8 @@ static void asubgraph_close(AVFilterContext *ctx)
 {
     SubGraphPriv *priv = ctx->priv;
 
-    if (asubgraph_is_inited(priv))
-        avfilter_graph_free(&priv->subgraph.graph);
-
-    priv->subgraph.src_filter  = NULL;
-    priv->subgraph.sink_filter = NULL;
-    priv->subgraph.alg_filter  = NULL;
-    priv->first_frame_sent     = false;
+    priv->first_frame_sent = false;
+    asubgraph_uninit_instance(&priv->graph_inst);
 }
 
 static int asubgraph_open(AVFilterContext *ctx, const SubGraphFormats src_fmt,
@@ -406,21 +413,21 @@ static int asubgraph_open(AVFilterContext *ctx, const SubGraphFormats src_fmt,
     SubCmd *cmd;
     int ret;
 
-    av_log(ctx, AV_LOG_INFO, "subgraph init parms: %s %d %d %d(src) %d %d %d(sink).\n",
-           priv->graph_desc, src_fmt.format, src_fmt.sample_rate, src_fmt.ch_layout.nb_channels,
+    av_log(ctx, AV_LOG_INFO, "%s graph_inst init parms: %d %d %d(src) %d %d %d(sink).\n",
+           ctx->name, src_fmt.format, src_fmt.sample_rate, src_fmt.ch_layout.nb_channels,
            sink_fmt.format, sink_fmt.sample_rate, sink_fmt.ch_layout.nb_channels);
 
     // all format should be setted as vaild value
     if (src_fmt.ch_layout.nb_channels <= 0   || sink_fmt.ch_layout.nb_channels <= 0 ||
-        src_fmt.sample_rate <= 0             || sink_fmt.sample_rate          <= 0  ||
+        src_fmt.sample_rate <= 0             || sink_fmt.sample_rate           <= 0 ||
         src_fmt.format <= AV_SAMPLE_FMT_NONE || sink_fmt.format <= AV_SAMPLE_FMT_NONE) {
         av_log(ctx, AV_LOG_ERROR, "invalid parameters.\n");
         return AVERROR(EINVAL);
     }
 
-    ret = asubgraph_create_graph(ctx, &priv->subgraph, &src_fmt, &sink_fmt);
+    ret = asubgraph_init_instance(ctx, &priv->graph_inst, &src_fmt, &sink_fmt);
     if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "cannot create audio subgraph %d.\n", ret);
+        av_log(ctx, AV_LOG_ERROR, "cannot create audio graph_inst %d.\n", ret);
         goto fail;
     }
 
@@ -433,9 +440,9 @@ static int asubgraph_open(AVFilterContext *ctx, const SubGraphFormats src_fmt,
         asubgraph_free_cmd(&cmd);
     }
 
-    ret = avfilter_graph_config(priv->subgraph.graph, ctx);
+    ret = avfilter_graph_config(priv->graph_inst.graph, ctx);
     if (ret < 0) {
-        av_log(ctx, AV_LOG_ERROR, "subgraph config error %d\n", ret);
+        av_log(ctx, AV_LOG_ERROR, "graph_inst config error %d\n", ret);
         goto fail;
     }
 
@@ -497,6 +504,7 @@ static void asubgraph_uninit(AVFilterContext *ctx)
 
     asubgraph_close(ctx);
     av_freep(&priv->map);
+    av_freep(&priv->graph_desc);
 }
 
 static int asubgraph_try_process_frame(AVFilterContext *ctx, AVFilterLink *inlink,
@@ -509,8 +517,8 @@ static int asubgraph_try_process_frame(AVFilterContext *ctx, AVFilterLink *inlin
     if (!poframe)
         return AVERROR(EINVAL);
 
-    if (!asubgraph_is_inited(priv)) {
-        av_log(ctx, AV_LOG_ERROR, "subgraph is not initialized.\n");
+    if (!asubgraph_instance_is_inited(&priv->graph_inst)) {
+        av_log(ctx, AV_LOG_ERROR, "graph_inst is not initialized.\n");
         return AVERROR(EINVAL);
     }
 
@@ -518,7 +526,7 @@ static int asubgraph_try_process_frame(AVFilterContext *ctx, AVFilterLink *inlin
     if (!oframe)
         return AVERROR(ENOMEM);
 
-    ret = av_buffersink_get_frame(priv->subgraph.sink_filter, oframe);
+    ret = av_buffersink_get_frame(priv->graph_inst.sink_filter, oframe);
     if (ret < 0 && ret != AVERROR(EAGAIN)) {
         av_log(ctx, AV_LOG_ERROR, "get frame from buffersink error%s\n",
                 av_err2str(ret));
@@ -535,12 +543,12 @@ static int asubgraph_try_process_frame(AVFilterContext *ctx, AVFilterLink *inlin
             goto err;
         }
 
-        ret = av_buffersrc_add_frame_flags(priv->subgraph.src_filter, iframe,
+        ret = av_buffersrc_add_frame_flags(priv->graph_inst.src_filter, iframe,
                                            AV_BUFFERSRC_FLAG_KEEP_REF);
         if (ret < 0)
             goto err;
 
-        ret = av_buffersink_get_frame(priv->subgraph.sink_filter, oframe);
+        ret = av_buffersink_get_frame(priv->graph_inst.sink_filter, oframe);
         if (ret < 0)
             goto err;
     }
@@ -620,7 +628,7 @@ static int asubgraph_activate(AVFilterContext *ctx)
         if ((priv->map && priv->map[i] == ROUTE_OFF) || ff_outlink_get_status(outlink))
             continue;
 
-        if (!asubgraph_is_inited(priv)) {
+        if (!asubgraph_instance_is_inited(&priv->graph_inst)) {
             src = (SubGraphFormats) {
                 .ch_layout   = inlink->ch_layout,
                 .sample_rate = inlink->sample_rate,
@@ -691,7 +699,7 @@ static int asubgraph_query_formats(const AVFilterContext *ctx, AVFilterFormatsCo
     AVFilterLink *link;
     int ret, i;
 
-    if (!asubgraph_is_inited(priv))
+    if (!asubgraph_instance_is_inited(&priv->graph_inst))
         return asubgraph_query_alg_formats(ctx, cfg_in, cfg_out);
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -786,7 +794,7 @@ static int asubgraph_process_command(AVFilterContext *ctx, const char *cmd, cons
         av_freep(&old_map);
         return 0;
     } else {
-        av_log(ctx, AV_LOG_ERROR, "unknown command for subgraph %s\n", cmd);
+        av_log(ctx, AV_LOG_ERROR, "%s unknown command: %s\n", ctx->name, cmd);
         return AVERROR(EINVAL);
     }
 }
