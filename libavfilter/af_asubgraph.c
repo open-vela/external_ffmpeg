@@ -50,7 +50,6 @@ typedef struct SubGraphInstance {
     AVFilterGraph   *graph;
     AVFilterContext *src_filter;
     AVFilterContext *sink_filter;
-    AVFilterContext *alg_filter;
 } SubGraphInstance;
 
 typedef struct SubGraphPriv {
@@ -89,10 +88,8 @@ static int asubgraph_init_instance(const AVFilterContext *ctx, SubGraphInstance 
     void *logger = (void *)ctx;
     char ch_layout_str[16];
     AVFilterGraph *graph;
-    char *dest_name;
     char tmp[64];
     int ret;
-    int i;
 
     graph = avfilter_graph_alloc();
     if (!graph)
@@ -158,28 +155,9 @@ static int asubgraph_init_instance(const AVFilterContext *ctx, SubGraphInstance 
         goto fail;
     }
 
-    memset(tmp, 0, sizeof(tmp));
-    av_strlcpy(tmp, priv->graph_desc, sizeof(tmp));
-    dest_name = strtok_r(tmp, "=", NULL);
-    if (!dest_name) {
-        av_log(logger, AV_LOG_ERROR, "find dest_filter failed.\n");
-        ret = AVERROR(EINVAL);
-        goto fail;
-    }
-
     inst->graph       = graph;
     inst->src_filter  = src_filter;
     inst->sink_filter = sink_filter;
-
-    for (i = 0; i < inst->graph->nb_filters; i++) {
-        AVFilterContext *filter = inst->graph->filters[i];
-        if ((filter->name && !strcmp(dest_name, filter->name))
-            || !strcmp(dest_name, filter->filter->name)) {
-            inst->alg_filter = inst->graph->filters[i];
-            break;
-        }
-    }
-
     return 0;
 
 fail:
@@ -197,7 +175,6 @@ static void asubgraph_uninit_instance(SubGraphInstance *inst)
     avfilter_graph_free(&inst->graph);
     inst->src_filter  = NULL;
     inst->sink_filter = NULL;
-    inst->alg_filter  = NULL;
 }
 
 static inline bool asubgraph_instance_is_inited(SubGraphInstance *inst)
@@ -322,12 +299,11 @@ end:
 static int asubgraph_query_alg_formats(const AVFilterContext *ctx, AVFilterFormatsConfig **cfg_in,
                                        AVFilterFormatsConfig **cfg_out)
 {
-    AVFilterFormatsConfig *alg_cfg_in, *alg_cfg_out;
-    AVFilterLink *in_link = NULL, *out_link = NULL;
-    SubGraphInstance inst = { 0 };
+    AVFilterFormatsConfig *alg_cfg_in, *alg_cfg_out, *tmp_cfg;
+    AVFilterContext *first_alg, *last_alg;
     SubGraphPriv *priv = ctx->priv;
+    SubGraphInstance inst = { 0 };
     void *logger = (void *)ctx;
-    char tmp[64];
     int ret;
     int i;
 
@@ -345,17 +321,26 @@ static int asubgraph_query_alg_formats(const AVFilterContext *ctx, AVFilterForma
         goto end;
     }
 
-    if (inst.alg_filter->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
-        av_log(logger, AV_LOG_ERROR, "%s is not support query_func2.\n",
-               inst.alg_filter->filter->name);
+    first_alg = inst.src_filter->outputs[0]->dst;
+    last_alg  = inst.sink_filter->inputs[0]->src;
+    if (first_alg->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2 ||
+        last_alg->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2) {
+        av_log(logger, AV_LOG_ERROR, " %s not support query_func2.\n",
+            first_alg->filter->formats_state != FF_FILTER_FORMATS_QUERY_FUNC2 ?
+            first_alg->name : last_alg->name);
         ret = AVERROR(EINVAL);
         goto end;
     }
 
-    alg_cfg_in  = &inst.alg_filter->inputs[0]->outcfg;
-    alg_cfg_out = &inst.alg_filter->outputs[0]->incfg;
-    ret = inst.alg_filter->filter->formats.query_func2(inst.alg_filter,
-                                                       &alg_cfg_in, &alg_cfg_out);
+    alg_cfg_in  = &first_alg->inputs[0]->outcfg;
+    tmp_cfg     = &first_alg->outputs[0]->incfg;
+    ret = first_alg->filter->formats.query_func2(first_alg, &alg_cfg_in, &tmp_cfg);
+    if (ret < 0)
+        goto end;
+
+    tmp_cfg     = &last_alg->inputs[0]->outcfg;
+    alg_cfg_out = &last_alg->outputs[0]->incfg;
+    ret = last_alg->filter->formats.query_func2(last_alg, &tmp_cfg, &alg_cfg_out);
     if (ret < 0)
         goto end;
 
@@ -793,6 +778,25 @@ static int asubgraph_process_command(AVFilterContext *ctx, const char *cmd, cons
 
         av_freep(&old_map);
         return 0;
+    } else if (!strcmp(cmd, "graph_parse")) {
+        SubGraphInstance inst = { 0 };
+        SubGraphFormats default_fmt = {
+            .format = AV_SAMPLE_FMT_S16,
+            .sample_rate = 44100,
+            .ch_layout = AV_CHANNEL_LAYOUT_STEREO,
+        };
+
+        av_freep(&priv->graph_desc);
+        priv->graph_desc = av_strdup(args);
+        if (!priv->graph_desc)
+            return AVERROR(ENOMEM);
+
+        ret = asubgraph_init_instance(ctx, &inst, &default_fmt, NULL);
+        if (ret < 0)
+            return ret;
+
+        asubgraph_uninit_instance(&inst);
+        return 0;
     } else {
         av_log(ctx, AV_LOG_ERROR, "%s unknown command: %s\n", ctx->name, cmd);
         return AVERROR(EINVAL);
@@ -807,7 +811,6 @@ static const AVOption asubgraph_options[] = {
     { "outputs",           "", OFFSET(nb_outputs),        AV_OPT_TYPE_INT,        {.i64 = 1},                  0, INT_MAX, R },
     { "map",               "", OFFSET(map_str),           AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
     { "map_array",         "", OFFSET(map),               AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
-    { "graph_desc",        "", OFFSET(graph_desc),        AV_OPT_TYPE_STRING,     {.str = NULL},                    .flags=R },
     { NULL },
 };
 
