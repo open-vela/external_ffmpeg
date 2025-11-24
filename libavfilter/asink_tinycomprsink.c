@@ -652,7 +652,7 @@ static int query_formats(const AVFilterContext *ctx,
         fmt = !!formats;
     }
 
-    for (int i = 0; i < ctx->nb_outputs; i++) {
+    for (int i = 0; i < ctx->nb_inputs; i++) {
         const AVChannelLayout layout_list[] = { priv->ch_layout, { 0 } };
         ff_formats_unref(&cfg_in[i]->formats);
         if (fmt)
