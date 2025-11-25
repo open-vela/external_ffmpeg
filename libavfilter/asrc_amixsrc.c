@@ -231,8 +231,10 @@ static int amix_buffersrc_open(MixInput **input, AVFilterContext *ctx,
     return 0;
 
 err:
-    av_freep(&in->fifos);
-    av_freep(&in);
+    if (in) {
+        av_freep(&in->fifos);
+        av_freep(&in);
+    }
     return AVERROR(ENOMEM);
 }
 
