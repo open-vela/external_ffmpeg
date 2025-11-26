@@ -297,19 +297,19 @@ static int get_parameter(AVFilterContext *ctx, MixInput *in, const char *key, ch
         av_log(in->ctx, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, in->volume);
         return 0;
     }  else if (!strcmp(key, "get_format")) {
-        MixInput *in;
+        MixInput *cur;
         int i;
 
         if (s->nb_inputs == 0)
             return  snprintf(value, len, "fmt=0:rate=0:ch=0");
 
         for (i = 0; i < s->nb_inputs; i++) {
-            in = s->inputs[i];
-            if (in->state != INPUT_EOF)
+            cur = s->inputs[i];
+            if (cur->state != INPUT_EOF)
                 break;
         }
 
-        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", in->sample_fmt, in->sample_rate, in->ch_layout.nb_channels);
+        snprintf(value, len, "fmt=%d:rate=%d:ch=%d", cur->sample_fmt, cur->sample_rate, cur->ch_layout.nb_channels);
         return 0;
     }
 
@@ -719,10 +719,6 @@ static int process_command(AVFilterContext *ctx, const char *cmd, const char *ar
             if (old_map[i] == ROUTE_ON && s->map[i] == ROUTE_OFF &&
                 ff_outlink_frame_wanted(ctx->outputs[i])) {
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
-                if (ret < 0) {
-                    av_freep(&old_map);
-                    return ret;
-                }
             }
         }
         av_freep(&old_map);
