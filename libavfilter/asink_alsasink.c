@@ -424,6 +424,56 @@ static int alsasink_process_command(AVFilterContext *ctx,
     }
 }
 
+static int alsasink_forward_command(AVFilterContext *ctx,
+    int pad_idx, const char* target, const char *cmd,
+    const char *arg, char *res, int res_len, int flags)
+{
+    AlsaSinkPriv *priv = ctx->priv;
+    snd_pcm_sframes_t frame_count;
+    FilterLinkInternal* li;
+    int64_t latency = 0;
+    AVFilterLink *link;
+    int i, nb_frames;
+    AlsaHandle *sink;
+    AVFrame *frame;
+    int ret = 0;
+
+    av_log(ctx, AV_LOG_DEBUG, "Forwarding command '%s'\n", cmd);
+
+    if (!strcmp(cmd, "latency")) {
+        link = ctx->inputs[pad_idx];
+        li = ff_link_internal(link);
+
+        nb_frames = ff_framequeue_queued_frames(&li->fifo);
+        for (i = 0; i < nb_frames; i++) {
+            frame = ff_framequeue_peek(&li->fifo, i);
+            latency += av_rescale_q(frame->duration, frame->time_base, AV_TIME_BASE_Q);
+        }
+
+        for (i = 0; i < ctx->nb_inputs; i++) {
+            if (ctx->inputs[i] == link)
+                sink = &priv->handles[i];
+        }
+
+        if (!sink || !sink->h) {
+            *res = 0;
+            return latency;
+        }
+
+        ret = snd_pcm_delay(sink->h, &frame_count);
+        if (ret < 0 || frame_count < 0) {
+            av_log(ctx, AV_LOG_ERROR, "Error getting delay: %s\n", snd_strerror(ret));
+            return ret;
+        }
+
+        latency += frame_count * 1000 / sink->sample_rate;
+        *res = latency;
+        return 0;
+    }
+
+    return 0;
+}
+
 #define OFFSET(x) offsetof(AlsaSinkPriv, x)
 #define FLAGS  AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_AUDIO_PARAM
 #define FLAGSR FLAGS|AV_OPT_FLAG_RUNTIME_PARAM
@@ -450,5 +500,6 @@ const AVFilter ff_asink_alsasink = {
     .activate        = alsasink_activate,
     FILTER_QUERY_FUNC2(alsasink_query_formats),
     .process_command = alsasink_process_command,
+    .forward_command = alsasink_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL,
 };

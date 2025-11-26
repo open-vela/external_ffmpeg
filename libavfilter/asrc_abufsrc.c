@@ -407,9 +407,38 @@ end:
     return ret;
 }
 
+static int abufsrc_get_latency(AVFilterContext *ctx, int64_t *latency)
+{
+    BuffSrcPriv *priv = ctx->priv;
+    int64_t src_latency = 0;
+    int64_t sink_latency;
+    char msg[64];
+    int ret = 0;
+    int i;
+
+    if (priv->frame)
+        src_latency = av_rescale_q(priv->frame->duration, priv->frame->time_base, AV_TIME_BASE_Q) / 1000;
+
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        if (priv->map[i] == ROUTE_ON) {
+            ret = avfilter_forward_command(ctx, i, NULL, "latency", NULL, (char*)&sink_latency, sizeof(&sink_latency), 0);
+            if (ret < 0)
+                return ret;
+        }
+    }
+
+    *latency = src_latency + sink_latency;
+
+    av_log(ctx, AV_LOG_INFO, "src_latency %" PRId64 " sink_latency %" PRId64, src_latency, sink_latency);
+
+    return ret;
+}
+
 static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     BuffSrcPriv *s = ctx->priv;
+    int64_t latency;
+    int ret = 0;
 
     if (!strcmp(key, "format")) {
         snprintf(value, len, "fmt=%d:rate=%d:ch=%d", s->sample_fmt, s->sample_rate, s->ch_layout.nb_channels);
@@ -419,6 +448,12 @@ static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
 
         av_log(s, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, s->player_volume);
         return 0;
+    } else if (!strcmp(key, "latency")) {
+        ret = abufsrc_get_latency(ctx, &latency);
+        snprintf(value, len, "latency:%" PRId64, latency);
+
+        av_log(s, AV_LOG_INFO, "get_parameter: %s = %" PRId64 "\n", key, latency);
+        return ret;
     }
 
     av_log(ctx, AV_LOG_ERROR, "get_parameter [%s] not found.\n", key);
