@@ -494,6 +494,23 @@ int ff_amix_input_write(AMixContext *s, AVFilterLink *link)
     return 0;
 }
 
+
+/**
+ * Check whether all data on the link has been written
+ * to amix through the ff_amix_input_write API.
+ */
+bool ff_amix_input_write_down(AMixContext *s, AVFilterLink *link)
+{
+    AMixInput *input;
+
+    if (!s)
+        return false;
+
+    input = amix_find_input(s, link);
+
+    return !input || !input->link || (input->fifo ? !ff_inlink_check_available_samples(input->link, 1) : true);
+}
+
 /**
  * Mixing data and output in frame.
  *
@@ -521,7 +538,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
         return AVERROR(EINVAL);
 
     if (TAILQ_EMPTY(&s->inputs))
-        return AVERROR(EINVAL);
+        return AVERROR(EAGAIN);
 
     TAILQ_FOREACH_SAFE(input, &s->inputs, entries, tinput) {
         input_sync_state(input);

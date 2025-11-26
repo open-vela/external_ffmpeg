@@ -29,6 +29,7 @@ typedef struct AMixContext AMixContext;
 bool ff_amix_input_empty(AMixContext *s, AVFilterLink *link);
 bool ff_amix_input_want(AMixContext *s, AVFilterLink *link);
 int ff_amix_input_write(AMixContext *s, AVFilterLink *link);
+bool ff_amix_input_write_down(AMixContext *s, AVFilterLink *link);
 int ff_amix_read(AMixContext *s, AVFrame **oframe);
 AMixContext *ff_amix_alloc(int sample_rate, int format, int channels);
 bool ff_amix_blocked(AMixContext *s);
