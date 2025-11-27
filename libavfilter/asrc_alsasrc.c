@@ -379,16 +379,25 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
 {
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
-    int ret;
+    int ret, i;
 
     if (!strcmp(cmd, "link")) {
         alsasrc_force_request(ctx);
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
+        FilterLinkInternal *li;
+        AVFilterLink *link;
+
         if (handle->h) {
             alsasrc_close(ctx);
             alsasrc_set_eof(ctx);
         }
+
+        for (i = 0; i < priv->nb_outputs; i++) {
+            li = ff_link_internal(ctx->outputs[i]);
+            li->frame_wanted_out = 0;
+        }
+
         return 0;
     } else if (!strcmp(cmd, "get_pollfd")) {
         struct pollfd *poll = (struct pollfd *)res;
@@ -412,22 +421,41 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
         handle->poll_available++;
         return 0;
     } else if (!strcmp(cmd, "map")) {
+        FilterLinkInternal *li;
+        int *old_map = NULL;
+        AVFilterLink *link;
+
+        if (!priv->map)
+            return AVERROR(EINVAL);
+
+        old_map = av_calloc(priv->nb_outputs, sizeof(*old_map));
+        if (!old_map)
+            return AVERROR(ENOMEM);
+
+        memcpy(old_map, priv->map, priv->nb_outputs * sizeof(*old_map));
+
         ret = avfilter_parse_mapping(args, &priv->map, priv->nb_outputs);
         if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to parse mapping: %s ret:%d\n", args, ret);
+            av_freep(&old_map);
             return ret;
         }
 
-        for (int i = 0; i < ctx->nb_outputs; i++) {
-            AVFilterLink *link = ctx->outputs[i];
-            if (priv->map && priv->map[i] == ROUTE_OFF)
-            {
-                av_log(ctx, AV_LOG_INFO, "disable output%d\n", i);
-                ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
+        for (i = 0; i < priv->nb_outputs && old_map; i++) {
+            link = ctx->outputs[i];
+            if (old_map[i] != priv->map[i]) {
+                if (old_map[i] == ROUTE_ON && priv->map[i] == ROUTE_OFF) {
+                    av_log(ctx, AV_LOG_INFO, "%s disable output%d\n", ctx->name, i);
+                    ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
+                } else if (old_map[i] == ROUTE_OFF && priv->map[i] == ROUTE_ON) {
+                    av_log(ctx, AV_LOG_INFO, "%s enable output%d\n", ctx->name, i);
+                    li = ff_link_internal(ctx->outputs[i]);
+                    li->frame_wanted_out = 1;
+                }
             }
         }
 
         ff_filter_set_ready(ctx, 100);
+        av_freep(&old_map);
         return ret;
     } else if (!strcmp(cmd, "get_parameter")) {
         if (!args || res_len <= 0)
