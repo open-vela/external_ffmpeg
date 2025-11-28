@@ -402,9 +402,6 @@ static int anxsrc_get_parameter(AVFilterContext *ctx, const char *key, char *val
 {
     ANxSrcPriv *src = ctx->priv;
 
-    if (!ctx || !key || value_len <=0)
-        return AVERROR(EINVAL);
-
     if (!strcmp(key, "get_format")) {
         AVFilterLink* link;
         int i;
