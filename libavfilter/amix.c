@@ -118,9 +118,11 @@ static int calc_active_inputs(AMixContext *s)
 
 static int get_output_samples(AMixContext *s)
 {
-    int ns, nb_samples = INT_MAX, min_samples = INT_MAX, max_samples = 0;
+    int nb_samples = INT_MAX, unblocked_samples = INT_MAX;
+    int min_samples = INT_MAX, max_samples = 0;
     AMixInput *input;
     int count = 0;
+    int ns;
 
     if (TAILQ_EMPTY(&s->inputs))
         return 0;
@@ -133,10 +135,13 @@ static int get_output_samples(AMixContext *s)
                 ns = av_audio_fifo_size(input->fifo);
 
             nb_samples = FFMIN(nb_samples, ns);
-            if (input->state & INPUT_EOF && !(input->state & INPUT_BLOCKED))
-                max_samples = FFMAX(max_samples, ns);
-            if (!input_needs_detach(input))
-                min_samples = FFMIN(min_samples, ns);
+            if (!(input->state & INPUT_BLOCKED)) {
+                if (input->state & INPUT_EOF)
+                    max_samples = FFMAX(max_samples, ns);
+                else
+                    min_samples = FFMIN(min_samples, ns);
+                unblocked_samples = FFMIN(unblocked_samples, ns);
+            }
         }
     }
 
@@ -149,6 +154,7 @@ static int get_output_samples(AMixContext *s)
      *              equal to INPUT_ON.
      * max_samples: maximum samples among all drain inputs with
      *              INPUT_EOF state.
+     * unblocked_samples: minimum samples among all unblocked inputs.
      *
      * Here are three cases that need to be considered:
      * - Partially draining: at least one but not all inpputs with
@@ -186,9 +192,10 @@ static int get_output_samples(AMixContext *s)
 
         if (nb_samples != s->frame_size)
             return 0;
+        return nb_samples;
     }
 
-    return nb_samples;
+    return nb_samples ? nb_samples : unblocked_samples;
 }
 
 static void vector_fmac_scalar_c(int16_t *dst, const int16_t *src, int16_t mul, int len)
@@ -537,9 +544,9 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
             int left_size;
             left_size = input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link);
 
-            /* If input no samples left or in blocked, then skip mix. */
+            /* If input no samples left, then skip mix. */
 
-            if (left_size == 0 || (input->state & INPUT_BLOCKED))
+            if (left_size == 0)
                 continue;
 
             if (input_needs_detach(input) && left_size < nb_samples) {
