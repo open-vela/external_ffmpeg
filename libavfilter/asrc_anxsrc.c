@@ -495,8 +495,10 @@ static int anxsrc_process_command(AVFilterContext *ctx, const char *cmd, const c
         }
 
         ret = avfilter_parse_mapping(args, &src->map, src->nb_outputs);
-        if (ret < 0)
+        if (ret < 0) {
+            av_freep(&old_map);
             return ret;
+        }
 
         for (i = 0; i < src->nb_outputs && old_map; i++) {
             if (old_map[i] == ROUTE_ON && src->map[i] == ROUTE_OFF &&
