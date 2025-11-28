@@ -150,7 +150,7 @@ static int abufsink_activate(AVFilterContext *ctx)
 
         if (ff_inlink_check_available_frame(link)) {
             if (!s->mix && s->on_event_cb) {
-                s->mix = ff_amix_alloc(link->sample_rate, link->format, link->ch_layout.nb_channels);
+                s->mix = ff_amix_alloc(s->sample_rate, s->sample_fmt, s->ch_layout.nb_channels);
                 if (!s->mix)
                     return AVERROR(ENOMEM);
                 if (s->frame_size)
