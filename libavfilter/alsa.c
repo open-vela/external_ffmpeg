@@ -45,19 +45,15 @@ static snd_pcm_format_t smpfmt_to_alsafmt(enum AVSampleFormat smpfmt,
     case AV_SAMPLE_FMT_S16P:
         *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
     case AV_SAMPLE_FMT_S16:
-#if AV_HAVE_BIGENDIAN
-        return SND_PCM_FORMAT_S16_BE;
-#else
-        return SND_PCM_FORMAT_S16_LE;
-#endif
+        return SND_PCM_FORMAT_S16;
     case AV_SAMPLE_FMT_S32P:
         *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
     case AV_SAMPLE_FMT_S32:
-#if AV_HAVE_BIGENDIAN
-        return SND_PCM_FORMAT_S32_BE;
-#else
-        return SND_PCM_FORMAT_S32_LE;
-#endif
+        return SND_PCM_FORMAT_S32;
+    case AV_SAMPLE_FMT_FLTP:
+        *access = SND_PCM_ACCESS_RW_NONINTERLEAVED;
+    case AV_SAMPLE_FMT_FLT:
+        return SND_PCM_FORMAT_FLOAT;
     default:
         return SND_PCM_FORMAT_UNKNOWN;
     }
