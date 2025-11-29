@@ -115,7 +115,7 @@ static int alsa_fmt_to_avcodec(int fmt, int subfmt, int streamfmt)
         case AUDIO_FMT_AMR: return AV_CODEC_ID_AMR_NB;
         case AUDIO_FMT_AMRWB:return AV_CODEC_ID_AMR_WB;
         case AUDIO_FMT_AAC:
-            if (streamfmt & (1 << (AUDIO_STREAMFORMAT_LATM - 1)))
+            if (streamfmt == AUDIO_STREAMFORMAT_LATM)
                 return AV_CODEC_ID_AAC_LATM_A2DP;
             return AV_CODEC_ID_AAC;
         case AUDIO_FMT_OPUS: return AV_CODEC_ID_OPUS;
