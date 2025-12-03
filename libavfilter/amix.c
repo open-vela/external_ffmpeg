@@ -563,7 +563,7 @@ int ff_amix_read(AMixContext *s, AVFrame **oframe)
 
             /* If input no samples left, then skip mix. */
 
-            if (left_size == 0)
+            if (left_size == 0 || input->state & INPUT_BLOCKED)
                 continue;
 
             if (input_needs_detach(input) && left_size < nb_samples) {
