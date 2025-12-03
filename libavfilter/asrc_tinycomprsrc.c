@@ -126,8 +126,21 @@ static int tinycomprsrc_receive_frame(AVFilterContext *ctx, AVFrame **frame) {
         ret = compress_read(s->compress, pkt->data, s->fragment_size);
         if (ret > 0 && ret != s->fragment_size)
             av_log(ctx, AV_LOG_ERROR, "Not read enough data fragment_size:%d ret:%d\n", s->fragment_size, ret);
-        else if (ret < 0)
+        else if (ret < 0) {
+            /* If paused and no start cmd wait, then set link EOF. */
+            if (!s->start && (s->state == COMPSRC_PAUSING || s->state == COMPSRC_PAUSED)) {
+                av_log(ctx, AV_LOG_INFO, "%s sync EOF.", ctx->name);
+                for (int i = 0; i < ctx->nb_outputs; i++) {
+                    AVFilterLink *link = ctx->outputs[i];
+
+                    if (s->map[i] == 0)
+                        continue;
+
+                    ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
+                }
+            }
             goto error;
+        }
 
         pkt->size = ret;
         pkt->pts = s->next_pts;
@@ -655,7 +668,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
         s->start = true;
         if (s->compress) {
             if (s->state == COMPSRC_PAUSED)
-                return tinycomprsrc_resume(ctx);
+                tinycomprsrc_resume(ctx);
         }
 
         tinycomprsrc_force_request(ctx);
