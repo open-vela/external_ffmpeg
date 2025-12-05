@@ -712,10 +712,10 @@ static int asubgraph_output_frame(AVFilterContext *ctx, bool need_drain)
 static int asubgraph_activate(AVFilterContext *ctx)
 {
     SubGraphPriv *priv = ctx->priv;
+    int64_t rpts = AV_NOPTS_VALUE;
     bool eof_forward = true;
     int ret = AVERROR_EOF;
     bool request = true;
-    int64_t rpts;
     int status;
     int i;
 
