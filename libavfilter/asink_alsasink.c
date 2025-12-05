@@ -377,8 +377,12 @@ static int alsasink_process_command(AVFilterContext *ctx,
 
                 snd_pcm_poll_descriptors(sink->h, &poll[ret], 1);
 
-                if (sink->poll_available >= sink->periods)
+                if (sink->poll_available >= sink->periods) {
+                    if (snd_pcm_state(sink->h) == SND_PCM_STATE_PREPARED)
+                        continue;
+
                     poll[ret].events = POLLERR;
+                }
 
                 ret++;
             }
