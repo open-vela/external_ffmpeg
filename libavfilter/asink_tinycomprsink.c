@@ -235,6 +235,10 @@ static int tinycomprsink_open(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
+    ret = compress_set_current_config(priv->compress, &config);
+    if (ret < 0)
+        goto out;
+
     av_dict_set_int(&fmt_opt, "ar", priv->sample_rate, 0);
     av_dict_set_int(&fmt_opt, "ac", priv->ch_layout.nb_channels, 0);
     av_dict_set_int(&fmt_opt, "ab", config.codec->bit_rate, 0);

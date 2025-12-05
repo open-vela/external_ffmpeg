@@ -298,6 +298,10 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     if (ret < 0)
         goto error;
 
+    ret = compress_set_current_config(s->compress, &config);
+    if (ret < 0)
+        goto error;
+
     s->fragment_size = config.fragment_size;
     s->fragments = config.fragments;
 
