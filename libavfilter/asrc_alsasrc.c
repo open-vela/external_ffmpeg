@@ -683,6 +683,9 @@ static int alsasrc_activate(AVFilterContext *ctx)
         if ((priv->map && priv->map[i] == ROUTE_OFF) || ff_outlink_get_status(ctx->outputs[i]))
             continue;
 
+        if (!ff_outlink_frame_wanted(ctx->outputs[i]))
+            continue;
+
         iframe = av_frame_clone(frame);
         if (!iframe) {
             ret = AVERROR(ENOMEM);
