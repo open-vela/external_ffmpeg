@@ -30,6 +30,12 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/frame.h"
 
+enum PrecisionType {
+    PRECISION_FIXED = 0,
+    PRECISION_FLOAT,
+    PRECISION_DOUBLE,
+};
+
 typedef struct VolumeContext {
     AVFloatDSPContext *fdsp;
     enum AVSampleFormat sample_fmt;
@@ -37,13 +43,17 @@ typedef struct VolumeContext {
     double volume_last;
     double volume;
 
+    enum PrecisionType precision;
+    AVFrame *conv_frame;
+    enum AVSampleFormat mid_fmt;
+
     void (*scale_samples)(uint8_t *dst, const uint8_t *src, int nb_samples,
                           int volume);
     void (*fade_samples)(uint8_t *dst, const uint8_t *src,
                          int nb_samples, int chs, int16_t dst_volume, int16_t src_volume);
 } VolumeContext;
 
-int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt);
+int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt, enum PrecisionType precision);
 void volume_scale(VolumeContext *vol, AVFrame *frame);
 void volume_set(VolumeContext *vol, double volume);
 void volume_uninit(VolumeContext *vol);

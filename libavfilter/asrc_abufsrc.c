@@ -52,6 +52,7 @@ typedef struct BuffSrcPriv {
     /* nb_outputs needs to follow map because av_opt_get_array
        assumes the next address of map points to nb_outputs.*/
     int nb_outputs;
+    enum PrecisionType precision;
     bool paused;
 
     int sample_rate;                /**< sample rate */
@@ -491,7 +492,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 
         abufsrc_set_event_cb(ctx, on_event_cb, udata);
 
-        ret = volume_init(&priv->vol_ctx, format);
+        ret = volume_init(&priv->vol_ctx, format, priv->precision);
         volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
 
         for (i = 0; i < ctx->nb_outputs; i++) {
@@ -601,6 +602,11 @@ static const AVOption abuffer_options[] = {
     { "outputs", "set number of outputs", OFFSET(nb_outputs), AV_OPT_TYPE_INT,   { .i64 = 1 }, 1, INT_MAX, A },
     { "map", "input indexes to remap to outputs", OFFSET(map_str),    AV_OPT_TYPE_STRING, {.str=NULL},    .flags = A|F },
     { "map_array", "get map list", OFFSET(map),    AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX,    .flags = A|F },
+    { "precision", "select mathematical precision",
+            OFFSET(precision), AV_OPT_TYPE_INT, { .i64 = PRECISION_FIXED }, PRECISION_FIXED, PRECISION_DOUBLE, A|F, "precision" },
+        { "fixed",  "select 8-bit fixed-point",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A|F, "precision" },
+        { "float",  "select 32-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A|F, "precision" },
+        { "double", "select 64-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A|F, "precision" },
     { NULL },
 };
 

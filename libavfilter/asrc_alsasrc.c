@@ -66,6 +66,7 @@ typedef struct AlsasrcPriv {
 
     VolumeContext vol_ctx;
     double volume;
+    enum PrecisionType precision;
     bool mute;
 } AlsasrcPriv;
 
@@ -586,7 +587,7 @@ static int alsasrc_open(AVFilterContext *ctx)
     priv->period_size = handle->period_time * handle->sample_rate / 1000;
     priv->timestamp = 0;
 
-    ret = volume_init(&priv->vol_ctx, format);
+    ret = volume_init(&priv->vol_ctx, format, priv->precision);
     if (ret < 0)
         goto error;
 
@@ -666,6 +667,11 @@ static const AVOption alsasrc_options[] = {
     { "format",            "", OFFSET(format),      AV_OPT_TYPE_SAMPLE_FMT, {.i64 =AV_SAMPLE_FMT_NONE}, -1, INT_MAX, R },
     { "sample_rate",       "", OFFSET(sample_rate), AV_OPT_TYPE_INT,        {.i64 = 0},                  0, INT_MAX, R },
     { "ch_layout",         "", OFFSET(ch_layout),   AV_OPT_TYPE_CHLAYOUT,   {.str = NULL},               0, 0,       R },
+    { "precision", "select mathematical precision",
+            OFFSET(precision), AV_OPT_TYPE_INT, { .i64 = PRECISION_FIXED }, PRECISION_FIXED, PRECISION_DOUBLE, A, "precision" },
+        { "fixed",  "select 8-bit fixed-point",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A, "precision" },
+        { "float",  "select 32-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A, "precision" },
+        { "double", "select 64-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A, "precision" },
     { NULL },
 };
 

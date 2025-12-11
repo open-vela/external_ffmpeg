@@ -79,6 +79,7 @@ typedef struct TinyCompressContext {
     char *map_str;
     int *map;
     int nb_outputs;
+    enum PrecisionType precision;
     int64_t next_pts;
     AVPacket *pkt;
 
@@ -345,7 +346,7 @@ static int tinycomprsrc_open(AVFilterContext *ctx)
     s->state = COMPSRC_STARTING;
     av_log(ctx, AV_LOG_INFO, "%s start.\n", ctx->name);
 
-    ret = volume_init(&s->vol_ctx, s->sample_fmt);
+    ret = volume_init(&s->vol_ctx, s->sample_fmt, s->precision);
     if (ret < 0)
         goto error;
 
@@ -740,6 +741,11 @@ static const AVOption tinycomprsrc_options[] = {
     { "outputs",       "output link num",                   OFFSET(nb_outputs),    AV_OPT_TYPE_INT,    {.i64 = 1}, 0, INT_MAX, R },
     { "map",           "input indexes to remap to outputs", OFFSET(map_str),       AV_OPT_TYPE_STRING, {.str = NULL},   .flags=R },
     { "map_array",     "get map list",                      OFFSET(map),           AV_OPT_TYPE_INT | AV_OPT_TYPE_FLAG_ARRAY, .max = INT_MAX, .flags = A|R },
+    { "precision", "select mathematical precision",
+            OFFSET(precision), AV_OPT_TYPE_INT, { .i64 = PRECISION_FIXED }, PRECISION_FIXED, PRECISION_DOUBLE, A, "precision" },
+        { "fixed",  "select 8-bit fixed-point",     0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FIXED  }, INT_MIN, INT_MAX, A, "precision" },
+        { "float",  "select 32-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_FLOAT  }, INT_MIN, INT_MAX, A, "precision" },
+        { "double", "select 64-bit floating-point", 0, AV_OPT_TYPE_CONST, { .i64 = PRECISION_DOUBLE }, INT_MIN, INT_MAX, A, "precision" },
     { NULL },
 };
 
