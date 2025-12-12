@@ -117,19 +117,19 @@ static const AVClass pcm_demuxer_class = {
 };
 
 #define PCMDEF_0(name_, long_name_, ext, codec, ...)
-#define PCMDEF_1(name_, long_name_, ext, codec, ...)        \
-const FFInputFormat ff_pcm_ ## name_ ## _demuxer = {        \
-    .p.name         = #name_,                               \
-    .p.long_name    = NULL_IF_CONFIG_SMALL(long_name_),     \
-    .p.flags        = AVFMT_GENERIC_INDEX,                  \
-    .p.extensions   = ext,                                  \
-    .p.priv_class   = &pcm_demuxer_class,                   \
-    .priv_data_size = sizeof(PCMAudioDemuxerContext),       \
-    .read_header    = pcm_read_header,                      \
-    .read_packet    = ff_pcm_read_packet,                   \
-    .read_seek      = ff_pcm_read_seek,                     \
-    .raw_codec_id   = codec,                                \
-    __VA_ARGS__                                             \
+#define PCMDEF_1(name_, long_name_, ext, codec, ...)                \
+const FFInputFormat ff_pcm_ ## name_ ## _demuxer = {                \
+    .p.name         = #name_,                                       \
+    .p.long_name    = NULL_IF_CONFIG_SMALL(long_name_),             \
+    .p.flags        = AVFMT_GENERIC_INDEX | AVFMT_NOTIMESTAMPS,     \
+    .p.extensions   = ext,                                          \
+    .p.priv_class   = &pcm_demuxer_class,                           \
+    .priv_data_size = sizeof(PCMAudioDemuxerContext),               \
+    .read_header    = pcm_read_header,                              \
+    .read_packet    = ff_pcm_read_packet,                           \
+    .read_seek      = ff_pcm_read_seek,                             \
+    .raw_codec_id   = codec,                                        \
+    __VA_ARGS__                                                     \
 };
 #define PCMDEF_2(name, long_name, ext, codec, enabled, ...) \
     PCMDEF_ ## enabled(name, long_name, ext, codec, __VA_ARGS__)
