@@ -64,8 +64,8 @@ typedef struct AlsasrcPriv {
 
     int64_t timestamp;
 
-    VolumeContext vol_ctx;
-    double volume;
+    VolumeContext *vol_ctx;
+    double *volume;
     enum PrecisionType precision;
     bool mute;
 } AlsasrcPriv;
@@ -115,10 +115,13 @@ static void alsasrc_close(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
     AlsaHandle *handle = &priv->priv;
+    int i;
 
     alsa_close(&priv->priv);
 
-    volume_uninit(&priv->vol_ctx);
+    for (i = 0; i < priv->nb_outputs; i++) {
+        volume_uninit(&priv->vol_ctx[i]);
+    }
 }
 
 static int alsasrc_init_dict(AVFilterContext *ctx)
@@ -144,7 +147,17 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
             return ret;
     }
 
-    priv->volume = -1.0f;
+    priv->vol_ctx = av_calloc(priv->nb_outputs, sizeof(*priv->vol_ctx));
+    if (!priv->vol_ctx)
+        return AVERROR(ENOMEM);
+
+    priv->volume = av_calloc(priv->nb_outputs, sizeof(*priv->volume));
+    if (!priv->volume)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < priv->nb_outputs; i++)
+        priv->volume[i] = -1.0f;
+
     priv->mute = false;
     return 0;
 }
@@ -155,6 +168,8 @@ static void alsasrc_uninit(AVFilterContext *ctx)
     int i;
 
     av_freep(&priv->map);
+    av_freep(&priv->vol_ctx);
+    av_freep(&priv->volume);
 }
 
 static int alsasrc_query_formats(const AVFilterContext *ctx,
@@ -285,6 +300,30 @@ static int alsasrc_check_outlink_status(AVFilterContext *ctx)
     return 1;
 }
 
+static int alsasrc_set_output_volume(AVFilterContext *ctx, int index, double volume)
+{
+    AlsasrcPriv *priv = ctx->priv;
+    int i;
+
+    if (index < -1 || index >= ctx->nb_outputs) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid index: %d\n", index);
+        return AVERROR(EINVAL);
+    }
+
+    if (index == -1) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            priv->volume[i] = volume;
+            volume_set(&priv->vol_ctx[i], volume);
+        }
+        return 0;
+    }
+
+    priv->volume[index] = volume;
+    volume_set(&priv->vol_ctx[index], volume);
+
+    return 0;
+}
+
 static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     AlsasrcPriv *priv = ctx->priv;
@@ -325,9 +364,9 @@ format_end:
         av_log(ctx, AV_LOG_ERROR, "get_parameter(%s) failed %d.\n", key, ret);
         return ret;
     } else if (!strcmp(key, "volume")) {
-        snprintf(value, len, "vol:%f", priv->vol_ctx.volume);
+        snprintf(value, len, "vol:%f", priv->vol_ctx->volume);
 
-        av_log(priv, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, priv->vol_ctx.volume);
+        av_log(priv, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, priv->vol_ctx->volume);
         return 0;
     }
 
@@ -355,15 +394,17 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
             p++;
 
         if (!strcmp(key, "volume")) {
-            ret = av_expr_parse_and_eval(&priv->volume, value, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, NULL);
+            double volume;
+            int index;
+
+            ret = volume_parse_index_db(value, &index, &volume);
             if (ret < 0) {
-                av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n", ctx->name, value);
+                av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n",
+                       ctx->name, value);
                 goto end;
             }
 
-            volume_set(&priv->vol_ctx, priv->volume);
-
-            av_log(priv, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, priv->vol_ctx.volume);
+            alsasrc_set_output_volume(ctx, index, volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
@@ -587,12 +628,15 @@ static int alsasrc_open(AVFilterContext *ctx)
     priv->period_size = handle->period_time * handle->sample_rate / 1000;
     priv->timestamp = 0;
 
-    ret = volume_init(&priv->vol_ctx, format, priv->precision);
-    if (ret < 0)
-        goto error;
+    for (i = 0; i < ctx->nb_outputs; i++) {
+        ret = volume_init(&priv->vol_ctx[i], format, priv->precision);
+        if (ret < 0)
+            goto error;
 
-    if (priv->volume != -1.0f)
-        priv->vol_ctx.volume = priv->volume;
+        if (priv->volume[i] != -1.0f)
+            priv->vol_ctx[i].volume = priv->volume[i];
+    }
+
     return 0;
 
 error:
@@ -628,8 +672,6 @@ static int alsasrc_activate(AVFilterContext *ctx)
     if (ret < 0)
         goto out;
 
-    volume_scale(&priv->vol_ctx, frame);
-
     for (i = 0; i < ctx->nb_outputs; i++) {
         AVFrame *iframe = NULL;
 
@@ -641,6 +683,8 @@ static int alsasrc_activate(AVFilterContext *ctx)
             ret = AVERROR(ENOMEM);
             goto out;
         }
+
+        volume_scale(&priv->vol_ctx[i], iframe);
 
         ret = ff_filter_frame(ctx->outputs[i], iframe);
         if (ret < 0)

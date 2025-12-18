@@ -404,3 +404,37 @@ void volume_uninit(VolumeContext *vol)
     if (vol->conv_frame)
         av_frame_free(&vol->conv_frame);
 }
+
+int volume_parse_index_db(const char *str, int *index, double *value)
+{
+    const char *p;
+    char *end;
+    long idx;
+    int ret;
+
+    if (!str || !index || !value)
+        return AVERROR(EINVAL);
+
+    p = str;
+    while (av_isspace(*p))
+        p++;
+
+    *index = -1;
+
+    idx = strtol(p, &end, 0);
+    if (end != p && av_isspace(*end)) {
+        if (idx < -1)
+            return AVERROR(EINVAL);
+
+        *index = (int)idx;
+
+        p = end;
+        while (av_isspace(*p))
+            p++;
+    }
+
+    ret = av_expr_parse_and_eval(value, p,
+                                 NULL, NULL, NULL, NULL,
+                                 NULL, NULL, NULL, 0, NULL);
+    return ret;
+}

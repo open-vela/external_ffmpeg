@@ -68,9 +68,9 @@ typedef struct BuffSrcPriv {
 
     int (*on_event_cb)(void *udata, int evt, int64_t args);
     void *on_event_cb_udata;
-    VolumeContext vol_ctx;
+    VolumeContext *vol_ctx;
     double player_volume;
-    double volume;
+    double *volume;
 } BuffSrcPriv;
 
 static void abufsrc_set_event_cb(AVFilterContext *ctx,
@@ -97,31 +97,26 @@ static void abufsrc_set_event_cb(AVFilterContext *ctx,
 static int abufsrc_send_frame(AVFilterContext *ctx, AVFrame *frame)
 {
     BuffSrcPriv *priv = ctx->priv;
-    int i, ret, first = 1;
-
-    volume_scale(&priv->vol_ctx, frame);
+    AVFrame *clone;
+    int i, ret = 0;
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
-        if (first) { // do not clone at fisrt sending.
-            ret = ff_filter_frame(ctx->outputs[i], frame);
-            if (ret < 0)
-                return ret;
-            first = 0;
-        } else {
-            AVFrame *clone = av_frame_clone(frame);
-            if (!clone)
-                return AVERROR(ENOMEM);
-
-            ret = ff_filter_frame(ctx->outputs[i], clone);
-            if (ret < 0)
-                return ret;
+        clone = av_frame_clone(frame);
+        if (!clone) {
+            av_frame_free(&frame);
+            return AVERROR(ENOMEM);
         }
+
+        volume_scale(&priv->vol_ctx[i], clone);
+
+        ret = ff_filter_frame(ctx->outputs[i], clone);
     }
 
-    return 0;
+    av_frame_free(&frame);
+    return ret;
 }
 
 #define FADE(name, type)                                                                \
@@ -202,13 +197,23 @@ static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
     }
 
     priv->player_volume = 1.0f;
-    priv->volume = 1.0f;
 
     if (priv->map_str) {
         ret = avfilter_parse_mapping(priv->map_str, &priv->map, priv->nb_outputs);
         if (ret < 0)
             return ret;
     }
+
+    priv->vol_ctx = av_calloc(priv->nb_outputs, sizeof(*priv->vol_ctx));
+    if (!priv->vol_ctx)
+        return AVERROR(ENOMEM);
+
+    priv->volume = av_calloc(priv->nb_outputs, sizeof(*priv->volume));
+    if (!priv->volume)
+        return AVERROR(ENOMEM);
+
+    for (i = 0; i < priv->nb_outputs; i++)
+        priv->volume[i] = 1.0f;
 
     return ret;
 }
@@ -217,6 +222,8 @@ static av_cold void abufsrc_uninit(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
     av_freep(&priv->map);
+    av_freep(&priv->vol_ctx);
+    av_freep(&priv->volume);
 }
 
 static int abufsrc_query_formats(const AVFilterContext *ctx,
@@ -366,6 +373,30 @@ static int abufsrc_fadeout_last_frame(AVFilterContext *ctx)
     return abufsrc_send_frame(ctx, frame);
 }
 
+static int abufsrc_set_output_volume(AVFilterContext *ctx, int index, double volume)
+{
+    BuffSrcPriv *priv = ctx->priv;
+    int i;
+
+    if (index < -1 || index >= ctx->nb_outputs) {
+        av_log(ctx, AV_LOG_ERROR, "Invalid index: %d\n", index);
+        return AVERROR(EINVAL);
+    }
+
+    if (index == -1) {
+        for (i = 0; i < ctx->nb_outputs; i++) {
+            priv->volume[i] = volume;
+            volume_set(&priv->vol_ctx[i], volume);
+        }
+        return 0;
+    }
+
+    priv->volume[index] = volume;
+    volume_set(&priv->vol_ctx[index], volume);
+
+    return 0;
+}
+
 static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
 {
     BuffSrcPriv *priv = ctx->priv;
@@ -386,18 +417,20 @@ static int abufsrc_set_parameter(AVFilterContext *ctx, const char *args)
         av_log(ctx, AV_LOG_INFO, "Parsed Key: %s, Value: %s\n", key, value);
         if (!strcmp(key, "player_volume")) {
             priv->player_volume = strtof(value, NULL);
-            volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
+            for (int i = 0; i < ctx->nb_outputs; i++)
+                volume_set(&priv->vol_ctx[i], priv->player_volume * priv->volume[i]);
         } else if (!strcmp(key, "volume")) {
             double volume;
-            ret = av_expr_parse_and_eval(&volume, value, NULL, NULL, NULL, NULL,
-                                         NULL, NULL, NULL, 0, NULL);
+            int index;
+
+            ret = volume_parse_index_db(value, &index, &volume);
             if (ret < 0) {
                 av_log(ctx, AV_LOG_ERROR, "Error when parsing %s volume expression '%s'\n",
                        ctx->name, value);
                 goto end;
             }
-            priv->volume = volume;
-            volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
+
+            abufsrc_set_output_volume(ctx, index, volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
@@ -492,12 +525,14 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 
         abufsrc_set_event_cb(ctx, on_event_cb, udata);
 
-        ret = volume_init(&priv->vol_ctx, format, priv->precision);
-        volume_set(&priv->vol_ctx, priv->player_volume * priv->volume);
-
         for (i = 0; i < ctx->nb_outputs; i++) {
-            if (priv->map[i] == ROUTE_ON)
+            if (priv->map[i] == ROUTE_ON) {
                 avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
+            }
+
+            ret = volume_init(&priv->vol_ctx[i], format, priv->precision);
+            priv->volume[i] = 1.0;
+            volume_set(&priv->vol_ctx[i], priv->player_volume * priv->volume[i]);
         }
 
         return ret;
@@ -513,6 +548,8 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
                 ff_outlink_set_status(ctx->outputs[i], AVERROR_EOF, AV_NOPTS_VALUE);
                 avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
             }
+
+            volume_uninit(&priv->vol_ctx[i]);
         }
 
         priv->sample_fmt = AV_SAMPLE_FMT_NONE;
@@ -521,7 +558,6 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
 
         abufsrc_set_event_cb(ctx, NULL, NULL);
 
-        volume_uninit(&priv->vol_ctx);
 
         return ret;
     } else if (!av_strcasecmp(cmd, "map")) {

@@ -26,6 +26,8 @@
 
 #include <stdint.h>
 
+#include "libavutil/avstring.h"
+#include "libavutil/eval.h"
 #include "libavutil/samplefmt.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/frame.h"
@@ -57,5 +59,6 @@ int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt, enum Precisi
 void volume_scale(VolumeContext *vol, AVFrame *frame);
 void volume_set(VolumeContext *vol, double volume);
 void volume_uninit(VolumeContext *vol);
+int volume_parse_index_db(const char *str, int *index, double *value);
 
 #endif /* AVFILTER_VOLUME_H */
