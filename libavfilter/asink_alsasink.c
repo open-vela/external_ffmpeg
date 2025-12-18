@@ -441,23 +441,23 @@ static int alsasink_forward_command(AVFilterContext *ctx,
     av_log(ctx, AV_LOG_DEBUG, "Forwarding command '%s'\n", cmd);
 
     if (!strcmp(cmd, "latency")) {
+        if (!res || res_len < sizeof(int64_t*) || pad_idx >= ctx->nb_inputs || pad_idx < 0)
+            return AVERROR(EINVAL);
+
         link = ctx->inputs[pad_idx];
         li = ff_link_internal(link);
 
         nb_frames = ff_framequeue_queued_frames(&li->fifo);
         for (i = 0; i < nb_frames; i++) {
             frame = ff_framequeue_peek(&li->fifo, i);
-            latency += av_rescale_q(frame->duration, frame->time_base, AV_TIME_BASE_Q);
+            if (frame)
+                latency += av_rescale_q(frame->duration, frame->time_base, AV_TIME_BASE_Q);
         }
 
-        for (i = 0; i < ctx->nb_inputs; i++) {
-            if (ctx->inputs[i] == link)
-                sink = &priv->handles[i];
-        }
-
-        if (!sink || !sink->h) {
-            *res = 0;
-            return latency;
+        sink = &priv->handles[pad_idx];
+        if (!sink->h) {
+            *(int64_t*)res = latency;
+            return 0;
         }
 
         ret = snd_pcm_delay(sink->h, &frame_count);
@@ -466,8 +466,8 @@ static int alsasink_forward_command(AVFilterContext *ctx,
             return ret;
         }
 
-        latency += frame_count * 1000 / sink->sample_rate;
-        *res = latency;
+        latency += av_rescale(frame_count, AV_TIME_BASE, sink->sample_rate);
+        *(int64_t*)res = latency;
         return 0;
     }
 

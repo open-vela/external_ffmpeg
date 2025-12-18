@@ -411,14 +411,14 @@ end:
 static int abufsrc_get_latency(AVFilterContext *ctx, int64_t *latency)
 {
     BuffSrcPriv *priv = ctx->priv;
+    int64_t sink_latency = 0;
     int64_t src_latency = 0;
-    int64_t sink_latency;
     char msg[64];
     int ret = 0;
     int i;
 
     if (priv->frame)
-        src_latency = av_rescale_q(priv->frame->duration, priv->frame->time_base, AV_TIME_BASE_Q) / 1000;
+        src_latency = av_rescale_q(priv->frame->duration, priv->frame->time_base, AV_TIME_BASE_Q);
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->map[i] == ROUTE_ON) {
