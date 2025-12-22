@@ -376,7 +376,6 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     if (!s->compress)
         return;
 
-    compress_stop(s->compress);
     volume_uninit(&s->vol_ctx);
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
