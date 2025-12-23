@@ -441,7 +441,7 @@ static int alsasink_forward_command(AVFilterContext *ctx,
     av_log(ctx, AV_LOG_DEBUG, "Forwarding command '%s'\n", cmd);
 
     if (!strcmp(cmd, "latency")) {
-        if (!res || res_len < sizeof(int64_t*) || pad_idx >= ctx->nb_inputs || pad_idx < 0)
+        if (!res || res_len < sizeof(int64_t) || pad_idx >= ctx->nb_inputs || pad_idx < 0)
             return AVERROR(EINVAL);
 
         link = ctx->inputs[pad_idx];
@@ -455,7 +455,7 @@ static int alsasink_forward_command(AVFilterContext *ctx,
         }
 
         sink = &priv->handles[pad_idx];
-        if (!sink->h) {
+        if (!sink->h || snd_pcm_state(sink->h) != SND_PCM_STATE_RUNNING) {
             *(int64_t*)res = latency;
             return 0;
         }

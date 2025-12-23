@@ -455,7 +455,12 @@ static int abufsrc_get_latency(AVFilterContext *ctx, int64_t *latency)
 
     for (i = 0; i < ctx->nb_outputs; i++) {
         if (priv->map[i] == ROUTE_ON) {
-            ret = avfilter_forward_command(ctx, i, NULL, "latency", NULL, (char*)&sink_latency, sizeof(&sink_latency), 0);
+            if (ff_outlink_get_status(ctx->outputs[i])) {
+                if (latency)
+                    *latency = -1;
+                return AVERROR(EINVAL);
+            }
+            ret = avfilter_forward_command(ctx, i, NULL, "latency", NULL, (char*)&sink_latency, sizeof(sink_latency), 0);
             if (ret < 0)
                 return ret;
         }
