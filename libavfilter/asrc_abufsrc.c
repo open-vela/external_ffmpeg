@@ -378,7 +378,7 @@ static int abufsrc_set_output_volume(AVFilterContext *ctx, int index, double vol
     BuffSrcPriv *priv = ctx->priv;
     int i;
 
-    if (index < -1 || index >= ctx->nb_outputs) {
+    if (index < -1 || index >= (int)ctx->nb_outputs) {
         av_log(ctx, AV_LOG_ERROR, "Invalid index: %d\n", index);
         return AVERROR(EINVAL);
     }
