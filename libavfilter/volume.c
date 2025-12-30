@@ -168,7 +168,8 @@ static av_cold void scaler_init(VolumeContext *vol)
     int32_t volume_i = (int32_t)(vol->volume * 256 + 0.5);
     vol->samples_align = 1;
 
-    switch (av_get_packed_sample_fmt(vol->sample_fmt)) {
+    /* use the processing format (mid_fmt) so pointers stay valid after down-convert */
+    switch (av_get_packed_sample_fmt(vol->mid_fmt)) {
     case AV_SAMPLE_FMT_U8:
         if (volume_i < 0x1000000)
             vol->scale_samples = scale_samples_u8_small;
@@ -195,7 +196,8 @@ static av_cold void scaler_init(VolumeContext *vol)
 
 static av_cold void fader_init(VolumeContext *vol)
 {
-    switch (av_get_packed_sample_fmt(vol->sample_fmt)) {
+    /* Keep fade function pointers in sync with the processing format. */
+    switch (av_get_packed_sample_fmt(vol->mid_fmt)) {
     case AV_SAMPLE_FMT_U8:
     case AV_SAMPLE_FMT_U8P:
         vol->fade_samples = fade_samples_u8_small;
