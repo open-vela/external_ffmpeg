@@ -85,6 +85,7 @@ typedef struct TinyCompressContext {
 
     enum CompSinkState state;
     bool start; /* Record the latest running state based on command*/
+    bool unlinked;
     VolumeContext vol_ctx;
     double volume;
 } TinyCompressContext;
@@ -206,6 +207,24 @@ static int tinycomprsrc_resume(AVFilterContext *ctx) {
     return 0;
 }
 
+static void tinycomprsrc_close(AVFilterContext *ctx)
+{
+    TinyCompressContext *s = ctx->priv;
+    if (!s->compress)
+        return;
+
+    volume_uninit(&s->vol_ctx);
+    avcodec_free_context(&s->dec_ctx);
+    compress_close(s->compress);
+    av_packet_free(&s->pkt);
+    s->state = COMPSRC_STOPPED;
+    s->next_pts = 0L;
+    s->compress = NULL;
+    s->dec_ctx = NULL;
+    s->sample_fmt = AV_SAMPLE_FMT_NONE;
+    s->unlinked = false;
+}
+
 static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR void* extra)
 {
     AVFilterContext *ctx = (AVFilterContext *)cookie;
@@ -213,7 +232,8 @@ static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR
     const char *event_str[] = {
         [AUDIO_MSG_START] = "STARTED",
         [AUDIO_MSG_PAUSE] = "PAUSED",
-        [AUDIO_MSG_RESUME] = "RESUMED"
+        [AUDIO_MSG_RESUME] = "RESUMED",
+        [AUDIO_MSG_COMPLETE] = "COMPLETED"
     };
 
     av_log(ctx, AV_LOG_INFO, "tinycomprsrc event:%s state:%s\n", event_str[event], state_str[s->state]);
@@ -233,11 +253,16 @@ static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR
         // case AUDIO_MSG_IOERR:
     }
 
-    if (s->state == COMPSRC_PAUSED && s->start) {
-        tinycomprsrc_resume(ctx);
-    } else if (s->state == COMPSRC_STARTED && !s->start) {
-        tinycomprsrc_pause(ctx);
+    if (s->unlinked)
+        tinycomprsrc_close(ctx);
+    else {
+        if (s->state == COMPSRC_PAUSED && s->start) {
+            tinycomprsrc_resume(ctx);
+        } else if (s->state == COMPSRC_STARTED && !s->start) {
+            tinycomprsrc_pause(ctx);
+        }
     }
+
 }
 
 static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec)
@@ -368,23 +393,6 @@ error:
     s->dec_ctx = NULL;
 
     return ret;
-}
-
-static void tinycomprsrc_close(AVFilterContext *ctx)
-{
-    TinyCompressContext *s = ctx->priv;
-    if (!s->compress)
-        return;
-
-    volume_uninit(&s->vol_ctx);
-    avcodec_free_context(&s->dec_ctx);
-    compress_close(s->compress);
-    av_packet_free(&s->pkt);
-    s->state = COMPSRC_STOPPED;
-    s->next_pts = 0L;
-    s->compress = NULL;
-    s->dec_ctx = NULL;
-    s->sample_fmt = AV_SAMPLE_FMT_NONE;
 }
 
 static int activate(AVFilterContext *ctx)
@@ -686,10 +694,12 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
         }
 
-        tinycomprsrc_close(ctx);
+        if (s->state < COMPSRC_PAUSED)
+            s->unlinked = true;
+        else
+            tinycomprsrc_close(ctx);
         return 0;
     } else if (!strcmp(cmd, "map")) {
-        int need_pause = 1;
         ret = avfilter_parse_mapping(arg, &s->map, s->nb_outputs);
         if (ret < 0) {
             av_log(ctx, AV_LOG_ERROR, "Failed to parse mapping: %s ret:%d\n", arg, ret);
@@ -701,12 +711,8 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
 
             if (s->map[i] == 0)
                 ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
-            else if (s->map[i] == 1)
-                need_pause = 0;
         }
 
-        if (need_pause)
-            tinycomprsrc_pause(ctx);
         return ret;
     } else if (!strcmp(cmd, "pause")) {
         s->start = false;
