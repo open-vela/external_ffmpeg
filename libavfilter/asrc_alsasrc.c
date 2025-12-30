@@ -148,12 +148,17 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
     }
 
     priv->vol_ctx = av_calloc(priv->nb_outputs, sizeof(*priv->vol_ctx));
-    if (!priv->vol_ctx)
+    if (!priv->vol_ctx) {
+        av_freep(&priv->map);
         return AVERROR(ENOMEM);
+    }
 
-    priv->volume = av_calloc(priv->nb_outputs, sizeof(*priv->volume));
-    if (!priv->volume)
+    priv->volume = av_malloc(sizeof(*priv->volume) * priv->nb_outputs);
+    if (!priv->volume) {
+        av_freep(&priv->map);
+        av_freep(&priv->vol_ctx);
         return AVERROR(ENOMEM);
+    }
 
     for (i = 0; i < priv->nb_outputs; i++)
         priv->volume[i] = -1.0f;
