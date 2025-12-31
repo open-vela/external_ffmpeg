@@ -176,7 +176,9 @@ static void tinycomprsink_control_callback(FAR void* cookie, int event, const FA
     const char* audio_event_str[] = {
         [AUDIO_MSG_START]  = "STARTED",
         [AUDIO_MSG_PAUSE]  = "PAUSED",
-        [AUDIO_MSG_RESUME] = "RESUMED"
+        [AUDIO_MSG_RESUME] = "RESUMED",
+        [AUDIO_MSG_COMPLETE] = "COMPLETE",
+        [AUDIO_MSG_IOERR]  = "IOERR"
     };
     int i;
 
