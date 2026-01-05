@@ -23,6 +23,8 @@
 
 #include "libavutil/mem.h"
 #include "libavutil/samplefmt.h"
+#include <math.h>
+#include <limits.h>
 #include "volume.h"
 
 #define CONVERT_PACKED(src_type, dst_type, src_enum, dst_enum, convert_expr) \
@@ -50,6 +52,12 @@
 
 static int bit_convert(enum AVSampleFormat src_fmt, enum AVSampleFormat dst_fmt,
                        const void *src, void *dst, int nb_samples, int chs) {
+    /* Check integer multiplication overflow */
+    if ((long long)nb_samples * chs > INT_MAX) {
+        av_log(NULL, AV_LOG_ERROR, "Total samples overflow\n");
+        return AVERROR(ERANGE);
+    }
+
     switch (src_fmt) {
         CONVERT_PACKED(uint8_t, float, AV_SAMPLE_FMT_U8,  AV_SAMPLE_FMT_FLT,  (s[i] - 128.0f) / 128.0f);
         CONVERT_PLANAR(uint8_t, float, AV_SAMPLE_FMT_U8P, AV_SAMPLE_FMT_FLTP, (s[c][i] - 128.0f) / 128.0f);
@@ -165,7 +173,8 @@ static inline void scale_samples_s32(uint8_t *dst, const uint8_t *src,
 
 static av_cold void scaler_init(VolumeContext *vol)
 {
-    int32_t volume_i = (int32_t)(vol->volume * 256 + 0.5);
+    /* Use standard rounding function */
+    int32_t volume_i = (int32_t)lround(vol->volume * 256);
     vol->samples_align = 1;
 
     /* use the processing format (mid_fmt) so pointers stay valid after down-convert */
@@ -300,6 +309,10 @@ void volume_scale(VolumeContext *vol, AVFrame *frame)
 {
     int planar, planes, plane_size, p, need_convert, ret;
     AVFrame *proc_frame = frame;
+
+    if (!vol || !frame)
+        return;
+
     planar = av_sample_fmt_is_planar(frame->format);
     planes = planar ? frame->ch_layout.nb_channels : 1;
     plane_size = frame->nb_samples * (planar ? 1 : frame->ch_layout.nb_channels);
@@ -328,8 +341,8 @@ void volume_scale(VolumeContext *vol, AVFrame *frame)
 
     /* apply volume scaling / fading */
     if (is_fixed(proc_frame->format)) {
-        int32_t vol_isrc = (int32_t)(vol->volume_last * 256 + 0.5);
-        int32_t volume_i = (int32_t)(vol->volume * 256 + 0.5);
+        int32_t vol_isrc = (int32_t)lround(vol->volume_last * 256);
+        int32_t volume_i = (int32_t)lround(vol->volume * 256);
         if (volume_i != vol_isrc) {
             for (p = 0; p < planes; p++) {
                 vol->fade_samples(proc_frame->extended_data[p],
@@ -374,6 +387,11 @@ void volume_scale(VolumeContext *vol, AVFrame *frame)
 
 int volume_init(VolumeContext *vol, enum AVSampleFormat sample_fmt, enum PrecisionType precision)
 {
+    if (!vol) {
+        av_log(NULL, AV_LOG_ERROR, "VolumeContext is NULL\n");
+        return AVERROR(EINVAL);
+    }
+
     vol->sample_fmt = sample_fmt;
     vol->precision = precision;
     vol->volume_last = -1.0f;
@@ -424,8 +442,9 @@ int volume_parse_index_db(const char *str, int *index, double *value)
     *index = -1;
 
     idx = strtol(p, &end, 0);
+
     if (end != p && av_isspace(*end)) {
-        if (idx < -1)
+        if (idx < -1 || idx > INT_MAX)
             return AVERROR(EINVAL);
 
         *index = (int)idx;
