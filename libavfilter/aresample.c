@@ -32,6 +32,10 @@
 
 av_cold void ff_resample_init(AResampleContext *ar)
 {
+    if (!ar) {
+        av_log(NULL, AV_LOG_ERROR, "AResampleContext is NULL\n");
+        return;
+    }
     memset(ar, 0, sizeof(*ar));
 }
 
@@ -46,17 +50,32 @@ av_cold void ff_resample_uninit(AResampleContext *ar)
 
 int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe, AVFrame **poframe)
 {
-    int n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate + 32; // add extra size to avoid overflow
     int64_t delay;
     AVFrame *oframe;
     int ret;
 
+    if (!ar || !link || !iframe) {
+        av_log(NULL, AV_LOG_ERROR, "Invalid parameters: ar=%p, link=%p, iframe=%p\n",
+               ar, link, iframe);
+        return AVERROR(EINVAL);
+    }
+    int n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate + 32;
     if (av_channel_layout_compare(&link->ch_layout, &iframe->ch_layout) == 0 &&
         link->format == iframe->format &&
         link->sample_rate == iframe->sample_rate)
     {
         *poframe = av_frame_alloc();
-        av_frame_ref(*poframe, iframe);
+        if (!*poframe) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to allocate frame\n");
+            return AVERROR(ENOMEM);
+        }
+
+        ret = av_frame_ref(*poframe, iframe);
+        if (ret < 0) {
+            av_log(NULL, AV_LOG_ERROR, "Failed to reference frame: %s\n", av_err2str(ret));
+            av_frame_free(poframe);
+            return ret;
+        }
         return 0;
     }
 
@@ -134,7 +153,7 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
 
     if(iframe->pts != AV_NOPTS_VALUE) {
         int64_t inpts = av_rescale(iframe->pts, iframe->time_base.num * (int64_t)oframe->sample_rate * iframe->sample_rate, iframe->time_base.den);
-        int64_t outpts= swr_next_pts(ar->swr, inpts);
+        int64_t outpts = swr_next_pts(ar->swr, inpts);
         oframe->pts = ROUNDED_DIV(outpts, oframe->sample_rate);
     } else {
         oframe->pts  = AV_NOPTS_VALUE;
@@ -156,8 +175,15 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
 
 int ff_resample_get_delay(AResampleContext *ar, int64_t base)
 {
-    if (!ar->swr)
+    if (!ar) {
+        av_log(NULL, AV_LOG_ERROR, "AResampleContext is NULL\n");
+        return AVERROR(EINVAL);
+    }
+    
+    if (!ar->swr) {
+        av_log(NULL, AV_LOG_DEBUG, "SwrContext not initialized\n");
         return 0;
+    }
 
     return swr_get_delay(ar->swr, base);
 }
