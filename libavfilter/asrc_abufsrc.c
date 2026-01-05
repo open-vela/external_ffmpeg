@@ -37,9 +37,6 @@
 #include "filters.h"
 #include "formats.h"
 
-#define ROUTE_ON 1
-#define ROUTE_OFF 0
-
 #define FADE_NONE 0
 #define FADE_IN 1
 #define FADE_OUT 2

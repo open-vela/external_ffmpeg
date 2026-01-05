@@ -24,6 +24,9 @@
 #include "libavutil/error.h"
 #include "libavutil/mem.h"
 
+#define ROUTE_OFF 0
+#define ROUTE_ON 1
+
 /**
  * @file
  * control routing for src filter

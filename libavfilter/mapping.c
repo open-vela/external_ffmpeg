@@ -21,6 +21,17 @@
 
 #include "mapping.h"
 
+/**
+ * Parse a mapping string and build an integer array.
+ *
+ * @param map_str    Input string to parse (must not be NULL)
+ * @param map        Output array pointer
+ * @param nb_map     Maximum number of elements to parse (must be > 0 )
+ * @return           0 on success, negative error code on failure
+ *                   - AVERROR(EINVAL): Invalid input parameters
+ *                   - AVERROR(ENOMEM): Memory allocation failed
+ *                   - AVERROR(ERANGE): Integer overflow in parsing
+ */
 int avfilter_parse_mapping(const char *map_str, int **map, int nb_map)
 {
     int *new_map = NULL;
@@ -35,17 +46,22 @@ int avfilter_parse_mapping(const char *map_str, int **map, int nb_map)
 
     while (1) {
         char *p;
-        int n = strtol(map_str, &p, 0);
+        int val = strtol(map_str, &p, 0);
         if (map_str == p)
             break;
         map_str = p;
+
+        if (val != ROUTE_ON && val != ROUTE_OFF) {
+            av_freep(&new_map);
+            return AVERROR(ERANGE);
+        }
 
         if (new_nb_map >= nb_map) {
             av_freep(&new_map);
             return AVERROR(EINVAL);
         }
 
-        new_map[new_nb_map++] = n;
+        new_map[new_nb_map++] = val;
     }
 
     if (!new_nb_map) {

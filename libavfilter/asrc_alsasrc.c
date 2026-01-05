@@ -40,9 +40,6 @@
 #include "volume.h"
 #include "mapping.h"
 
-#define ROUTE_OFF 0
-#define ROUTE_ON 1
-
 typedef struct AlsasrcPriv {
     const AVClass *class;
 

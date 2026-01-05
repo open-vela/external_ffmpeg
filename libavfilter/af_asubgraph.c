@@ -37,9 +37,6 @@
 
 #include <sys/queue.h>
 
-#define ROUTE_OFF 0
-#define ROUTE_ON 1
-
 typedef struct SubCmd {
     SIMPLEQ_ENTRY(SubCmd) entry;
     char                  *cmd;

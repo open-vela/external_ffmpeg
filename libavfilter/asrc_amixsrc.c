@@ -59,9 +59,6 @@ enum MixInputState {
 #define DURATION_SHORTEST 1
 #define DURATION_FIRST    2
 
-#define ROUTE_OFF 0
-#define ROUTE_ON 1
-
 /* FIXME: use directly links fifo */
 
 typedef struct MixInput {
