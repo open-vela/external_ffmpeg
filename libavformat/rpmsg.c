@@ -39,6 +39,7 @@ typedef struct RpmsgContext {
     int listen;
     int type;
     int fd;
+    int pkt_size;
 } RpmsgContext;
 
 #define OFFSET(x) offsetof(RpmsgContext, x)
@@ -50,6 +51,7 @@ static const AVOption rpmsg_options[] = {
     { "stream",    "Stream (reliable stream-oriented)",     0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_STREAM },    INT_MIN, INT_MAX, ED, "type" },
     { "datagram",  "Datagram (unreliable packet-oriented)", 0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_DGRAM },     INT_MIN, INT_MAX, ED, "type" },
     { "seqpacket", "Seqpacket (reliable packet-oriented",   0,               AV_OPT_TYPE_CONST, { .i64 = SOCK_SEQPACKET }, INT_MIN, INT_MAX, ED, "type" },
+    { "pkt_size",  "Maximum packet size",                   OFFSET(pkt_size), AV_OPT_TYPE_INT,  { .i64 = 0 },              0, INT_MAX, ED },
     { NULL }
 };
 
@@ -114,6 +116,7 @@ static int rpmsg_open(URLContext *h, const char *filename, int flags)
     }
 
     s->fd = fd;
+    h->max_packet_size = s->pkt_size;
 
     return 0;
 
