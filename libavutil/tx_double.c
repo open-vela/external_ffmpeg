@@ -16,6 +16,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config.h"
+
+#if CONFIG_TX_DOUBLE
 #define TX_DOUBLE
 #include "tx_priv.h"
 #include "tx_template.c"
+#endif

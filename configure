@@ -2051,6 +2051,9 @@ FEATURE_LIST="
     small
     static
     swscale_alpha
+    tx_double
+    tx_float
+    tx_int32
 "
 
 # this list should be kept in linking order
@@ -4159,6 +4162,9 @@ enable runtime_cpudetect
 enable safe_bitstream_reader
 enable static
 enable swscale_alpha
+enable tx_double
+enable tx_float
+enable tx_int32
 enable valgrind_backtrace
 
 sws_max_filter_size_default=256

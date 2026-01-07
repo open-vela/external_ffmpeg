@@ -381,12 +381,18 @@ int ff_tx_mdct_gen_exp_double(AVTXContext *s, int *pre_tab);
 int ff_tx_mdct_gen_exp_int32 (AVTXContext *s, int *pre_tab);
 
 /* Lists of codelets */
+#if CONFIG_TX_FLOAT
 extern const FFTXCodelet * const ff_tx_codelet_list_float_c       [];
 extern const FFTXCodelet * const ff_tx_codelet_list_float_x86     [];
 extern const FFTXCodelet * const ff_tx_codelet_list_float_aarch64 [];
+#endif
 
+#if CONFIG_TX_DOUBLE
 extern const FFTXCodelet * const ff_tx_codelet_list_double_c      [];
+#endif
 
+#if CONFIG_TX_INT32
 extern const FFTXCodelet * const ff_tx_codelet_list_int32_c       [];
+#endif
 
 #endif /* AVUTIL_TX_PRIV_H */
