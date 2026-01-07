@@ -213,6 +213,8 @@ static void tinycomprsrc_close(AVFilterContext *ctx)
     if (!s->compress)
         return;
 
+    av_log(ctx, AV_LOG_INFO, "%s close.\n", ctx->name);
+
     volume_uninit(&s->vol_ctx);
     avcodec_free_context(&s->dec_ctx);
     compress_close(s->compress);
@@ -251,18 +253,10 @@ static void tinycomprsrc_control_callback(FAR void* cookie, int event, const FAR
 
         /* Device won't fail*/
         // case AUDIO_MSG_IOERR:
-    }
 
-    if (s->unlinked)
-        tinycomprsrc_close(ctx);
-    else {
-        if (s->state == COMPSRC_PAUSED && s->start) {
-            tinycomprsrc_resume(ctx);
-        } else if (s->state == COMPSRC_STARTED && !s->start) {
-            tinycomprsrc_pause(ctx);
-        }
+        default:
+            return;
     }
-
 }
 
 static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec *codec)
@@ -405,6 +399,17 @@ static int activate(AVFilterContext *ctx)
     if (s->state < COMPSRC_PAUSING) {
         av_log(ctx, AV_LOG_WARNING, "%s busy state:%s\n", ctx->name, state_str[s->state]);
         return AVERROR(EAGAIN);
+    }
+
+    if (s->unlinked) {
+        tinycomprsrc_close(ctx);
+        return 0;
+    } else {
+        if (s->state == COMPSRC_PAUSED && s->start) {
+            return tinycomprsrc_resume(ctx);
+        } else if (s->state == COMPSRC_STARTED && !s->start) {
+            return tinycomprsrc_pause(ctx);
+        }
     }
 
     for (i = 0; i < ctx->nb_outputs; i++) {
@@ -694,6 +699,7 @@ static int tinycomprsrc_process_command(AVFilterContext *ctx, const char *cmd, c
             ff_outlink_set_status(link, AVERROR_EOF, AV_NOPTS_VALUE);
         }
 
+        av_log(ctx, AV_LOG_INFO, "%s unlink.\n", ctx->name);
         if (s->state < COMPSRC_PAUSED)
             s->unlinked = true;
         else
