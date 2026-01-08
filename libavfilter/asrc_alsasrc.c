@@ -114,10 +114,14 @@ static void alsasrc_close(AVFilterContext *ctx)
     AlsaHandle *handle = &priv->priv;
     int i;
 
-    alsa_close(&priv->priv);
+    if (handle->h) {
+        alsa_close(&priv->priv);
+    }
 
-    for (i = 0; i < priv->nb_outputs; i++) {
-        volume_uninit(&priv->vol_ctx[i]);
+    if (priv->vol_ctx) {
+        for (i = 0; i < priv->nb_outputs; i++) {
+            volume_uninit(&priv->vol_ctx[i]);
+        }
     }
 }
 
@@ -167,7 +171,8 @@ static int alsasrc_init_dict(AVFilterContext *ctx)
 static void alsasrc_uninit(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
-    int i;
+
+    alsasrc_close(ctx);
 
     av_freep(&priv->map);
     av_freep(&priv->vol_ctx);
