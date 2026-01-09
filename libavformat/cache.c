@@ -75,7 +75,7 @@ typedef struct CacheContext {
 
     int exit_request;
     AVIOInterruptCB interrupt_callback;
-} Context;
+} CacheContext;
 
 static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offset, bool complete);
 
@@ -87,7 +87,7 @@ static int cmp(const void *key, const void *node)
 static int cache_interrupt(void *arg)
 {
     URLContext *h = arg;
-    Context    *c = h->priv_data;
+    CacheContext    *c = h->priv_data;
 
     if (c->exit_request)
         return 1;
@@ -101,7 +101,7 @@ static int cache_interrupt(void *arg)
 static void *cache_thread(void *arg)
 {
     URLContext *h = arg;
-    Context *c = h->priv_data;
+    CacheContext *c = h->priv_data;
     uint8_t buf[CACHE_BUFSIZE];
     int64_t time, bps, diff;
     int64_t offset = 0;
@@ -138,7 +138,7 @@ static void *cache_thread(void *arg)
 
 static int cache_open(URLContext *h, const char *arg, int flags, AVDictionary **options)
 {
-    Context *c = h->priv_data;
+    CacheContext *c = h->priv_data;
     pthread_attr_t attr;
     ssize_t ssize;
     char *buffername;
@@ -323,7 +323,7 @@ static int cache_pread(URLContext *h, unsigned char *buf, int size, int64_t offs
 
 static int cache_read(URLContext *h, unsigned char *buf, int size)
 {
-    Context *c= h->priv_data;
+    CacheContext *c= h->priv_data;
     int r;
 
     r = cache_pread(h, buf, size, c->logical_pos, false);
@@ -335,7 +335,7 @@ static int cache_read(URLContext *h, unsigned char *buf, int size)
 
 static int cache_read_locked(URLContext *h, unsigned char *buf, int size)
 {
-    Context *c = h->priv_data;
+    CacheContext *c = h->priv_data;
     int ret;
 
     pthread_mutex_lock(&c->mutex);
@@ -412,7 +412,7 @@ resolve_eof:
 
 static int64_t cache_seek_locked(URLContext *h, int64_t pos, int whence)
 {
-    Context *c = h->priv_data;
+    CacheContext *c = h->priv_data;
     int64_t ret;
 
     pthread_mutex_lock(&c->mutex);
