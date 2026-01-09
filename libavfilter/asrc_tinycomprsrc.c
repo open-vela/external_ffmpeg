@@ -498,6 +498,7 @@ static av_cold int init(AVFilterContext *ctx)
 static av_cold void uninit(AVFilterContext *ctx)
 {
     TinyCompressContext *s = ctx->priv;
+    tinycomprsrc_close(ctx);
     av_freep(&s->map);
 }
 
