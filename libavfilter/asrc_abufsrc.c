@@ -223,9 +223,13 @@ static av_cold int abufsrc_init_dict(AVFilterContext *ctx)
 static av_cold void abufsrc_uninit(AVFilterContext *ctx)
 {
     BuffSrcPriv *priv = ctx->priv;
+
+    if (!priv)
+        return;
+
+    av_frame_free(&priv->frame);
+    volume_uninit(&priv->vol_ctx);
     av_freep(&priv->map);
-    av_freep(&priv->vol_ctx);
-    av_freep(&priv->volume);
 }
 
 static int abufsrc_query_formats(const AVFilterContext *ctx,
