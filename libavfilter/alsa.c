@@ -405,7 +405,7 @@ static int alsa_set_ranges(struct AVOptionRanges *ranges, int nb_ranges,
 static int alsa_capbility_query_smpfmts(const char *device, int format, int values[])
 {
     struct audio_caps_s smpfmts;
-    int ret, x;
+    int ret, x, count;
 
     if (((format & (1 << (AUDIO_FMT_PCM - 1))) == 0))
         return AVERROR(EPERM);
@@ -414,26 +414,27 @@ static int alsa_capbility_query_smpfmts(const char *device, int format, int valu
     if (ret < 0)
         return ret;
 
+    count = 0;
     for (x = 0; x < sizeof(smpfmts.ac_controls.b); x++) {
         if (smpfmts.ac_controls.b[x] == AUDIO_SUBFMT_END)
             break;
 
         ret = alsafmt_to_smpfmt(smpfmts.ac_controls.b[x]);
         if (ret >= 0)
-            values[x] = ret;
+            values[count++] = ret;
     }
 
-    return x == 0 ? AVERROR(EPERM) : x;
+    return count == 0 ? AVERROR(EPERM) : count;
 }
 
 int alsa_query_caps(struct AVOptionRanges **pranges, const char *device,
                     const char *key, bool playback)
 {
+    int values0[64] = {0}, values1[64] = {0};
     struct audio_caps_s formats, others;
     struct audio_info_s info = {0};
     int ac_type = AUDIO_TYPE_QUERY;
     struct AVOptionRanges *ranges;
-    int values0[64], values1[64];
     int nb_ranges, is_range = 0;
     int format;
     int ret;
