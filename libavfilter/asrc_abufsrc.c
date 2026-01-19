@@ -478,6 +478,39 @@ static int abufsrc_get_latency(AVFilterContext *ctx, int64_t *latency)
     return ret;
 }
 
+static int abufsrc_dump_info(AVFilterContext *ctx, char *res, int res_len)
+{
+    BuffSrcPriv *priv = ctx->priv;
+    int offset = 0;
+    int ret;
+    int i;
+
+    if (!res || res_len <= 0 || !priv->volume || !priv->map)
+        return AVERROR(EINVAL);
+
+    ret = snprintf(res + offset, res_len - offset, "player_volume:%.2f volume:", priv->player_volume);
+    if (ret > 0)
+        offset = FFMIN(offset + ret, res_len - 1);
+
+    for (i = 0; i < ctx->nb_outputs && offset < res_len - 1; i++) {
+        ret = snprintf(res + offset, res_len - offset, " %.2f", priv->volume[i]);
+        if (ret > 0)
+            offset = FFMIN(offset + ret, res_len - 1);
+    }
+
+    ret = snprintf(res + offset, res_len - offset, " map:");
+    if (ret > 0)
+        offset = FFMIN(offset + ret, res_len - 1);
+
+    for (i = 0; i < ctx->nb_outputs && offset < res_len - 1; i++) {
+        ret = snprintf(res + offset, res_len - offset, " %d", priv->map[i]);
+        if (ret > 0)
+            offset = FFMIN(offset + ret, res_len - 1);
+    }
+
+    return 0;
+}
+
 static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *value, int len)
 {
     BuffSrcPriv *s = ctx->priv;
@@ -620,7 +653,7 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
             ret = abufsrc_fadeout_last_frame(ctx);
 
         for (i = 0; i < ctx->nb_outputs; i++) {
-            if (priv->map[i] == ROUTE_ON)
+            if (priv->map && priv->map[i] == ROUTE_ON)
                 avfilter_forward_command(ctx, i, NULL, "pause", NULL, NULL, 0, 0);
         }
 
@@ -628,12 +661,14 @@ static int abufsrc_proccess_command(AVFilterContext *ctx, const char *cmd, const
     } else if (!av_strcasecmp(cmd, "resume")) {
         priv->paused = false;
         for (i = 0; i < ctx->nb_outputs; i++) {
-            if (priv->map[i] == ROUTE_ON)
+            if (priv->map && priv->map[i] == ROUTE_ON)
                 avfilter_forward_command(ctx, i, NULL, "play", NULL, NULL, 0, 0);
         }
 
         ff_filter_set_ready(ctx, 100);
         return 0;
+    } else if (!av_strcasecmp(cmd, "dump")) {
+        return abufsrc_dump_info(ctx, res, res_len);
     } else {
         return ff_filter_process_command(ctx, cmd, args, res, res_len, flags);
     }
