@@ -388,7 +388,7 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
     while (*p) {
         ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
         if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            av_log(ctx, AV_LOG_ERROR, "Unable to parse '%s': %s\n", p, av_err2str(ret));
             break;
         }
 

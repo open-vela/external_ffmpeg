@@ -553,7 +553,7 @@ static int tinycomprsrc_get_parameter(AVFilterContext *ctx, const char *key, cha
     if (!strcmp(key, "volume")) {
         snprintf(value, len, "vol:%f", s->vol_ctx.volume);
 
-        av_log(s, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
+        av_log(ctx, AV_LOG_DEBUG, "get_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
         return 0;
     }
 
@@ -573,7 +573,7 @@ static int tinycomprsrc_set_parameter(AVFilterContext *ctx, const char *args)
     while (*p) {
         ret = av_opt_get_key_value(&p, "=", ":", 0, &key, &value);
         if (ret < 0) {
-            av_log(ctx, AV_LOG_ERROR, "No more key-value pairs to parse.\n");
+            av_log(ctx, AV_LOG_ERROR, "Unable to parse '%s': %s\n", p, av_err2str(ret));
             break;
         }
 
@@ -595,7 +595,7 @@ static int tinycomprsrc_set_parameter(AVFilterContext *ctx, const char *args)
             volume_set(&s->vol_ctx, volume);
             s->volume = volume;
 
-            av_log(s, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
+            av_log(ctx, AV_LOG_INFO, "set_parameter: %s = %.2f\n", key, s->vol_ctx.volume);
         } else
             av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
 
