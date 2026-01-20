@@ -208,7 +208,13 @@ static int alsasink_init(AVFilterContext *ctx)
 static void alsasink_uninit(AVFilterContext *ctx)
 {
     AlsaSinkPriv *priv = ctx->priv;
-    av_freep(&priv->handles);
+    int i;
+
+    if (priv->handles) {
+        for (i = 0; i < priv->nb_inputs; i++)
+            alsasink_close(ctx, i);
+        av_freep(&priv->handles);
+    }
 }
 
 static int alsasink_activate(AVFilterContext *ctx)
