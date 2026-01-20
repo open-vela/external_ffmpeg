@@ -271,7 +271,7 @@ static int tinycomprsink_open(AVFilterContext *ctx)
     compress_set_event_callback(priv->compress, tinycomprsink_control_callback, ctx);
     priv->last_pkt = av_packet_alloc();
     if (!priv->last_pkt) {
-        ret = -AVERROR(ENOMEM);
+        ret = AVERROR(ENOMEM);
         goto out;
     }
 
