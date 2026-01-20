@@ -367,13 +367,27 @@ static int alsasink_process_command(AVFilterContext *ctx,
     int i;
 
     if (!strcmp(cmd, "get_pollfd")) {
-        struct pollfd *poll = (struct pollfd *)res;
+        struct pollfd *poll;
+        int max_fds;
+
+        if (!res || res_len < sizeof(struct pollfd))
+            return AVERROR(EINVAL);
+
+        poll = (struct pollfd *)res;
+        max_fds = res_len / sizeof(struct pollfd);
 
         for (i = 0; i < ctx->nb_inputs; i++) {
             sink = &priv->handles[i];
             if (sink->h) {
                 if (snd_pcm_state(sink->h) == SND_PCM_STATE_PAUSED)
                     continue;
+
+                if (ret >= max_fds) {
+                    av_log(ctx, AV_LOG_WARNING, "Insufficient poll fd buffer space: "
+                           "need at least %d fds but only %d available, skipping remaining inputs\n",
+                           ret + 1, max_fds);
+                    break;
+                }
 
                 snd_pcm_poll_descriptors(sink->h, &poll[ret], 1);
 
