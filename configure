@@ -2759,6 +2759,7 @@ CMDLINE_APPEND="
 armv5te_deps="arm"
 armv6_deps="arm"
 armv6t2_deps="arm"
+armv8m_main_deps="arm"
 armv8_deps="aarch64"
 neon_deps_any="aarch64 arm"
 intrinsics_neon_deps="neon"
@@ -5385,7 +5386,7 @@ elif enabled arm; then
         elif check_arm_arch 7M  7_M;  then echo armv7-m
         elif check_arm_arch 7EM 7E_M; then echo armv7-m
         elif check_arm_arch 8A  8_A;  then echo armv8-a
-        elif check_arm_arch 8M_MAIN;  then echo armv8-m.main
+        elif check_arm_arch 8M_MAIN;  then echo armv8-m.main+dsp
         fi
     }
 
@@ -6337,7 +6338,7 @@ EOF
     enabled vfp     && check_insn vfp     'fadds s0, s0, s0'
     enabled vfpv3   && check_insn vfpv3   'vmov.f32 s0, #1.0'
     enabled setend  && check_insn setend  'setend be'
-    if [ $cpu = armv8-m.main ]; then
+    if [ $cpu = armv8-m.main ] || [ $subarch = armv8mmaindsp ] || [ $subarch = armv8mmain ]; then
         enable armv8m_main_inline
     fi
 
