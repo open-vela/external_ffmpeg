@@ -522,6 +522,28 @@ static int abufsrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
 
         av_log(s, AV_LOG_INFO, "get_parameter: %s = %.2f\n", key, s->player_volume);
         return 0;
+    } else if (!strncmp(key, "volume", 6)) {
+        char *index_str = NULL;
+        char *parsed_key = NULL;
+        int idx = -1;
+
+        int ret = av_opt_get_key_value(&key, "=", ":", 0, &parsed_key, &index_str);
+        if (!index_str || ret < 0)
+            idx = 0;
+        else {
+            idx = (int)strtol(index_str, NULL, 0);
+            if (idx < -1 || idx >= ctx->nb_outputs) {
+                av_log(s, AV_LOG_ERROR, "Invalid volume index: %s\n", index_str);
+                av_freep(&index_str);
+                av_freep(&parsed_key);
+                return AVERROR(EINVAL);
+            }
+        }
+        snprintf(value, len, "vol:%f", s->volume[idx]);
+        av_log(s, AV_LOG_INFO, "get_parameter: volume[%d] = %.2f\n", idx, s->volume[idx]);
+        av_freep(&index_str);
+        av_freep(&parsed_key);
+        return 0;
     } else if (!strcmp(key, "latency")) {
         ret = abufsrc_get_latency(ctx, &latency);
         snprintf(value, len, "latency:%" PRId64, latency);
