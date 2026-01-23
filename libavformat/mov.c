@@ -563,7 +563,7 @@ retry:
             // UTF8 and 4 means "UTF8 sort". For any other type (UTF16 or e.g.
             // a picture), don't return it blindly in a string that is supposed
             // to be UTF8 text.
-            av_log(c->fc, AV_LOG_WARNING, "Skipping unhandled metadata %s of type %d\n", key, data_type);
+            av_log(c->fc, AV_LOG_WARNING, "Skipping unhandled metadata %s of type %"PRIu32"\n", key, data_type);
             av_free(str);
             return 0;
         } else {
@@ -6736,7 +6736,7 @@ static int mov_read_vexu_proj(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     tag = avio_rl32(pb);
     if (tag != MKTAG('p','r','j','i')) {
-        av_log(c->fc, AV_LOG_ERROR, "Invalid child box of proj box: 0x%08X\n", tag);
+        av_log(c->fc, AV_LOG_ERROR, "Invalid child box of proj box: 0x%08"PRIX32"\n", tag);
         return AVERROR_INVALIDDATA;
     }
 
@@ -6758,7 +6758,7 @@ static int mov_read_vexu_proj(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         projection = AV_SPHERICAL_FISHEYE;
         break;
     default:
-        av_log(c->fc, AV_LOG_ERROR, "Invalid projection type in prji box: 0x%08X\n", tag);
+        av_log(c->fc, AV_LOG_ERROR, "Invalid projection type in prji box: 0x%08"PRIX32"\n", tag);
         return AVERROR_INVALIDDATA;
     }
 
@@ -6871,7 +6871,7 @@ static int mov_read_eyes(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
             subtag = avio_rl32(pb);
             if (subtag != MKTAG('b','l','i','n')) {
-                av_log(c->fc, AV_LOG_ERROR, "Expected blin box, got 0x%08X\n", subtag);
+                av_log(c->fc, AV_LOG_ERROR, "Expected blin box, got 0x%08"PRIX32"\n", subtag);
                 return AVERROR_INVALIDDATA;
             }
 
@@ -6899,7 +6899,7 @@ static int mov_read_eyes(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
             subtag = avio_rl32(pb);
             if (subtag != MKTAG('d','a','d','j')) {
-                av_log(c->fc, AV_LOG_ERROR, "Expected dadj box, got 0x%08X\n", subtag);
+                av_log(c->fc, AV_LOG_ERROR, "Expected dadj box, got 0x%08"PRIX32"\n", subtag);
                 return AVERROR_INVALIDDATA;
             }
 
@@ -6914,7 +6914,7 @@ static int mov_read_eyes(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             break;
         }
         default:
-            av_log(c->fc, AV_LOG_WARNING, "Unknown tag in eyes: 0x%08X\n", tag);
+            av_log(c->fc, AV_LOG_WARNING, "Unknown tag in eyes: 0x%08"PRIX32"\n", tag);
             avio_skip(pb, size - 8);
             break;
         }
@@ -6984,7 +6984,7 @@ static int mov_read_vexu(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             break;
         }
         default:
-            av_log(c->fc, AV_LOG_WARNING, "Unknown tag in vexu: 0x%08X\n", tag);
+            av_log(c->fc, AV_LOG_WARNING, "Unknown tag in vexu: 0x%08"PRIX32"\n", tag);
             avio_skip(pb, size - 8);
             break;
         }
@@ -9006,7 +9006,7 @@ static int mov_read_ispe(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     width  = avio_rb32(pb);
     height = avio_rb32(pb);
 
-    av_log(c->fc, AV_LOG_TRACE, "ispe: item_id %d, width %u, height %u\n",
+    av_log(c->fc, AV_LOG_TRACE, "ispe: item_id %d, width %"PRIu32", height %"PRIu32"\n",
            c->cur_item_id, width, height);
 
     item = heif_cur_item(c);

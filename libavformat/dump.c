@@ -458,7 +458,7 @@ static void dump_cropping(void *ctx, const AVPacketSideData *sd)
     left   = AV_RL32(sd->data +  8);
     right  = AV_RL32(sd->data + 12);
 
-    av_log(ctx, AV_LOG_INFO, "%d/%d/%d/%d", left, right, top, bottom);
+    av_log(ctx, AV_LOG_INFO, "%"PRIu32"/%"PRIu32"/%"PRIu32"/%"PRIu32"", left, right, top, bottom);
 }
 
 static void dump_sidedata(void *ctx, const AVPacketSideData *side_data, int nb_side_data,

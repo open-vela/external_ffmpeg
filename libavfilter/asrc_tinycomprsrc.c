@@ -285,7 +285,7 @@ static int tinycomprsrc_codec_to_options(AVFilterContext *ctx, struct snd_codec 
         }
 
         default:
-            av_log(ctx, AV_LOG_ERROR, "Unsupported codec: %d\n", codec->id);
+            av_log(ctx, AV_LOG_ERROR, "Unsupported codec: %"PRIu32"\n", codec->id);
             break;
     }
 
