@@ -889,7 +889,7 @@ static int moviesink_query_audio_fmts(AVFilterContext *ctx, int pad_id, enum AVC
         formats = ff_make_format_list(list);
     else
         formats = enc && enc->sample_fmts ?
-                  ff_make_format_list(enc->sample_fmts) : ff_all_formats(AVMEDIA_TYPE_AUDIO);
+                  ff_make_sample_format_list(enc->sample_fmts) : ff_all_formats(AVMEDIA_TYPE_AUDIO);
 
     if (ret = ff_formats_ref(formats, &link->outcfg.formats) < 0)
         return ret;
@@ -955,7 +955,7 @@ static int moviesink_query_video_fmts(AVFilterContext *ctx, int pad_id, enum AVC
         return AVERROR(EINVAL);
 
     if (enc->pix_fmts) {
-        formats = ff_make_format_list(enc->pix_fmts);
+        formats = ff_make_pixel_format_list(enc->pix_fmts);
     } else {
         formats = ff_all_formats(AVMEDIA_TYPE_VIDEO);
     }

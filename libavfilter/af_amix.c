@@ -764,7 +764,7 @@ static int query_formats(const AVFilterContext *ctx,
         if ((ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_formats_list_singleton(s->sample_fmt))) < 0)
             return ret;
     } else {
-        if ((ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_format_list(sample_fmts))) < 0)
+        if ((ret = ff_set_common_formats2(ctx, cfg_in, cfg_out, ff_make_sample_format_list(sample_fmts))) < 0)
             return ret;
     }
 

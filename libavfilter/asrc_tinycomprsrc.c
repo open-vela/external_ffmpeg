@@ -634,7 +634,7 @@ static int query_formats(const AVFilterContext *ctx,
                                        AV_CODEC_CONFIG_SAMPLE_FORMAT, 0,
                                        (const void **)&sample_fmts, &count);
     if (ret >= 0 && count > 0 && sample_fmts != NULL) {
-        formats = ff_make_format_list(sample_fmts);
+        formats = ff_make_sample_format_list(sample_fmts);
         fmt = !!formats;
     }
 
