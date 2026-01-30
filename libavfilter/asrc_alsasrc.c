@@ -527,29 +527,6 @@ static int alsasrc_process_command(AVFilterContext *ctx, const char *cmd, const 
     }
 }
 
-static int alsasrc_forward_command(AVFilterContext *ctx, int pad_idx, const char* target, const char *cmd,
-                                    const char *arg, char *res, int res_len, int flags)
-{
-    AlsasrcPriv *priv = ctx->priv;
-    if (!strcmp(cmd, "map")) {
-        char *endptr;
-        long val = strtol(arg, &endptr, 10);
-
-        if (endptr == arg || *endptr != '\0') {
-            av_log(ctx, AV_LOG_ERROR, "Invalid map value: %s\n", arg);
-            return AVERROR(EINVAL);
-        }
-
-        if (val < INT_MIN || val > INT_MAX) {
-            av_log(ctx, AV_LOG_ERROR, "Map value out of range: %ld\n", val);
-            return AVERROR(ERANGE);
-        }
-
-        priv->map[pad_idx] = (int)val;
-    }
-    return 0;
-}
-
 static int alsasrc_read_frame(AlsasrcPriv *priv, AVFrame **frame)
 {
     AlsaHandle *handle = &priv->priv;
@@ -765,6 +742,5 @@ const AVFilter ff_asrc_alsasrc = {
     FILTER_QUERY_FUNC2(alsasrc_query_formats),
     .activate        = alsasrc_activate,
     .process_command = alsasrc_process_command,
-    .forward_command = alsasrc_forward_command,
     .flags           = AVFILTER_FLAG_SUPPORT_POLL | AVFILTER_FLAG_DYNAMIC_OUTPUTS,
 };

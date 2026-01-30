@@ -221,7 +221,7 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
                                   char *res, int res_len, int flags)
 {
     ABufSinkPriv *sink = ctx->priv;
-    int ret, i;
+    int ret;
 
     if (!strcmp(cmd, "link")) {
         int (*on_event_cb)(void *udata, int evt, int64_t args);
@@ -241,10 +241,6 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
         if (!sink->on_event_cb)
             av_abufsink_set_event_cb(ctx, on_event_cb, udata);
         sink->paused = false;
-
-        for (i = 0; i < ctx->nb_inputs; i++)
-            avfilter_forward_command(ctx, i, NULL, "map", "1", NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
-
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
         if (sink->on_event_cb)
@@ -256,10 +252,6 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
         sink->sample_rate = 0;
         av_channel_layout_uninit(&sink->ch_layout);
         av_abufsink_set_event_cb(ctx, NULL, NULL);
-
-        for (i = 0; i < ctx->nb_inputs; i++)
-            avfilter_forward_command(ctx, i, NULL, "map", "0", NULL, 0, AVFILTER_CMD_FLAG_REVERSE);
-
         return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
         if (!args)
