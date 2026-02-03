@@ -92,11 +92,11 @@ static void vector_fmul_window_scaled_c(int16_t *dst, const int32_t *src0,
     }
 }
 
-static void vector_fmul_window_c(int32_t *dst, const int32_t *src0,
-                                       const int32_t *src1, const int32_t *win,
-                                       int len)
+static void vector_fmul_window_c(int *dst, const int *src0,
+                                 const int *src1, const int *win,
+                                 int len)
 {
-    int32_t s0, s1, wi, wj, i, j;
+    int s0, s1, wi, wj, i, j;
 
     dst += len;
     win += len;

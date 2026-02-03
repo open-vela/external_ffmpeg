@@ -83,6 +83,10 @@ typedef struct AVFixedDSPContext {
      * Used primarily by MDCT-based audio codecs.
      * Source and destination vectors must overlap exactly or not at all.
      *
+     * NOTE: On some toolchains used in this project, int32_t may map to long int,
+     * while codec fixed-point paths use INTFLOAT == int. Keep this API aligned
+     * with actual implementation/storage types to avoid pointer-type mismatches.
+     *
      * @param dst  result vector
      *             constraints: 32-byte aligned
      * @param src0 first source vector
@@ -94,7 +98,7 @@ typedef struct AVFixedDSPContext {
      * @param len  length of vector
      *             constraints: multiple of 4
      */
-    void (*vector_fmul_window)(int32_t *dst, const int32_t *src0, const int32_t *src1, const int32_t *win, int len);
+    void (*vector_fmul_window)(int *dst, const int *src0, const int *src1, const int *win, int len);
 
     /**
      * Fixed-point multiplication that calculates the entry wise product of two

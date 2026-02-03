@@ -56,7 +56,7 @@ av_cold void ff_kbd_window_init(float *window, float alpha, int n)
     kbd_window_init(window, NULL, alpha, n);
 }
 
-av_cold void ff_kbd_window_init_fixed(int32_t *window, float alpha, int n)
+av_cold void ff_kbd_window_init_fixed(int *window, float alpha, int n)
 {
     kbd_window_init(NULL, window, alpha, n);
 }
