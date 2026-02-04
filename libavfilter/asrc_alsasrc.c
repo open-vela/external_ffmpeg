@@ -343,10 +343,12 @@ static int alsasrc_get_parameter(AVFilterContext *ctx, const char *key, char *va
         int pad, ret = 0;
 
         if (format == AV_SAMPLE_FMT_NONE) {
+            int tmp;
             ret = alsasrc_get_device_support_format(ctx, priv->devname,
-                                                    "sample_fmts", -1, &format);
+                                                    "sample_fmts", -1, &tmp);
             if (ret < 0)
                 goto format_end;
+            format = tmp;
         }
 
         if (!sample_rate) {
@@ -614,10 +616,14 @@ static int alsasrc_open(AVFilterContext *ctx)
         return AVERROR(EINVAL);
 
     link = ctx->outputs[pad];
-    ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
-                                            link->format, &format);
-    if (ret < 0)
-        return ret;
+    {
+        int tmp;
+        ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_fmts",
+                                                link->format, &tmp);
+        if (ret < 0)
+            return ret;
+        format = tmp;
+    }
 
     ret = alsasrc_get_device_support_format(ctx, priv->devname, "sample_rates",
                                             link->sample_rate, &sample_rate);

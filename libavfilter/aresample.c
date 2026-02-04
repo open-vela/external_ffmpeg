@@ -53,13 +53,14 @@ int ff_resample_frame(AResampleContext *ar, AVFilterLink *link, AVFrame *iframe,
     int64_t delay;
     AVFrame *oframe;
     int ret;
+    int n_out;
 
     if (!ar || !link || !iframe) {
         av_log(NULL, AV_LOG_ERROR, "Invalid parameters: ar=%p, link=%p, iframe=%p\n",
                ar, link, iframe);
         return AVERROR(EINVAL);
     }
-    int n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate + 32;
+    n_out = iframe->nb_samples * link->sample_rate / iframe->sample_rate + 32;
     if (av_channel_layout_compare(&link->ch_layout, &iframe->ch_layout) == 0 &&
         link->format == iframe->format &&
         link->sample_rate == iframe->sample_rate)

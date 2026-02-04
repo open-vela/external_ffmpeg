@@ -521,6 +521,7 @@ static int tinycomprsrc_query_formats(TinyCompressContext *s)
 {
     int codec_id;
     int ret;
+    int tmp_fmt;
 
     ret = tinycomprsrc_query_cap(s, "codec", &codec_id);
     if (ret < 0)
@@ -528,9 +529,10 @@ static int tinycomprsrc_query_formats(TinyCompressContext *s)
 
     s->codec_id = codec_id;
 
-    ret = tinycomprsrc_query_cap(s, "sample_fmts", &s->sample_fmt);
+    ret = tinycomprsrc_query_cap(s, "sample_fmts", &tmp_fmt);
     if (ret < 0)
         return ret;
+    s->sample_fmt = tmp_fmt;
 
     ret = tinycomprsrc_query_cap(s, "sample_rates", &s->sample_rate);
     if (ret < 0)

@@ -228,7 +228,9 @@ static av_cold void abufsrc_uninit(AVFilterContext *ctx)
         return;
 
     av_frame_free(&priv->frame);
-    volume_uninit(&priv->vol_ctx);
+    for (int i = 0; i < priv->nb_outputs; i++)
+        volume_uninit(&priv->vol_ctx[i]);
+    av_freep(&priv->vol_ctx);
     av_freep(&priv->map);
 }
 
