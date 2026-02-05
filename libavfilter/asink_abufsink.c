@@ -38,6 +38,10 @@
 #define INPUT_ON       1    /**< input is active */
 #define INPUT_EOF      2    /**< input has reached EOF (may still be active) */
 
+#define SINK_STATE_IDLE    0    /**< sink is idle (not linked) */
+#define SINK_STATE_RUNNING 1    /**< sink is running (linked and active) */
+#define SINK_STATE_PAUSED  2    /**< sink is paused (linked but inactive) */
+
 typedef struct ABufSinkPriv {
     const AVClass *class;
 
@@ -49,7 +53,7 @@ typedef struct ABufSinkPriv {
     AVChannelLayout ch_layout;      /**< channel layout */
     enum AVSampleFormat sample_fmt; /**< sample format */
 
-    bool paused;                    /**< whether the recording is paused */
+    int state;                      /**< sink state: IDLE/RUNNING/PAUSED */
 
     AMixContext *mix;               /**< mix module context */
     int frame_size;                 /**< frame size */
@@ -64,6 +68,8 @@ typedef struct ABufSinkPriv {
 static const AVOption abufsink_options[] = {
     { "inputs", "Number of inputs.",
             OFFSET(nb_inputs), AV_OPT_TYPE_INT, {.i64 = 1}, 1, INT16_MAX, A|F },
+    { "state", "Sink state (0=IDLE, 1=RUNNING, 2=PAUSED).",
+            OFFSET(state), AV_OPT_TYPE_INT, {.i64 = SINK_STATE_IDLE}, SINK_STATE_IDLE, SINK_STATE_PAUSED, A|F },
     { NULL }
 };
 
@@ -122,7 +128,7 @@ static int output_frame(AVFilterContext *ctx)
     if (ret <= 0)
         return ret;
 
-    if (s->on_event_cb && !s->paused) {
+    if (s->on_event_cb && s->state == SINK_STATE_RUNNING) {
         if (s->next_pts == AV_NOPTS_VALUE)
             s->next_pts = 0;
 
@@ -240,7 +246,7 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
 
         if (!sink->on_event_cb)
             av_abufsink_set_event_cb(ctx, on_event_cb, udata);
-        sink->paused = false;
+        sink->state = SINK_STATE_RUNNING;
         return 0;
     } else if (!strcmp(cmd, "unlink")) {
         if (sink->on_event_cb)
@@ -252,6 +258,7 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
         sink->sample_rate = 0;
         av_channel_layout_uninit(&sink->ch_layout);
         av_abufsink_set_event_cb(ctx, NULL, NULL);
+        sink->state = SINK_STATE_IDLE;
         return 0;
     } else if (!strcmp(cmd, "set_parameter")) {
         if (!args)
@@ -259,10 +266,10 @@ static int abufsink_process_command(AVFilterContext *ctx, const char *cmd, const
 
         return abufsink_set_parameter(ctx, args);
     } else if (!av_strcasecmp(cmd, "pause")) {
-        sink->paused = true;
+        sink->state = SINK_STATE_PAUSED;
         return 0;
     } else if (!av_strcasecmp(cmd, "resume")) {
-        sink->paused = false;
+        sink->state = SINK_STATE_RUNNING;
         ff_filter_set_ready(ctx, 100);
         return 0;
     }
@@ -288,6 +295,7 @@ static int abufsink_init(AVFilterContext *ctx)
     }
 
     s->next_pts = AV_NOPTS_VALUE;
+    s->state = SINK_STATE_IDLE;
 
     return 0;
 }
