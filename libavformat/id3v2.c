@@ -1306,7 +1306,7 @@ static void id3v2_read_internal(AVIOContext *pb, AVDictionary **metadata,
                   ((buf[7] & 0x7f) << 14) |
                   ((buf[8] & 0x7f) << 7) |
                    (buf[9] & 0x7f);
-            avio_seek(pb, off + len, SEEK_SET);
+            avio_seek(pb, off + ID3v2_HEADER_SIZE + len, SEEK_SET);
         } else
             avio_seek(pb, off, SEEK_SET);
     } while (found_header);
