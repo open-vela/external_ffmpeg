@@ -412,8 +412,12 @@ static int alsasrc_set_parameter(AVFilterContext *ctx, const char *args)
             }
 
             alsasrc_set_output_volume(ctx, index, volume);
-        } else
-            av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+        } else {
+            ret = alsa_set_parameter(priv->devname, args);
+            if (ret < 0) {
+                av_log(ctx, AV_LOG_ERROR, "Unknown parameter: %s\n", key);
+            }
+        }
 
 end:
         av_freep(&key);
