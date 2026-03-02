@@ -141,6 +141,10 @@ static int get_output_samples(AMixContext *s)
                 else
                     min_samples = FFMIN(min_samples, ns);
                 unblocked_samples = FFMIN(unblocked_samples, ns);
+            } else {
+                /** BLOCKED inputs should drain all its samples, especially when all inputs are in BLOCKED. */
+
+                max_samples = FFMAX(max_samples, ns);
             }
         }
     }
@@ -153,7 +157,7 @@ static int get_output_samples(AMixContext *s)
      * min_samples: minimum samples among all active inputs with states
      *              equal to INPUT_ON.
      * max_samples: maximum samples among all drain inputs with
-     *              INPUT_EOF state.
+     *              INPUT_EOF or INPUT_BLOCKED state.
      * unblocked_samples: minimum samples among all unblocked inputs.
      *
      * Here are three cases that need to be considered:
@@ -316,12 +320,10 @@ static void input_sync_state(AMixInput *input)
 
     if (ff_outlink_get_status(link) == AVERROR_EOF) {
 
-        /* If a link is blocked and was closing at last, then free it directly. */
+        /* If a link is blocked and was closing at last, then free it after being drained. */
 
-         if (input->state & INPUT_BLOCKED)
-             input->state &= ~INPUT_ON;
-        else
-            input->state |= INPUT_EOF;
+        input->state &= ~INPUT_BLOCKED;
+        input->state |= INPUT_EOF;
     } else {
         li = ff_link_internal(input->link);
         if (li->frame_blocked_in && ((input->fifo ? av_audio_fifo_size(input->fifo) : ff_inlink_queued_samples(input->link)) < input->mix_size)) {
