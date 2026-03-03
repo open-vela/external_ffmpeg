@@ -258,7 +258,7 @@ static int alsasink_activate(AVFilterContext *ctx)
         }
 
         ff_inlink_acknowledge_status(inlink, &ret, &pts);
-        if (ret >= 0 && ff_outlink_get_status(inlink) != AVERROR_EOF)
+        if (ret >= 0 && ff_outlink_get_status(inlink) != AVERROR_EOF && !li->frame_blocked_in)
             ff_inlink_request_frame(inlink);
         else if (ret == AVERROR_EOF) {
             alsasink_drain(ctx, i);
@@ -418,13 +418,16 @@ static int alsasink_process_command(AVFilterContext *ctx,
             if (!sink->h)
                 continue;
 
+            state = snd_pcm_state(sink->h);
+            if (state == SND_PCM_STATE_PAUSED)
+                continue;
+
             if (sink->draining)
                 snd_pcm_drain(sink->h);
             else
                 sink->poll_available++;
 
             snd_pcm_avail_update(sink->h);
-            state = snd_pcm_state(sink->h);
             if (state == SND_PCM_STATE_XRUN) {
                 snd_pcm_pause(sink->h, 1);
                 sink->poll_available = 0;
