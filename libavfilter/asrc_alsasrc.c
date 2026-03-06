@@ -588,6 +588,19 @@ fail:
     return ret;
 }
 
+static int alsasrc_check_link_format(const AVFilterLink* link)
+{
+    if (!link)
+        return AVERROR(EINVAL);
+
+    if (link->format <= AV_SAMPLE_FMT_NONE
+        || link->format >= AV_SAMPLE_FMT_NB
+        || link->sample_rate <= 0 || link->ch_layout.nb_channels <= 0)
+        return FFERROR_NOT_READY;
+
+    return 0;
+}
+
 static int alsasrc_open(AVFilterContext *ctx)
 {
     AlsasrcPriv *priv = ctx->priv;
@@ -608,12 +621,21 @@ static int alsasrc_open(AVFilterContext *ctx)
         if (priv->map && priv->map[i] == ROUTE_OFF)
             continue;
 
+        link = ctx->outputs[i];
+        ret = alsasrc_check_link_format(link);
+        if (ret < 0) {
+            av_log(ctx, AV_LOG_INFO,
+                "%s output%d format not negotiated yet (fmt=%d rate=%d ch=%d), defer open.\n",
+                ctx->name, i, link->format, link->sample_rate, link->ch_layout.nb_channels);
+            continue;
+        }
+
         pad = i;
         break;
     }
 
     if (pad == -1)
-        return AVERROR(EINVAL);
+        return FFERROR_NOT_READY;
 
     link = ctx->outputs[pad];
     {
